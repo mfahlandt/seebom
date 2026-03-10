@@ -14,6 +14,13 @@ spec:
           shardsCount: {{ .Values.clickhouse.cluster.shardsCount }}
           replicasCount: {{ .Values.clickhouse.cluster.replicasCount }}
     users:
+      {{- if .Values.clickhouse.userPasswordSecret.enabled }}
+      {{ .Values.clickhouse.user }}/password:
+        valueFrom:
+          secretKeyRef:
+            name: {{ .Values.clickhouse.userPasswordSecret.secretName }}
+            key: {{ .Values.clickhouse.userPasswordSecret.key }}
+      {{- else }}
       {{ .Values.clickhouse.user }}/password: {{ .Values.clickhouse.password | quote }}
+      {{- end }}
       {{ .Values.clickhouse.user }}/networks/ip: "::/0"
-

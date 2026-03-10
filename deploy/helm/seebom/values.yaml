@@ -14,6 +14,10 @@ clickhouse:
   database: seebom
   user: default
   password: ""
+  userPasswordSecret:
+    enabled: false
+    secretName: ""
+    key: ""
   cluster:
     name: seebom-cluster
     shardsCount: 1

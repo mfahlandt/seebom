@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 	"github.com/seebom-labs/seebom/backend/internal/license"
 	"github.com/seebom-labs/seebom/backend/internal/osv"
 	"github.com/seebom-labs/seebom/backend/internal/osvutil"
+	s3client "github.com/seebom-labs/seebom/backend/internal/s3"
 	"github.com/seebom-labs/seebom/backend/internal/spdx"
 	"github.com/seebom-labs/seebom/backend/internal/vex"
 	"github.com/seebom-labs/seebom/backend/pkg/models"
@@ -79,6 +83,31 @@ func main() {
 		log.Println("GitHub license resolver disabled (SKIP_GITHUB_RESOLVE=true)")
 	}
 
+	// Initialize S3 client if S3 buckets are configured.
+	var s3c *s3client.Client
+	if cfg.HasS3Sources() {
+		bucketConfigs := make([]s3client.BucketConfig, len(cfg.S3Buckets))
+		for i, b := range cfg.S3Buckets {
+			bucketConfigs[i] = s3client.BucketConfig{
+				Name:         b.Name,
+				Endpoint:     b.Endpoint,
+				Region:       b.Region,
+				AccessKey:    b.AccessKey,
+				SecretKey:    b.SecretKey,
+				Prefix:       b.Prefix,
+				UsePathStyle: b.UsePathStyle,
+				UseSSL:       b.UseSSL,
+			}
+		}
+		var err error
+		s3c, err = s3client.NewClient(bucketConfigs)
+		if err != nil {
+			log.Printf("WARNING: Failed to create S3 client: %v (S3 jobs will fail)", err)
+		} else {
+			log.Printf("S3 client initialized for %d bucket(s): %s", len(cfg.S3Buckets), cfg.S3BucketNames())
+		}
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -118,7 +147,7 @@ func main() {
 		log.Printf("Claimed %d jobs, processing...", len(jobs))
 
 		for _, job := range jobs {
-			if err := processJob(ctx, cfg, chClient, osvClient, exceptionsIndex, ghResolver, job); err != nil {
+			if err := processJob(ctx, cfg, chClient, osvClient, exceptionsIndex, ghResolver, s3c, job); err != nil {
 				log.Printf("ERROR: Failed to process %s: %v", job.SourceFile, err)
 				if failErr := chClient.FailJob(ctx, job, err.Error()); failErr != nil {
 					log.Printf("ERROR: Failed to mark job as failed: %v", failErr)
@@ -135,19 +164,40 @@ func main() {
 	}
 }
 
-func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, job models.IngestionJob) error {
-	absPath := filepath.Join(cfg.SBOMDir, job.SourceFile)
+func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, s3c *s3client.Client, job models.IngestionJob) error {
+	// Determine how to open the file: S3 URI or local path.
+	openFile := func() (io.ReadCloser, error) {
+		if strings.HasPrefix(job.SourceFile, "s3://") {
+			if s3c == nil {
+				return nil, fmt.Errorf("S3 client not configured but job source is %s", job.SourceFile)
+			}
+			bucket, key, err := s3client.ParseURI(job.SourceFile)
+			if err != nil {
+				return nil, err
+			}
+			return s3c.GetObject(ctx, bucket, key)
+		}
+		// Local file.
+		absPath := filepath.Join(cfg.SBOMDir, job.SourceFile)
+		return os.Open(absPath)
+	}
 
 	// Branch on job type.
 	if job.JobType == models.JobTypeVEX {
-		return processVEXJob(ctx, chClient, absPath, job)
+		return processVEXJob(ctx, chClient, openFile, job)
 	}
 
-	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, absPath, job)
+	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, openFile, job)
 }
 
-func processVEXJob(ctx context.Context, chClient *clickhouse.Client, absPath string, job models.IngestionJob) error {
-	result, err := vex.ParseFile(absPath, job.SourceFile)
+func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
+	rc, err := openFile()
+	if err != nil {
+		return fmt.Errorf("failed to open VEX source %s: %w", job.SourceFile, err)
+	}
+	defer rc.Close()
+
+	result, err := vex.Parse(rc, job.SourceFile)
 	if err != nil {
 		return err
 	}
@@ -170,10 +220,16 @@ func processVEXJob(ctx context.Context, chClient *clickhouse.Client, absPath str
 	return nil
 }
 
-func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, absPath string, job models.IngestionJob) error {
+func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
 
 	// 1. Parse the SPDX file.
-	result, err := spdx.ParseFile(absPath, job.SourceFile, job.SHA256Hash)
+	rc, err := openFile()
+	if err != nil {
+		return fmt.Errorf("failed to open SBOM source %s: %w", job.SourceFile, err)
+	}
+	defer rc.Close()
+
+	result, err := spdx.Parse(rc, job.SourceFile, job.SHA256Hash)
 	if err != nil {
 		return err
 	}

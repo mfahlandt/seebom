@@ -218,7 +218,9 @@ kind-deploy: kind-build ## Build images, load into Kind, and upgrade Helm releas
 		-n seebom \
 		-f local/values-local.yaml \
 		--set clickhouse.password="$${CLICKHOUSE_PASSWORD:-seebom}" \
-		--set github.token="$${GITHUB_TOKEN:-}"
+		--set github.token="$${GITHUB_TOKEN:-}" \
+		--set s3.accessKey="$${S3_ACCESS_KEY:-}" \
+		--set s3.secretKey="$${S3_SECRET_KEY:-}"
 	@kubectl rollout restart deployment/seebom-api-gateway deployment/seebom-parsing-worker -n seebom
 	@echo "✅ Deployed. Pods restarting with new images."
 

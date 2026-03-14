@@ -60,6 +60,12 @@ cp .env.example .env
 | `GITHUB_TOKEN` | *(empty)* | GitHub personal access token for license resolution. Increases rate limit from 60 to 5000 req/h. No scopes needed. |
 | `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI. See "Custom Theme" section. |
 | `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand name, dashboard texts, disclaimer). See "Site Configuration" section. |
+| `S3_BUCKETS` | *(empty)* | JSON array of S3 bucket configs. See "S3 Ingestion" section. |
+| `S3_BUCKET` | *(empty)* | Single S3 bucket name (simpler alternative to `S3_BUCKETS`). |
+| `S3_ENDPOINT` | `s3.amazonaws.com` | S3 endpoint URL. |
+| `S3_REGION` | `us-east-1` | AWS region. |
+| `S3_ACCESS_KEY` | *(empty)* | Shared S3 access key (applied to all buckets). Leave empty for public buckets. |
+| `S3_SECRET_KEY` | *(empty)* | Shared S3 secret key. |
 
 **After changing `.env`:**
 
@@ -178,6 +184,46 @@ ui:
 ```
 
 Changes take effect after a pod restart (`kubectl rollout restart deployment seebom-ui`). No rebuild needed.
+
+### S3 Ingestion (Default)
+
+Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS). This is the default and recommended ingestion method — no volumes, PVCs, or git-sync needed.
+
+**Single bucket:**
+
+```bash
+# .env
+S3_BUCKET=cncf-subproject-sboms
+S3_ENDPOINT=s3.amazonaws.com
+S3_REGION=us-east-1
+```
+
+**Multiple buckets (JSON array):**
+
+```bash
+# .env
+S3_BUCKETS='[{"name":"cncf-subproject-sboms","endpoint":"s3.amazonaws.com","region":"us-east-1"},{"name":"cncf-project-sboms","region":"us-east-1"}]'
+```
+
+**Private buckets with credentials:**
+
+```bash
+# .env (shared credentials for all buckets)
+S3_ACCESS_KEY=AKIA...
+S3_SECRET_KEY=...
+S3_BUCKETS='[{"name":"my-private-bucket"}]'
+
+# Or per-bucket credentials in JSON:
+S3_BUCKETS='[{"name":"my-bucket","accessKey":"AKIA...","secretKey":"..."}]'
+```
+
+**How it works:**
+- The Ingestion Watcher streams `ListObjects` from each bucket (paginated, no full listing in memory)
+- Files are classified by extension: `*.spdx.json` / `*_spdx.json` → SBOM, `*.openvex.json` / `*.vex.json` → VEX
+- SHA256 hashes are computed by streaming the object (not loaded into memory)
+- Jobs are enqueued in batches of 500 for efficient ClickHouse inserts
+- The Parsing Worker fetches S3 objects on-demand via `s3://bucket/key` URIs
+- Local filesystem ingestion (from `SBOM_SOURCE_DIR`) still works alongside S3
 
 ```bash
 # After editing config files:

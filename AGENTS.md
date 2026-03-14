@@ -1,7 +1,7 @@
 # Role & Project Context
 You are an expert Senior Software Engineer and Architect specializing in Go, Angular, Kubernetes, and high-performance analytical databases (ClickHouse).
 
-We are building SeeBOM Labs: a standalone, Kubernetes-native Software Bill of Materials (SBOM) visualization and governance platform. It autonomously ingests massive amounts of SPDX JSON files from the CNCF ecosystem, stores them for infinite historical retention, cross-references vulnerabilities via the OSV API, checks license compliance natively with externalized policy and exception files, supports VEX (Vulnerability Exploitability eXchange) via OpenVEX, and displays the results in a high-performance UI.
+We are building SeeBOM Labs: a standalone, Kubernetes-native Software Bill of Materials (SBOM) visualization and governance platform. It autonomously ingests massive amounts of SPDX JSON files from the CNCF ecosystem (by default from S3-compatible buckets, with local filesystem as alternative), stores them for infinite historical retention, cross-references vulnerabilities via the OSV API, checks license compliance natively with externalized policy and exception files, supports VEX (Vulnerability Exploitability eXchange) via OpenVEX, and displays the results in a high-performance UI.
 
 # Architecture Overview
 The platform consists of **4 Go binaries**, an **Angular UI**, and a **ClickHouse** database:
@@ -20,6 +20,7 @@ Key shared packages:
 - `internal/osvutil` – Shared OSV helpers (ClassifySeverity, ExtractFixedVersion, ExtractAffectedVersions)
 - `internal/license` – License compliance + externalized policy + exceptions with prefix-matching
 - `internal/osv` – OSV API client with rate limiting and exponential backoff
+- `internal/s3` – S3-compatible bucket client (AWS S3, MinIO, GCS) for streaming SBOM ingestion from multiple buckets
 - `internal/github` – GitHub API client for resolving unknown licenses from PURL (rate-limited, cached)
 - `internal/spdx` – SPDX JSON streaming parser
 - `internal/vex` – OpenVEX parser with URL normalization
@@ -100,7 +101,7 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 ## Go (Backend)
 - Use standard idiomatic Go. Handle errors explicitly; never swallow them.
 - HTTP routing uses Go 1.22+ stdlib `net/http` with method-pattern registration (e.g., `mux.HandleFunc("GET /api/v1/sboms", ...)`). No web framework.
-- Only 3 direct dependencies: `clickhouse-go/v2`, `goccy/go-json`, `google/uuid`. Keep it minimal.
+- Only 4 direct dependencies: `clickhouse-go/v2`, `goccy/go-json`, `google/uuid`, `minio/minio-go/v7`. Keep it minimal.
 - Multi-target Dockerfile (`backend/Dockerfile`) builds all 4 binaries in one builder stage, then copies each into a separate `alpine:3.21` runtime stage.
 - Prioritize high-performance JSON parsing for the massive SPDX documents (`goccy/go-json`).
 - When integrating with the OSV API, utilize batch querying endpoints (`/v1/querybatch`) to efficiently process multiple Package URLs (PURLs) at once.

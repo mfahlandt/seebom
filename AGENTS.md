@@ -131,4 +131,23 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 # Boundaries
 - **Always do:** Write unit tests for new Go packages and Angular components. Ensure ClickHouse bulk inserts are batched. Update `docs/ARCHITECTURE_PLAN.md` when adding new services or features.
 - **Ask first:** Before adding new third-party dependencies (npm or Go modules), modifying the ClickHouse schema, or changing Kubernetes manifest structures.
-- **Never do:** Never commit secrets or API keys. Never use a relational database (like PostgreSQL) for the core SBOM dependency trees. Never split the codebase into multiple repositories. Never add write APIs for license exceptions (frontend is public).
+- **Never do:** Never commit secrets or API keys. Never use a relational database (like PostgreSQL) for the core SBOM dependency trees. Never split the codebase into multiple repositories. Never add write APIs for license exceptions (frontend is public). Never use `bypassSecurityTrustHtml` in Angular — use `sanitizer.sanitize(SecurityContext.HTML, ...)` instead.
+
+# Security Hardening
+
+## API Gateway (`cmd/api-gateway/main.go`)
+- **Security headers** are set via `securityHeadersMiddleware`: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Content-Security-Policy`, `Referrer-Policy`, `Permissions-Policy`.
+- **CORS** is configurable via `CORS_ALLOWED_ORIGINS` env var (default `*` for dev, restrict in production). Only `GET` and `OPTIONS` methods are allowed.
+- **Rate limiting** via `rateLimitMiddleware`: 100 requests per 10s per IP, with background cleanup to prevent memory leaks.
+- **Input validation**: All UUID path parameters (`sbomID`) are validated against `uuidPattern` regex. Vulnerability IDs (`vulnID`) are validated against `vulnIDPattern`. Query parameters like `vex_filter` are whitelisted to known values.
+- **Pagination bounds**: `clampPageSize()` enforces max 500 items per page to prevent abusive queries.
+- **Log injection prevention**: `sanitizeLogParam()` strips newlines/control characters and truncates to 200 chars before logging user-supplied values.
+- **No SQL injection risk**: All ClickHouse queries use parameterized queries (`?` placeholders), never string interpolation with user input.
+
+## Nginx (`ui/nginx.conf`)
+- Security headers: `X-Content-Type-Options`, `X-Frame-Options`, `Content-Security-Policy` (strict `default-src 'self'`), `Referrer-Policy`, `Permissions-Policy`.
+- `server_tokens off` hides nginx version.
+
+## Angular (Frontend)
+- **Never bypass Angular sanitization** — use `DomSanitizer.sanitize(SecurityContext.HTML, ...)` which strips `<script>`, event handlers, and other dangerous HTML while preserving safe formatting (`<strong>`, `<a>`, `<em>`, `<code>`).
+- Dashboard description and disclaimer use safe sanitization, not `bypassSecurityTrustHtml`.

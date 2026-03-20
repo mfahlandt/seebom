@@ -36,7 +36,8 @@ type Config struct {
 	S3Buckets []S3BucketConfig
 
 	// API Gateway
-	APIPort int
+	APIPort            int
+	CORSAllowedOrigins string // Comma-separated allowed origins (default "*" for dev)
 
 	// Worker
 	WorkerID        string
@@ -61,6 +62,7 @@ func Load() (*Config, error) {
 		ClickHousePassword: getEnv("CLICKHOUSE_PASSWORD", ""),
 		SBOMDir:            getEnv("SBOM_DIR", "./sboms"),
 		APIPort:            getEnvInt("API_PORT", 8080),
+		CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "*"),
 		WorkerID:           getEnv("WORKER_ID", ""),
 		WorkerBatchSize:    getEnvInt("WORKER_BATCH_SIZE", 10),
 		SkipOSV:            getEnvBool("SKIP_OSV", false),

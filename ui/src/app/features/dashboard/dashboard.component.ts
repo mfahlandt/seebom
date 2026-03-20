@@ -1,7 +1,7 @@
-import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef, SecurityContext } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
-import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { DomSanitizer } from '@angular/platform-browser';
 import { ApiService } from '../../core/api.service';
 import { DashboardStats } from '../../core/api.models';
 import { SiteConfigService } from '../../core/site-config.service';
@@ -229,8 +229,8 @@ export class DashboardComponent implements OnInit {
 
   dashTitle = '';
   dashSubtitle = '';
-  dashDescription: SafeHtml = '';
-  dashDisclaimer: SafeHtml = '';
+  dashDescription = '';
+  dashDisclaimer = '';
 
   constructor(
     private readonly api: ApiService,
@@ -243,8 +243,10 @@ export class DashboardComponent implements OnInit {
     const dc = this.siteConfig.dashboard;
     this.dashTitle = dc.title;
     this.dashSubtitle = dc.subtitle;
-    this.dashDescription = this.sanitizer.bypassSecurityTrustHtml(dc.description);
-    this.dashDisclaimer = this.sanitizer.bypassSecurityTrustHtml(dc.disclaimer);
+    // Use Angular's built-in sanitizer: strips <script>, event handlers, etc.
+    // but preserves safe formatting tags (<strong>, <a>, <em>, <code>).
+    this.dashDescription = this.sanitizer.sanitize(SecurityContext.HTML, dc.description) ?? '';
+    this.dashDisclaimer = this.sanitizer.sanitize(SecurityContext.HTML, dc.disclaimer) ?? '';
 
     this.api.getDashboardStats().subscribe((data) => {
       this.stats = data;

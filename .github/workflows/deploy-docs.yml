@@ -41,6 +41,17 @@ jobs:
           go-version: '1.24'
           cache-dependency-path: docs/go.sum
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - name: Install PostCSS dependencies
+        working-directory: docs
+        run: npm ci
+
       - name: Setup Pages
         id: pages
         uses: actions/configure-pages@v5

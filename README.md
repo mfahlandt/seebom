@@ -498,3 +498,6 @@ kubectl edit configmap seebom-license-policy -n seebom
 
 [LICENSE](LICENSE)
 
+## Badges
+
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/seebom-labs/seebom/badge)](https://scorecard.dev/viewer/?uri=github.com/seebom-labs/seebom)

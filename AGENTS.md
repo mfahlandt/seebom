@@ -131,9 +131,9 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 - Project grouping with clickable version tags is used in CVE Impact, VEX, and License Overview pages.
 
 # Boundaries
-- **Always do:** Write unit tests for new Go packages and Angular components. Ensure ClickHouse bulk inserts are batched. Update `docs/ARCHITECTURE_PLAN.md` when adding new services or features.
-- **Ask first:** Before adding new third-party dependencies (npm or Go modules), modifying the ClickHouse schema, or changing Kubernetes manifest structures.
-- **Never do:** Never commit secrets or API keys. Never use a relational database (like PostgreSQL) for the core SBOM dependency trees. Never split the codebase into multiple repositories. Never add write APIs for license exceptions (frontend is public). Never use `bypassSecurityTrustHtml` in Angular — use `sanitizer.sanitize(SecurityContext.HTML, ...)` instead.
+- **Always do:** Write unit tests for new Go packages and Angular components. Ensure ClickHouse bulk inserts are batched. Update `docs/ARCHITECTURE_PLAN.md` when adding new services or features. **Before any release tag:** run `govulncheck ./...` (backend), `npm audit` (ui + docs), fix all vulnerabilities, and verify the build passes. Scan all three ecosystems (Go, Angular npm, Hugo docs npm).
+- **Ask first:** Before adding new third-party dependencies (npm or Go modules), modifying the ClickHouse schema, changing Kubernetes manifest structures, or creating/merging pull requests.
+- **Never do:** Never commit secrets or API keys. Never use a relational database (like PostgreSQL) for the core SBOM dependency trees. Never split the codebase into multiple repositories. Never add write APIs for license exceptions (frontend is public). Never use `bypassSecurityTrustHtml` in Angular — use `sanitizer.sanitize(SecurityContext.HTML, ...)` instead. Never invent or guess SHA hashes for pinned GitHub Actions — always verify against the GitHub API. Never push changes to upstream without explicit approval.
 
 # Security Hardening
 

@@ -149,9 +149,14 @@ jobs:
             seebom-${{ steps.version.outputs.version }}.spdx.json
 
       - name: Attest SBOM provenance
+        id: provenance
         uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
         with:
           subject-path: seebom-${{ steps.version.outputs.version }}.spdx.json
+
+      - name: Rename provenance bundle
+        run: |
+          cp "${{ steps.provenance.outputs.bundle-path }}" seebom-${{ steps.version.outputs.version }}.spdx.json.intoto.jsonl
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v2.3.2
@@ -163,6 +168,7 @@ jobs:
             seebom-${{ steps.version.outputs.version }}.spdx.json
             seebom-${{ steps.version.outputs.version }}.spdx.json.sig
             seebom-${{ steps.version.outputs.version }}.spdx.json.pem
+            seebom-${{ steps.version.outputs.version }}.spdx.json.intoto.jsonl
           body: |
             ## Container Images
 

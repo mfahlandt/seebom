@@ -1,6 +1,6 @@
 # SeeBOM – Release & Publishing Guide
 
-> **Updated:** 2026-03-12
+> **Updated:** 2026-05-05
 
 ---
 
@@ -23,14 +23,31 @@ Images are built for **linux/amd64** and **linux/arm64**.
 
 ## How to Release
 
-### 1. Tag the release
+### 1. Scan for vulnerabilities and update dependencies
+
+Before tagging, ensure all dependencies are clean:
+
+```bash
+# Go backend
+cd backend && govulncheck ./... && go get -u ./... && go mod tidy && go build ./... && go test ./...
+
+# Angular UI
+cd ui && npm audit fix && npx ng build
+
+# Hugo docs
+cd docs && npm audit fix
+```
+
+Fix any reported vulnerabilities before proceeding. Check all three ecosystems (Go, UI npm, docs npm).
+
+### 2. Tag the release
 
 ```bash
 git tag v0.1.2
 git push origin v0.1.2
 ```
 
-### 2. What happens automatically
+### 3. What happens automatically
 
 The GitHub Actions workflow (`.github/workflows/release.yml`) triggers on any `v*` tag and:
 
@@ -54,7 +71,7 @@ Release notes are grouped by PR labels (see `.github/release.yml`):
 - 🔧 Maintenance (`chore`, `dependencies`, `ci`)
 - 🔒 Security (`security`)
 
-### 3. Verify the release
+### 4. Verify the release
 
 ```bash
 # Check images exist

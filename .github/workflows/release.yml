@@ -55,7 +55,7 @@ jobs:
 
       - name: Build and push
         id: push
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
           context: ${{ matrix.component.context }}
           target: ${{ matrix.component.target || '' }}
@@ -68,7 +68,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Sign container image
         env:
@@ -78,7 +78,7 @@ jobs:
             "${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.component.name }}@${DIGEST}"
 
       - name: Attest provenance
-        uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.component.name }}
           subject-digest: ${{ steps.push.outputs.digest }}
@@ -139,7 +139,7 @@ jobs:
           artifact-name: seebom-sbom
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@3454372f43399081ed03b604cb2d021dabca52bb # v3.8.2
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Sign release artifacts
         run: |
@@ -150,7 +150,7 @@ jobs:
 
       - name: Attest SBOM provenance
         id: provenance
-        uses: actions/attest-build-provenance@db473fddc028af60658334401dc6fa3ffd8669fd # v2.3.0
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: seebom-${{ steps.version.outputs.version }}.spdx.json
 

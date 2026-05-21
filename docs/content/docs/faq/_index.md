@@ -2,7 +2,7 @@
 title: "FAQ"
 linkTitle: "FAQ"
 type: docs
-weight: 6
+weight: 8
 description: >
   Frequently asked questions about operating and troubleshooting SeeBOM.
 ---

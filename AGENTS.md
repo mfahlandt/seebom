@@ -131,9 +131,15 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 - Project grouping with clickable version tags is used in CVE Impact, VEX, and License Overview pages.
 
 # Boundaries
-- **Always do:** Write unit tests for new Go packages and Angular components. Ensure ClickHouse bulk inserts are batched. Update `docs/ARCHITECTURE_PLAN.md` when adding new services or features. **Before any release tag:** run `govulncheck ./...` (backend), `npm audit` (ui + docs), fix all vulnerabilities, and verify the build passes. Scan all three ecosystems (Go, Angular npm, Hugo docs npm).
+- **Always do:** Write unit tests for new Go packages and Angular components. Ensure ClickHouse bulk inserts are batched. Update `docs/ARCHITECTURE_PLAN.md` when adding new services or features. **Before any minor/major release tag:** run `govulncheck ./...` (backend), `npm audit` (ui + docs), fix all vulnerabilities, and verify the build passes. Scan all three ecosystems (Go, Angular npm, Hugo docs npm). **Update `ROADMAP.md`** when cutting a minor release — mark completed items as done, adjust phase timelines, and ensure the dependency graph is current.
 - **Ask first:** Before adding new third-party dependencies (npm or Go modules), modifying the ClickHouse schema, changing Kubernetes manifest structures, or creating/merging pull requests.
-- **Never do:** Never commit secrets or API keys. Never use a relational database (like PostgreSQL) for the core SBOM dependency trees. Never split the codebase into multiple repositories. Never add write APIs for license exceptions (frontend is public). Never use `bypassSecurityTrustHtml` in Angular — use `sanitizer.sanitize(SecurityContext.HTML, ...)` instead. Never invent or guess SHA hashes for pinned GitHub Actions — always verify against the GitHub API. Never push changes to upstream without explicit approval.
+- **Never do:** Never commit secrets or API keys. Never use a relational database (like PostgreSQL) for the core SBOM dependency trees. Never split the codebase into multiple repositories. Never add write APIs for license exceptions (frontend is public). Never use `bypassSecurityTrustHtml` in Angular — use `sanitizer.sanitize(SecurityContext.HTML, ...)` instead. Never invent or guess SHA hashes for pinned GitHub Actions — always verify against the GitHub API. Never push changes to upstream without explicit approval. Never bump the major version without a migration guide and 3-month advance notice via roadmap.
+
+# Major Version Policy
+- Major bumps happen every **2–3 years**, driven by accumulated breaking changes (schema, API, Helm values), not by calendar.
+- Previous major receives security patches for 12 months after new major GA.
+- A migration guide with automated tooling (schema scripts, Helm values converter) is mandatory before tagging.
+- Projected: v1.0 October 2026, v2.0 earliest Q1/Q2 2028.
 
 # Security Hardening
 

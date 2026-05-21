@@ -2,10 +2,15 @@
 
 Thank you for your interest in contributing to SeeBOM! We welcome contributions from everyone.
 
+> 📖 **Full documentation:** [docs.seebom.dev](https://docs.seebom.dev/)  
+> 🪜 **Contributor Ladder:** [docs.seebom.dev/docs/development/contributor-ladder/](https://docs.seebom.dev/docs/development/contributor-ladder/)  
+> 🤖 **AI Usage Policy:** [docs.seebom.dev/docs/development/ai-policy/](https://docs.seebom.dev/docs/development/ai-policy/)  
+> 🗺️ **Roadmap:** [docs.seebom.dev/docs/roadmap/](https://docs.seebom.dev/docs/roadmap/)
+
 ## Getting Started
 
 1. **Fork** the repository and clone your fork
-2. Set up the development environment (see [Getting Started](https://seebom.cncf.io/docs/getting-started/))
+2. Set up the development environment (see [Getting Started](https://docs.seebom.dev/docs/getting-started/))
 3. Create a feature branch from `main`
 4. Make your changes
 5. Submit a pull request
@@ -24,7 +29,7 @@ make worker   # Terminal 3
 make ui-dev   # Terminal 4
 ```
 
-See the [Development Guide](https://seebom.cncf.io/docs/development/) for details.
+See the [Development Guide](https://docs.seebom.dev/docs/development/) for details.
 
 ## Coding Standards
 
@@ -48,7 +53,7 @@ See the [Development Guide](https://seebom.cncf.io/docs/development/) for detail
 
 - All new features must have tests
 - Run `cd backend && go test ./... -count=1 -race` before submitting
-- See [Testing Guide](https://seebom.cncf.io/docs/development/testing/) for patterns and conventions
+- See [Testing Guide](https://docs.seebom.dev/docs/development/testing/) for patterns and conventions
 
 ## Pull Request Process
 
@@ -73,6 +78,21 @@ See the [Development Guide](https://seebom.cncf.io/docs/development/) for detail
 - **Never** commit secrets or API keys
 - **Never** add write APIs for license exceptions (frontend is public)
 - **Never** use a relational database for core SBOM data
+
+## AI-Assisted Contributions
+
+We welcome AI-assisted contributions (Copilot, ChatGPT, Claude, Cursor, etc.). Key rules:
+
+- **You sign, not the AI** — every commit needs your DCO sign-off (`git commit -s`)
+- **No `Co-authored-by: AI` trailers** — you are the sole author
+- **Follow [AGENTS.md](AGENTS.md)** — feed it to your AI tool for project context
+- **Review everything** — you're responsible for what you submit
+
+See the full [AI Usage Policy](https://docs.seebom.dev/docs/development/ai-policy/) for details.
+
+## Contributor Ladder
+
+We have a transparent contributor ladder: Community → Contributor → Reviewer → Maintainer. See the [Contributor Ladder](https://docs.seebom.dev/docs/development/contributor-ladder/) for promotion criteria and expectations at each level.
 
 ## Reporting Issues
 

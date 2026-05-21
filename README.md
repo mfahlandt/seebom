@@ -7,10 +7,18 @@
 <p align="center">
   <a href="https://github.com/seebom-labs/seebom/actions/workflows/ci.yml"><img src="https://github.com/seebom-labs/seebom/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/seebom-labs/seebom"><img src="https://api.scorecard.dev/projects/github.com/seebom-labs/seebom/badge" alt="OpenSSF Scorecard"></a>
-  <a href="https://www.bestpractices.dev/projects/TODO"><img src="https://www.bestpractices.dev/projects/TODO/badge" alt="OpenSSF Best Practices"></a>
+  <a href="https://www.bestpractices.dev/projects/12903"><img src="https://www.bestpractices.dev/projects/12903/badge" alt="OpenSSF Best Practices"></a>
 </p>
 
 Ingest 1000+ SPDX SBOMs, scan for vulnerabilities via OSV, enforce license compliance, and apply VEX statements — all visualized in a fast Angular dashboard backed by ClickHouse analytics.
+
+<p align="center">
+  <a href="https://docs.seebom.dev/docs/getting-started/">Getting Started</a> ·
+  <a href="https://docs.seebom.dev/docs/architecture/">Architecture</a> ·
+  <a href="https://docs.seebom.dev/docs/roadmap/">Roadmap</a> ·
+  <a href="https://docs.seebom.dev/docs/development/contributor-ladder/">Contributing</a> ·
+  <a href="https://docs.seebom.dev/docs/development/ai-policy/">AI Policy</a>
+</p>
 
 <p align="center">
   <img src="docs/static/images/dashboard-screenshot.png" alt="SeeBOM Dashboard" width="900">
@@ -329,7 +337,7 @@ sboms/*.spdx.json + *.openvex.json
              │
              ▼
 ┌─────────────────────────┐
-│   API Gateway           │  16 REST endpoints, stateless
+│   API Gateway           │  19 REST endpoints, stateless
 │   (Go binary)           │
 └────────────┬────────────┘
              │
@@ -358,7 +366,8 @@ The Parsing Worker processes each SBOM in a carefully ordered pipeline:
 See [docs/ARCHITECTURE_PLAN.md](docs/ARCHITECTURE_PLAN.md) for the full blueprint.  
 See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for Kubernetes deployment.  
 See [docs/RELEASE.md](docs/RELEASE.md) for building and publishing container images.  
-See [docs/TESTING.md](docs/TESTING.md) for writing and running tests.
+See [docs/TESTING.md](docs/TESTING.md) for writing and running tests.  
+See the [API Reference](https://docs.seebom.dev/docs/api-reference/) for complete endpoint documentation.
 
 ---
 
@@ -412,7 +421,8 @@ See [docs/TESTING.md](docs/TESTING.md) for writing and running tests.
 | GET | `/healthz` | Health check |
 | GET | `/api/v1/stats/dashboard` | Dashboard stats (VEX effective/suppressed counts) |
 | GET | `/api/v1/stats/dependencies?limit=N` | Top N dependencies across all projects |
-| GET | `/api/v1/sboms?page=&page_size=` | Paginated SBOM list |
+| GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Packages with inconsistent versions across projects |
+| GET | `/api/v1/sboms?page=&page_size=&search=` | Paginated SBOM list (searchable) |
 | GET | `/api/v1/sboms/{id}/detail` | SBOM detail with severity breakdown |
 | GET | `/api/v1/sboms/{id}/vulnerabilities` | Vulnerabilities for a specific SBOM |
 | GET | `/api/v1/sboms/{id}/licenses` | License breakdown for a specific SBOM |
@@ -425,6 +435,10 @@ See [docs/TESTING.md](docs/TESTING.md) for writing and running tests.
 | GET | `/api/v1/license-policy` | Active license classification policy (permissive/copyleft lists) |
 | GET | `/api/v1/vex/statements?page=&page_size=` | Paginated VEX statements |
 | GET | `/api/v1/packages/archived` | Packages using archived GitHub repos (no longer maintained) |
+| GET | `/api/v1/packages/search?q=&page=&page_size=` | Package name search across all SBOMs |
+| GET | `/api/v1/packages/detail?name=&page=&page_size=` | All projects using a specific package (paginated) |
+
+For complete API documentation with request/response examples, see the [API Reference](https://docs.seebom.dev/docs/api-reference/).
 
 ---
 
@@ -500,9 +514,21 @@ kubectl edit configmap seebom-license-policy -n seebom
 
 ---
 
+## Contributing
+
+We welcome contributions! See the [Contributing Guide](CONTRIBUTING.md) for how to get started.
+
+- 📖 [Full Documentation](https://docs.seebom.dev/)
+- 🗺️ [Roadmap](https://docs.seebom.dev/docs/roadmap/)
+- 🪜 [Contributor Ladder](https://docs.seebom.dev/docs/development/contributor-ladder/)
+- 🤖 [AI Usage Policy](https://docs.seebom.dev/docs/development/ai-policy/)
+- 🛡️ [Security Policy](SECURITY.md)
+
+---
+
 ## License
 
-[LICENSE](LICENSE)
+[Apache License 2.0](LICENSE)
 
 ## Badges
 

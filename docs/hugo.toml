@@ -77,6 +77,11 @@ enableGitInfo = false
     url = "/docs/release/"
     identifier = "release"
   [[menu.main]]
+    name = "Roadmap"
+    weight = 65
+    url = "/docs/roadmap/"
+    identifier = "roadmap"
+  [[menu.main]]
     name = "FAQ"
     weight = 70
     url = "/docs/faq/"

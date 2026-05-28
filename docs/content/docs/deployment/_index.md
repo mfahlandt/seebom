@@ -389,7 +389,36 @@ helm install seebom ./deploy/helm/seebom \
 
 ---
 
-## 9. Verifying the Deployment
+## 9. Headless Mode (API-Only)
+
+For CI/CD integrations, custom dashboards, or environments where the Angular UI is not needed, SeeBOM can be deployed in **headless mode**. This skips all UI-related resources (Deployment, Service, nginx ConfigMap) and reduces the cluster's resource footprint.
+
+```yaml
+# values-headless.yaml
+ui:
+  enabled: false
+
+apiGateway:
+  auth:
+    enabled: true
+    serviceToken: "my-ci-token"
+```
+
+With `ui.enabled: false`:
+- No UI Deployment, Service, or ConfigMaps are rendered
+- All 19 API endpoints remain fully functional
+- The API Gateway is the only externally exposed component
+- Pair with `apiGateway.auth.enabled: true` to secure access
+
+This is ideal for:
+- **CI/CD pipelines** that push SBOMs and query results programmatically
+- **Grafana/custom dashboards** that consume the REST API directly
+- **Resource-constrained clusters** where every pod counts
+- **Air-gapped deployments** where the UI is served separately
+
+---
+
+## 10. Verifying the Deployment
 
 ```bash
 kubectl get pods -l app.kubernetes.io/name=seebom
@@ -413,4 +442,5 @@ kubectl exec -it $(kubectl get pod -l app.kubernetes.io/component=api-gateway -o
 | **Site Config** | ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |
 | **S3 credentials** | Secret | `--set s3.accessKey=...` or `s3.credentialsSecret` (existing K8s Secret) |
 | **API Authentication** | Env vars (Secret recommended) | `AUTH_ENABLED=true` + `SERVICE_TOKEN` and/or `API_KEYS`; off by default |
+| **Headless Mode** | Helm value | `ui.enabled: false` — skips UI Deployment/Service/ConfigMaps |
 

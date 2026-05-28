@@ -1,4 +1,4 @@
-{{- if .Values.ui.siteConfig.enabled }}
+{{- if and .Values.ui.enabled .Values.ui.siteConfig.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

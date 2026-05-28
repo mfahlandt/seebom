@@ -1,0 +1,22 @@
+# values-headless.yaml – API-only deployment (no UI)
+#
+# Use this for CI/CD integrations, programmatic consumers, or
+# resource-constrained clusters where the Angular frontend is not needed.
+#
+# Usage:
+#   helm install seebom ./deploy/helm/seebom -f examples/kubernetes/values-headless.yaml
+#
+# All 19 REST API endpoints remain fully functional at the API Gateway service.
+
+# Disable the Angular UI entirely (no Deployment, Service, or ConfigMaps).
+ui:
+  enabled: false
+
+# Strongly recommended: enable authentication when running headless,
+# since there is no UI proxy to inject tokens automatically.
+apiGateway:
+  auth:
+    enabled: true
+    serviceToken: "CHANGE-ME"  # Replace with a real token
+    # apiKeys: "ci-pipeline-key,monitoring-key"
+

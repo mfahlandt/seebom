@@ -155,7 +155,11 @@ apiGateway:
       apiKeysKey: "API_KEYS"
 
 # UI (Deployment)
+# Set ui.enabled to false for headless (API-only) deployments.
+# This skips all UI resources (Deployment, Service, ConfigMaps) and reduces
+# the resource footprint. All API endpoints remain fully functional.
 ui:
+  enabled: true
   replicas: 1
   service:
     type: ClusterIP

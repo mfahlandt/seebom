@@ -171,11 +171,13 @@ Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
        │ Custom CSS theme mountable without Angular rebuild
 ```
 
-## 3. API Endpoints (19)
+## 3. API Endpoints (23)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/healthz` | Health check |
+| GET | `/livez` | Liveness probe (always 200 if process alive) |
+| GET | `/readyz` | Readiness probe (checks ClickHouse connectivity) |
 | GET | `/api/v1/stats/dashboard` | Dashboard statistics (incl. VEX effective/suppressed, license breakdown) |
 | GET | `/api/v1/stats/dependencies?limit=N` | Top-N dependencies cross-project with vuln count |
 | GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Packages with inconsistent versions across projects (paginated, searchable) |
@@ -194,6 +196,9 @@ Angular UI (13 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
 | GET | `/api/v1/packages/archived` | Packages using archived GitHub repos (no longer maintained) |
 | GET | `/api/v1/packages/search?q=&page=&page_size=` | Fuzzy package name search across all SBOMs (ILIKE, paginated) |
 | GET | `/api/v1/packages/detail?name=&page=&page_size=` | All projects using a specific package (paginated) |
+| GET | `/api/v1/clusters` | List all clusters with summary stats (SBOM count, packages, vulns) |
+| GET | `/api/v1/clusters/{name}/stats` | Per-cluster dashboard statistics |
+| GET | `/api/v1/clusters/{name}/sboms?page=&page_size=` | Paginated SBOM list for a specific cluster |
 
 ## 4. ClickHouse Schema (11 Migrations)
 

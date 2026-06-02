@@ -326,9 +326,9 @@ Even when authentication is enabled, the following endpoints are always reachabl
 
 | Endpoint | Purpose |
 |----------|---------|
-| `/healthz` | Kubernetes liveness/readiness probe |
-| `/livez` | Reserved for #137 (liveness probe) |
-| `/readyz` | Reserved for #137 (readiness probe) |
+| `/healthz` | Kubernetes health check (legacy, always 200) |
+| `/livez` | Liveness probe (always 200 if process running) |
+| `/readyz` | Readiness probe (pings ClickHouse, 503 if DB unavailable) |
 | `OPTIONS *` | CORS preflight |
 
 ### Security notes

@@ -311,6 +311,57 @@ func main() {
 		writeJSON(w, http.StatusOK, result)
 	})
 
+	// ── Cluster Endpoints (#132, #133) ────────────────────────────────
+
+	// List all clusters with summary statistics.
+	mux.HandleFunc("GET /api/v1/clusters", func(w http.ResponseWriter, r *http.Request) {
+		clusters, err := chClient.QueryClusters(r.Context())
+		if err != nil {
+			log.Printf("ERROR: list clusters: %v", err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch clusters")
+			return
+		}
+		writeJSON(w, http.StatusOK, clusters)
+	})
+
+	// Cluster detail stats.
+	mux.HandleFunc("GET /api/v1/clusters/{name}/stats", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if name == "" || len(name) > 200 {
+			writeError(w, http.StatusBadRequest, "Invalid cluster name")
+			return
+		}
+		stats, err := chClient.QueryClusterStats(r.Context(), name)
+		if err != nil {
+			log.Printf("ERROR: cluster stats for %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch cluster stats")
+			return
+		}
+		if stats.TotalSBOMs == 0 {
+			writeError(w, http.StatusNotFound, "Cluster not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, stats)
+	})
+
+	// Cluster SBOMs (paginated).
+	mux.HandleFunc("GET /api/v1/clusters/{name}/sboms", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if name == "" || len(name) > 200 {
+			writeError(w, http.StatusBadRequest, "Invalid cluster name")
+			return
+		}
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+		resp, err := chClient.QueryClusterSBOMs(r.Context(), name, page, pageSize)
+		if err != nil {
+			log.Printf("ERROR: cluster sboms for %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch cluster SBOMs")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	})
+
 	// CORS + security middleware for Angular dev server.
 	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
 	// Auth sits closest to the mux so 401s still get CORS + security headers.

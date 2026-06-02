@@ -64,11 +64,12 @@ After Phase 2 completes, SeeBOM reaches **v1.0.0** — the first stable release:
 **v1.0 Criteria:**
 - [x] ~~Version Skew Detection~~ (#37)
 - [x] ~~API Authentication (Service Token + API Key)~~ (#134)
-- [ ] Cluster-aware schema (#131)
-- [ ] All cluster/namespace endpoints finalized (#132, #133, #138)
+- [x] ~~Cluster-aware schema~~ (#131)
+- [x] ~~Cluster listing + detail endpoints~~ (#132, #133)
+- [ ] All namespace endpoints finalized (#138)
 - [ ] Upload endpoint stable (#135)
-- [ ] CycloneDX parsing (#55)
-- [ ] Health probes (#137)
+- [x] ~~CycloneDX parsing~~ (#55)
+- [x] ~~Health probes~~ (#137)
 - [ ] Versioned docs (#145)
 
 ---

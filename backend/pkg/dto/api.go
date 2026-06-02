@@ -224,3 +224,25 @@ type PackageDetailResponse struct {
 	PageSize      uint64                    `json:"page_size"`
 }
 
+// ClusterListItem represents a cluster in the cluster listing.
+type ClusterListItem struct {
+	Name         string `json:"name"`
+	SBOMCount    uint64 `json:"sbom_count"`
+	PackageCount uint64 `json:"package_count"`
+	VulnCount    uint64 `json:"vuln_count"`
+	LastIngested string `json:"last_ingested,omitempty"`
+}
+
+// ClusterStats is the response DTO for per-cluster statistics.
+type ClusterStats struct {
+	Cluster                  string            `json:"cluster"`
+	TotalSBOMs               uint64            `json:"total_sboms"`
+	TotalPackages            uint64            `json:"total_packages"`
+	TotalVulnerabilities     uint64            `json:"total_vulnerabilities"`
+	CriticalVulns            uint64            `json:"critical_vulns"`
+	HighVulns                uint64            `json:"high_vulns"`
+	MediumVulns              uint64            `json:"medium_vulns"`
+	LowVulns                 uint64            `json:"low_vulns"`
+	LicenseBreakdown         map[string]uint64 `json:"license_breakdown"`
+	LastIngested             string            `json:"last_ingested,omitempty"`
+}

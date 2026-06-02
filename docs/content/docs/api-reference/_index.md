@@ -49,9 +49,9 @@ Even when authentication is enabled, the following endpoints bypass auth so Kube
 
 | Endpoint | Reason |
 |----------|--------|
-| `/healthz` | K8s liveness/readiness probe |
-| `/livez` | Reserved for liveness probe (#137) |
-| `/readyz` | Reserved for readiness probe (#137) |
+| `/healthz` | K8s health check (legacy, always 200) |
+| `/livez` | Liveness probe (always 200 if process alive) |
+| `/readyz` | Readiness probe (pings ClickHouse, 503 if unavailable) |
 | `OPTIONS *` | CORS preflight |
 
 ### Responses
@@ -121,6 +121,29 @@ Health check endpoint for Kubernetes probes.
 **Response:** `200 OK`
 ```json
 {"status": "ok"}
+```
+
+### `GET /livez`
+
+Liveness probe. Returns `200 OK` as long as the API Gateway process is running. Used by Kubernetes to determine if the pod should be restarted.
+
+**Response:** `200 OK`
+```json
+{"status": "ok"}
+```
+
+### `GET /readyz`
+
+Readiness probe. Pings ClickHouse to verify database connectivity. Returns `503 Service Unavailable` if the database is unreachable. Kubernetes uses this to remove the pod from service endpoints until it recovers.
+
+**Response (healthy):** `200 OK`
+```json
+{"status": "ok"}
+```
+
+**Response (unhealthy):** `503 Service Unavailable`
+```json
+{"error": "ClickHouse unavailable"}
 ```
 
 ---
@@ -677,6 +700,104 @@ Packages from archived/unmaintained GitHub repositories (supply chain risk indic
     "projects": ["etcd-v3.5.12", "containerd-v1.7.2"]
   }
 ]
+```
+
+---
+
+## Clusters
+
+### `GET /api/v1/clusters`
+
+List all known clusters with summary statistics. Returns an array of clusters sorted by SBOM count (descending).
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "name": "production",
+    "sbom_count": 85,
+    "package_count": 12400,
+    "vuln_count": 423,
+    "last_ingested": "2026-06-01T14:30:00Z"
+  },
+  {
+    "name": "staging",
+    "sbom_count": 42,
+    "package_count": 6100,
+    "vuln_count": 198,
+    "last_ingested": "2026-06-01T12:00:00Z"
+  }
+]
+```
+
+{{% alert title="Note" color="info" %}}
+Clusters with `name: ""` represent SBOMs ingested before multi-cluster support was enabled (migration 012). They appear as an empty string in the listing.
+{{% /alert %}}
+
+### `GET /api/v1/clusters/{name}/stats`
+
+Per-cluster dashboard statistics including severity breakdown and license distribution.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Cluster name (max 200 chars) |
+
+**Response:** `200 OK`
+```json
+{
+  "cluster": "production",
+  "total_sboms": 85,
+  "total_packages": 12400,
+  "total_vulnerabilities": 423,
+  "critical_vulns": 12,
+  "high_vulns": 89,
+  "medium_vulns": 210,
+  "low_vulns": 112,
+  "license_breakdown": {
+    "permissive": 9800,
+    "copyleft": 340,
+    "unknown": 2260
+  },
+  "last_ingested": "2026-06-01T14:30:00Z"
+}
+```
+
+**Error Responses:**
+- `400 Bad Request` — cluster name empty or exceeds 200 characters
+- `404 Not Found` — no SBOMs exist for this cluster
+
+### `GET /api/v1/clusters/{name}/sboms`
+
+Paginated list of SBOMs for a specific cluster.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Cluster name (max 200 chars) |
+
+**Query Parameters:** Standard pagination (`page`, `page_size`)
+
+**Response:** `200 OK` — Standard `PaginatedResponse[SBOMListItem]`
+```json
+{
+  "data": [
+    {
+      "sbom_id": "550e8400-e29b-41d4-a716-446655440000",
+      "source_file": "s3://cncf-project-sboms/containerd/v1.7.spdx.json",
+      "spdx_version": "SPDX-2.3",
+      "document_name": "containerd-v1.7",
+      "package_count": 245,
+      "vuln_count": 12,
+      "ingested_at": "2026-06-01T14:30:00Z"
+    }
+  ],
+  "total": 85,
+  "page": 1,
+  "page_size": 50
+}
 ```
 
 ---

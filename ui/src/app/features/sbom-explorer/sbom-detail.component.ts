@@ -26,6 +26,7 @@ type Tab = 'vulns' | 'licenses' | 'deps';
         <a routerLink="/sboms" class="back">← Back</a>
         <h1>{{ detail.document_name || detail.source_file }}</h1>
         <span class="badge">{{ detail.spdx_version }}</span>
+        <button class="download-btn" title="Download original SBOM" (click)="downloadSbom()">⬇ Download</button>
       </div>
 
       <div class="stats-row">
@@ -188,6 +189,12 @@ type Tab = 'vulns' | 'licenses' | 'deps';
     .back { color: var(--accent); text-decoration: none; font-size: 0.8rem; font-weight: 500; }
     h1 { margin: 0; flex: 1; font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; }
     .badge { background: var(--bg); color: var(--text-secondary); padding: 3px 8px; border-radius: 2px; font-size: 0.7rem; font-weight: 500; }
+    .download-btn {
+      background: none; border: 1px solid var(--border); border-radius: 4px;
+      cursor: pointer; padding: 5px 12px; font-size: 0.75rem; color: var(--text-secondary);
+      font-family: inherit; font-weight: 500; transition: all 0.15s;
+    }
+    .download-btn:hover { border-color: var(--accent); color: var(--accent); }
     .stats-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
     .stat { background: var(--surface-alt); padding: 6px 14px; border-radius: 2px; font-size: 0.8rem; border: 1px solid var(--border); }
     .critical { color: var(--severity-critical); }
@@ -395,6 +402,17 @@ export class SbomDetailComponent implements OnInit {
   trackByVuln(_i: number, v: VulnerabilityListItem): string { return v.vuln_id + v.purl; }
   trackByDep(_i: number, d: FlatDep): number { return d.index; }
   trackByLicense(_i: number, lic: SBOMLicenseBreakdownItem): string { return lic.license_id; }
+
+  downloadSbom(): void {
+    if (!this.detail) return;
+    const url = this.api.getSbomDownloadUrl(this.detail.sbom_id);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
 
   toggleLicense(licenseId: string): void {
     this.expandedLicense = this.expandedLicense === licenseId ? null : licenseId;

@@ -247,5 +247,11 @@ describe('ApiService', () => {
     expect(req.request.method).toBe('GET');
     req.flush([]);
   });
+
+  it('should return correct SBOM download URL', () => {
+    const sbomId = '550e8400-e29b-41d4-a716-446655440000';
+    const url = service.getSbomDownloadUrl(sbomId);
+    expect(url).toBe(`/api/v1/sboms/${sbomId}/download`);
+  });
 });
 

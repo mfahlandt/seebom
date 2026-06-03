@@ -129,5 +129,13 @@ export class ApiService {
       .set('page_size', pageSize.toString());
     return this.http.get<PackageDetailResponse>(`${this.baseUrl}/packages/detail`, { params });
   }
+
+  /**
+   * Returns the download URL for a given SBOM.
+   * The browser can navigate to this URL directly to trigger a file download.
+   */
+  getSbomDownloadUrl(sbomId: string): string {
+    return `${this.baseUrl}/sboms/${sbomId}/download`;
+  }
 }
 

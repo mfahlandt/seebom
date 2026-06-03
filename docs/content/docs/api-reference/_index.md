@@ -313,6 +313,34 @@ Detailed SBOM information including vulnerability severity breakdown.
 **Errors:**
 - `400` — Invalid UUID format
 
+### `GET /api/v1/sboms/{id}/download`
+
+Download the original SBOM JSON file. Streams the file from S3 or local filesystem depending on ingestion source.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | SBOM identifier |
+
+**Response:** `200 OK` — Binary stream with `Content-Disposition: attachment`
+
+| Header | Value |
+|--------|-------|
+| `Content-Type` | `application/json` |
+| `Content-Disposition` | `attachment; filename="<original-filename>"` |
+
+**Errors:**
+- `400` — Invalid UUID format
+- `404` — SBOM not found or source file no longer available in storage
+- `503` — S3 not configured (source is S3 but API Gateway has no S3 credentials)
+
+**Example:**
+```bash
+curl -O -J \
+  http://localhost:8080/api/v1/sboms/a1b2c3d4-e5f6-7890-abcd-ef1234567890/download
+```
+
 ### `GET /api/v1/sboms/{id}/vulnerabilities`
 
 All vulnerabilities found in a specific SBOM, including VEX status.

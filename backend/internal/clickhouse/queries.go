@@ -519,3 +519,16 @@ func (c *Client) QueryVEXStatements(ctx context.Context, page, pageSize uint64) 
 		PageSize: pageSize,
 	}, nil
 }
+
+// QuerySBOMSourceFile returns the source_file path for a given SBOM ID.
+// Returns empty string if the SBOM is not found.
+func (c *Client) QuerySBOMSourceFile(ctx context.Context, sbomID string) (string, error) {
+	var sourceFile string
+	err := c.Conn.QueryRow(ctx,
+		"SELECT source_file FROM sboms FINAL WHERE sbom_id = ? LIMIT 1", sbomID).Scan(&sourceFile)
+	if err != nil {
+		return "", fmt.Errorf("failed to query source file for sbom %s: %w", sbomID, err)
+	}
+	return sourceFile, nil
+}
+

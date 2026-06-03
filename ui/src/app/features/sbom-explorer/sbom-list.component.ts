@@ -46,6 +46,7 @@ import { SBOMListItem } from '../../core/api.models';
             </span>
             <span class="date">{{ sbom.ingested_at | date:'short' }}</span>
           </a>
+          <button class="download-btn" title="Download SBOM" (click)="downloadSbom(sbom.sbom_id, $event)">⬇</button>
         </div>
       </cdk-virtual-scroll-viewport>
 
@@ -95,6 +96,12 @@ import { SBOMListItem } from '../../core/api.models';
       padding: 0 12px; text-decoration: none; color: inherit; transition: background 0.1s;
     }
     .sbom-link:hover { background: var(--surface-alt); }
+    .download-btn {
+      background: none; border: 1px solid var(--border); border-radius: 4px;
+      cursor: pointer; padding: 4px 8px; font-size: 0.75rem; color: var(--text-secondary);
+      margin-right: 12px; flex-shrink: 0; transition: all 0.15s;
+    }
+    .download-btn:hover { border-color: var(--accent); color: var(--accent); }
     .name { flex: 1; font-weight: 500; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .badge { background: var(--bg); color: var(--text-secondary); padding: 2px 6px; border-radius: 2px; font-size: 0.7rem; font-weight: 500; }
     .packages { color: var(--text-secondary); font-size: 0.8rem; width: 110px; }
@@ -192,5 +199,17 @@ export class SbomListComponent implements OnInit, OnDestroy {
 
   trackBySbom(_index: number, item: SBOMListItem): string {
     return item.sbom_id;
+  }
+
+  downloadSbom(sbomId: string, event: Event): void {
+    event.stopPropagation();
+    event.preventDefault();
+    const url = this.api.getSbomDownloadUrl(sbomId);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   }
 }

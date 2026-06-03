@@ -3,8 +3,11 @@ package main
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,6 +17,7 @@ import (
 	"github.com/seebom-labs/seebom/backend/internal/clickhouse"
 	"github.com/seebom-labs/seebom/backend/internal/config"
 	"github.com/seebom-labs/seebom/backend/internal/license"
+	s3client "github.com/seebom-labs/seebom/backend/internal/s3"
 )
 
 // uuidPattern validates UUID path parameters to prevent injection.
@@ -35,6 +39,30 @@ func main() {
 		log.Fatalf("Failed to connect to ClickHouse: %v", err)
 	}
 	defer chClient.Close()
+
+	// Initialize S3 client for SBOM download (if S3 sources are configured).
+	var s3c *s3client.Client
+	if cfg.HasS3Sources() {
+		bucketConfigs := make([]s3client.BucketConfig, len(cfg.S3Buckets))
+		for i, b := range cfg.S3Buckets {
+			bucketConfigs[i] = s3client.BucketConfig{
+				Name:         b.Name,
+				Endpoint:     b.Endpoint,
+				Region:       b.Region,
+				AccessKey:    b.AccessKey,
+				SecretKey:    b.SecretKey,
+				Prefix:       b.Prefix,
+				UsePathStyle: b.UsePathStyle,
+				UseSSL:       b.UseSSL,
+			}
+		}
+		s3c, err = s3client.NewClient(bucketConfigs)
+		if err != nil {
+			log.Printf("WARNING: Failed to create S3 client for downloads: %v", err)
+		} else {
+			log.Printf("S3 client initialized for downloads (%d bucket(s))", len(cfg.S3Buckets))
+		}
+	}
 
 	exceptionsPath := cfg.ExceptionsFile
 	sbomDirExceptionsPath := cfg.SBOMDir + "/license-exceptions.json"
@@ -360,6 +388,68 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, resp)
+	})
+
+	// ── SBOM Download (#144) ──────────────────────────────────────────
+	// Streams the original SBOM file from S3 or local filesystem.
+	mux.HandleFunc("GET /api/v1/sboms/{id}/download", func(w http.ResponseWriter, r *http.Request) {
+		sbomID := r.PathValue("id")
+		if !isValidUUID(sbomID) {
+			writeError(w, http.StatusBadRequest, "Invalid SBOM ID")
+			return
+		}
+
+		sourceFile, err := chClient.QuerySBOMSourceFile(r.Context(), sbomID)
+		if err != nil || sourceFile == "" {
+			log.Printf("ERROR: sbom download lookup for %s: %v", sanitizeLogParam(sbomID), err)
+			writeError(w, http.StatusNotFound, "SBOM not found")
+			return
+		}
+
+		// Determine filename for Content-Disposition.
+		filename := filepath.Base(sourceFile)
+		if filename == "." || filename == "/" {
+			filename = sbomID + ".json"
+		}
+
+		// Open the file from S3 or local filesystem.
+		var rc io.ReadCloser
+		if strings.HasPrefix(sourceFile, "s3://") {
+			if s3c == nil {
+				writeError(w, http.StatusServiceUnavailable, "S3 not configured for downloads")
+				return
+			}
+			bucket, key, parseErr := s3client.ParseURI(sourceFile)
+			if parseErr != nil {
+				log.Printf("ERROR: sbom download parse URI %s: %v", sanitizeLogParam(sourceFile), parseErr)
+				writeError(w, http.StatusInternalServerError, "Invalid source file path")
+				return
+			}
+			rc, err = s3c.GetObject(r.Context(), bucket, key)
+			if err != nil {
+				log.Printf("ERROR: sbom download S3 get %s: %v", sanitizeLogParam(sourceFile), err)
+				writeError(w, http.StatusNotFound, "SBOM file not found in storage")
+				return
+			}
+		} else {
+			// Local filesystem.
+			absPath := filepath.Join(cfg.SBOMDir, sourceFile)
+			f, openErr := os.Open(absPath)
+			if openErr != nil {
+				log.Printf("ERROR: sbom download local open %s: %v", sanitizeLogParam(absPath), openErr)
+				writeError(w, http.StatusNotFound, "SBOM file not found in storage")
+				return
+			}
+			rc = f
+		}
+		defer rc.Close()
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+		w.WriteHeader(http.StatusOK)
+		if _, err := io.Copy(w, rc); err != nil {
+			log.Printf("ERROR: sbom download stream for %s: %v", sanitizeLogParam(sbomID), err)
+		}
 	})
 
 	// CORS + security middleware for Angular dev server.

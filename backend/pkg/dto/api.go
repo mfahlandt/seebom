@@ -224,6 +224,49 @@ type PackageDetailResponse struct {
 	PageSize      uint64                    `json:"page_size"`
 }
 
+// GlobalSearchPackage is a package hit in the global search response.
+type GlobalSearchPackage struct {
+	PackageName  string `json:"package_name"`
+	PURL         string `json:"purl"`
+	ProjectCount uint64 `json:"project_count"`
+}
+
+// GlobalSearchProject is a project hit in the global search response.
+type GlobalSearchProject struct {
+	ProjectName  string `json:"project_name"`
+	SBOMCount    uint64 `json:"sbom_count"`
+	LatestSBOMID string `json:"latest_sbom_id"`
+}
+
+// GlobalSearchVulnerability is a vulnerability hit in the global search response.
+type GlobalSearchVulnerability struct {
+	VulnID        string `json:"vuln_id"`
+	Severity      string `json:"severity"`
+	Summary       string `json:"summary"`
+	AffectedSBOMs uint64 `json:"affected_sboms"`
+}
+
+// GlobalSearchLicense is a license hit in the global search response.
+type GlobalSearchLicense struct {
+	LicenseID string `json:"license_id"`
+	Category  string `json:"category"`
+	SBOMCount uint64 `json:"sbom_count"`
+}
+
+// GlobalSearchResponse is the faceted response for /api/v1/search.
+// Each facet returns up to `limit` items plus the total match count.
+type GlobalSearchResponse struct {
+	Query                string                      `json:"query"`
+	Packages             []GlobalSearchPackage       `json:"packages"`
+	TotalPackages        uint64                      `json:"total_packages"`
+	Projects             []GlobalSearchProject       `json:"projects"`
+	TotalProjects        uint64                      `json:"total_projects"`
+	Vulnerabilities      []GlobalSearchVulnerability `json:"vulnerabilities"`
+	TotalVulnerabilities uint64                      `json:"total_vulnerabilities"`
+	Licenses             []GlobalSearchLicense       `json:"licenses"`
+	TotalLicenses        uint64                      `json:"total_licenses"`
+}
+
 // ClusterListItem represents a cluster in the cluster listing.
 type ClusterListItem struct {
 	Name         string `json:"name"`

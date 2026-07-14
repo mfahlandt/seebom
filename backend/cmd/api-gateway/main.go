@@ -354,6 +354,24 @@ func main() {
 		writeJSON(w, http.StatusOK, result)
 	})
 
+	// ── Global Search ─────────────────────────────────────────────────
+	// Faceted search across packages, projects, vulnerabilities, licenses.
+	mux.HandleFunc("GET /api/v1/search", func(w http.ResponseWriter, r *http.Request) {
+		q := sanitizeSearchTerm(r.URL.Query().Get("q"))
+		if len(q) < minSearchQueryLen {
+			writeError(w, http.StatusBadRequest, "Query parameter 'q' must be at least 2 characters")
+			return
+		}
+		limit := clampSearchLimit(parseUint64(r.URL.Query().Get("limit"), 5))
+		result, err := chClient.QueryGlobalSearch(r.Context(), q, limit)
+		if err != nil {
+			log.Printf("ERROR: global search q=%s: %v", sanitizeLogParam(q), err)
+			writeError(w, http.StatusInternalServerError, "Failed to perform search")
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+
 	// ── Cluster Endpoints (#132, #133) ────────────────────────────────
 
 	// List all clusters with summary statistics.
@@ -534,6 +552,21 @@ func clampPageSize(v uint64) uint64 {
 	}
 	if v > maxPageSize {
 		return maxPageSize
+	}
+	return v
+}
+
+// minSearchQueryLen is the minimum length for a global search query.
+const minSearchQueryLen = 2
+
+// clampSearchLimit bounds the per-facet result limit for global search.
+func clampSearchLimit(v uint64) uint64 {
+	const maxSearchLimit = 50
+	if v == 0 {
+		return 5
+	}
+	if v > maxSearchLimit {
+		return maxSearchLimit
 	}
 	return v
 }

@@ -1,6 +1,6 @@
 module github.com/seebom-labs/bomhort/docs
 
-go 1.25.11
+go 1.25.12
 
 require (
 	github.com/google/docsy v0.14.3 // indirect

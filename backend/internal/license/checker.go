@@ -173,7 +173,8 @@ func Check(packageNames, packageLicenses []string) []Result {
 
 // CheckWithExceptions analyzes packages/licenses with optional exception rules.
 // Exempted packages are tracked separately and don't count as non-compliant.
-func CheckWithExceptions(packageNames, packageLicenses []string, exceptions *ExceptionIndex) []Result {
+// project is the exact SBOM document name for project-scoped rules.
+func CheckWithExceptions(packageNames, packageLicenses []string, exceptions *ExceptionIndex, project ...string) []Result {
 	type licenseAgg struct {
 		count         uint32
 		packages      []string
@@ -223,7 +224,7 @@ func CheckWithExceptions(packageNames, packageLicenses []string, exceptions *Exc
 			// Permissive licenses are always compliant – don't track packages.
 		} else if exceptions != nil {
 			// Copyleft or unknown: check per-package exception.
-			if exempt, _ := exceptions.IsExempt(name, lic); exempt {
+			if exempt, _ := exceptions.IsExempt(name, lic, project...); exempt {
 				entry.exempted = append(entry.exempted, name)
 			} else {
 				entry.packages = append(entry.packages, name)

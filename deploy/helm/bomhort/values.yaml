@@ -107,10 +107,15 @@ gitSync:
   # For private repos, mount a Secret with SSH key or token:
   # secretName: git-sync-credentials
 
-# License exceptions (mounted as ConfigMap, read-only)
+# License exceptions (mounted as ConfigMap, read-only). No approvals by default.
 licenseExceptions:
   enabled: true
   mountPath: /data/config/license-exceptions.json
+  # YAML object or JSON string; both blanketExceptions and exceptions must be arrays.
+  # Alternatively: --set-file licenseExceptions.custom=./my-exceptions.json
+  # See examples/license-exceptions/ for an inactive example to adapt and review.
+  # Changes trigger API/worker rollouts; re-process SBOMs to update stored results.
+  custom: ""
 
 # License policy – defines permissive/copyleft classification (ConfigMap, read-only)
 licensePolicy:
@@ -262,8 +267,7 @@ cveRefresher:
 seedJob:
   sbomRepo: "https://github.com/cncf/sbom.git"
   sbomBranch: main
-  # Set to download CNCF license exceptions into the SBOM PVC:
-  # cncfExceptionsURL: "https://raw.githubusercontent.com/cncf/foundation/main/license-exceptions/exceptions.json"
+  # License exceptions are configured via licenseExceptions.custom, not downloaded.
 
 # Data Migration (one-time, from old seebom deployment to new bomhort deployment)
 # Runs as a Helm post-upgrade hook. Uses ClickHouse remote() to copy all tables

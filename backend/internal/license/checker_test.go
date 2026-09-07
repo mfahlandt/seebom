@@ -169,6 +169,12 @@ func TestCheckWithExceptions_PackageExempt(t *testing.T) {
 }
 
 func TestLoadPolicy(t *testing.T) {
+	previous := activePolicy
+	t.Cleanup(func() {
+		policyMu.Lock()
+		activePolicy = previous
+		policyMu.Unlock()
+	})
 	policyJSON := `{
 		"permissive": ["MIT", "Apache-2.0", "BSD-3-Clause"],
 		"copyleft": ["GPL-3.0-only", "AGPL-3.0-only"]
@@ -296,8 +302,7 @@ func TestLoadExceptionsWithFallback_PrimaryPath(t *testing.T) {
 }
 
 func TestLoadExceptionsWithFallback_FallbackPath(t *testing.T) {
-	// Primary has empty exceptions, fallback has real data.
-	emptyJSON := `{"version":"1.0.0","blanketExceptions":[],"exceptions":[]}`
+	// Only a missing primary permits using the fallback.
 	fullJSON := `{
 		"version": "1.0.0",
 		"blanketExceptions": [
@@ -308,9 +313,6 @@ func TestLoadExceptionsWithFallback_FallbackPath(t *testing.T) {
 	tmpDir := t.TempDir()
 	primary := filepath.Join(tmpDir, "primary.json")
 	fallback := filepath.Join(tmpDir, "fallback.json")
-	if err := os.WriteFile(primary, []byte(emptyJSON), 0644); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.WriteFile(fallback, []byte(fullJSON), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -371,8 +373,8 @@ func TestCheck_MismatchedLengths(t *testing.T) {
 	_ = results
 }
 
-func TestBuildIndex_AllCNCFProjectsPromotedToBlanket(t *testing.T) {
-	// CNCF exceptions with "All CNCF Projects" should be treated as blanket exceptions.
+func TestBuildIndex_AllCNCFProjectsNeverPromotedToBlanket(t *testing.T) {
+	// A project label must never remove the package restriction.
 	ef := &ExceptionsFile{
 		Exceptions: []Exception{
 			{
@@ -387,18 +389,18 @@ func TestBuildIndex_AllCNCFProjectsPromotedToBlanket(t *testing.T) {
 	}
 	idx := BuildIndex(ef)
 
-	// Both GPL-2.0-only and GPL-2.0-or-later should be blanket-exempted.
+	// Neither license is exempt for unrelated packages or projects.
 	exempt, reason := idx.IsExempt("any-package", "GPL-2.0-only")
-	if !exempt {
-		t.Error("expected GPL-2.0-only to be blanket exempted via All CNCF Projects")
+	if exempt {
+		t.Error("unrelated package must not be exempt")
 	}
-	if reason == "" {
-		t.Error("expected non-empty reason")
+	if reason != "" {
+		t.Error("expected no exemption reason")
 	}
 
 	exempt2, _ := idx.IsExempt("another-package", "GPL-2.0-or-later")
-	if !exempt2 {
-		t.Error("expected GPL-2.0-or-later to be blanket exempted via All CNCF Projects")
+	if exempt2 {
+		t.Error("unrelated package must not be exempt")
 	}
 
 	// Non-listed license should NOT be exempt.
@@ -415,7 +417,7 @@ func TestBuildIndex_CompoundLicenseOR(t *testing.T) {
 				ID:      "exc-libpathrs",
 				Package: "libpathrs",
 				License: "MPL-2.0 OR LGPL-3.0-or-later",
-				Project: "All CNCF Projects",
+				Project: "*",
 				Status:  "approved",
 				Comment: "libpathrs blanket exception",
 			},
@@ -423,14 +425,14 @@ func TestBuildIndex_CompoundLicenseOR(t *testing.T) {
 	}
 	idx := BuildIndex(ef)
 
-	// Both MPL-2.0 and LGPL-3.0-or-later should be blanket-exempted.
-	exempt, _ := idx.IsExempt("any-pkg", "MPL-2.0")
+	// Both licenses are exempt only for the named package.
+	exempt, _ := idx.IsExempt("libpathrs", "MPL-2.0")
 	if !exempt {
-		t.Error("expected MPL-2.0 to be blanket exempted")
+		t.Error("expected MPL-2.0 package exception")
 	}
-	exempt2, _ := idx.IsExempt("any-pkg", "LGPL-3.0-or-later")
+	exempt2, _ := idx.IsExempt("libpathrs", "LGPL-3.0-or-later")
 	if !exempt2 {
-		t.Error("expected LGPL-3.0-or-later to be blanket exempted")
+		t.Error("expected LGPL-3.0-or-later package exception")
 	}
 }
 
@@ -441,7 +443,7 @@ func TestBuildIndex_CompoundLicenseAND(t *testing.T) {
 				ID:      "exc-securejoin",
 				Package: "cyphar/filepath-securejoin",
 				License: "MPL-2.0 AND BSD-3-Clause",
-				Project: "All CNCF Projects",
+				Project: "*",
 				Status:  "approved",
 				Comment: "filepath-securejoin blanket exception",
 			},
@@ -449,18 +451,18 @@ func TestBuildIndex_CompoundLicenseAND(t *testing.T) {
 	}
 	idx := BuildIndex(ef)
 
-	// Both MPL-2.0 and BSD-3-Clause should be blanket-exempted.
-	exempt, _ := idx.IsExempt("any-pkg", "MPL-2.0")
+	// Both licenses are exempt only for the named package.
+	exempt, _ := idx.IsExempt("cyphar/filepath-securejoin", "MPL-2.0")
 	if !exempt {
-		t.Error("expected MPL-2.0 to be blanket exempted via AND split")
+		t.Error("expected MPL-2.0 package exception via AND split")
 	}
-	exempt2, _ := idx.IsExempt("any-pkg", "BSD-3-Clause")
+	exempt2, _ := idx.IsExempt("cyphar/filepath-securejoin", "BSD-3-Clause")
 	if !exempt2 {
-		t.Error("expected BSD-3-Clause to be blanket exempted via AND split")
+		t.Error("expected BSD-3-Clause package exception via AND split")
 	}
 }
 
-func TestIsExempt_SubstringPackageMatch(t *testing.T) {
+func TestIsExempt_PathSuffixPackageMatch(t *testing.T) {
 	// CNCF exception uses short name, SBOM has full qualified name.
 	ef := &ExceptionsFile{
 		Exceptions: []Exception{
@@ -476,8 +478,8 @@ func TestIsExempt_SubstringPackageMatch(t *testing.T) {
 	}
 	idx := BuildIndex(ef)
 
-	// Full Go module path should match via substring.
-	exempt, reason := idx.IsExempt("github.com/cyphar/filepath-securejoin", "MPL-2.0")
+	// Full Go module path matches a complete suffix within the project.
+	exempt, reason := idx.IsExempt("github.com/cyphar/filepath-securejoin", "MPL-2.0", "containerd")
 	if !exempt {
 		t.Error("expected substring match for github.com/cyphar/filepath-securejoin")
 	}
@@ -486,13 +488,13 @@ func TestIsExempt_SubstringPackageMatch(t *testing.T) {
 	}
 
 	// Exact match should also work.
-	exempt2, _ := idx.IsExempt("cyphar/filepath-securejoin", "MPL-2.0")
+	exempt2, _ := idx.IsExempt("cyphar/filepath-securejoin", "MPL-2.0", "containerd")
 	if !exempt2 {
 		t.Error("expected exact match for cyphar/filepath-securejoin")
 	}
 
 	// Non-matching package should NOT be exempt.
-	exempt3, _ := idx.IsExempt("github.com/other/package", "MPL-2.0")
+	exempt3, _ := idx.IsExempt("github.com/other/package", "MPL-2.0", "containerd")
 	if exempt3 {
 		t.Error("expected non-matching package to NOT be exempt")
 	}

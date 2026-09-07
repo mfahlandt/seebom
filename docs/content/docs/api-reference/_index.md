@@ -655,27 +655,39 @@ Projects with copyleft or unknown license packages (filtered by active exception
 
 ### `GET /api/v1/license-exceptions`
 
-Active license exceptions (read-only, loaded from config file).
+Configured license exception document (read-only, loaded from config file).
+Includes pending/revoked rules for inspection; only `approved` rules affect checks.
+By default both arrays are empty. No CNCF approvals are automatically loaded.
 
 **Response:** `200 OK`
 ```json
 {
   "version": "1.0.0",
-  "blanket_exceptions": [
-    {
-      "license": "ISC",
-      "reason": "ISC is functionally equivalent to MIT"
-    }
-  ],
+  "lastUpdated": "",
+  "blanketExceptions": [],
   "exceptions": [
     {
-      "purl_prefix": "pkg:golang/github.com/some/gpl-lib",
-      "license": "GPL-2.0-only",
-      "reason": "Build tool only, not distributed with binary"
+      "id": "example-review-required",
+      "package": "example.org/team/library",
+      "license": "MPL-2.0",
+      "project": "my-sbom-document-name",
+      "status": "pending",
+      "approvedDate": "",
+      "comment": "Example only; requires organization approval"
     }
   ]
 }
 ```
+
+Field names are **camelCase**, and `package` is a package name, not a PURL prefix
+or glob. A package rule retains its package restriction even when `project` is
+empty or `"*"`. Otherwise `project` matches the exact SBOM document name.
+
+**Configuration errors:** `500 Internal Server Error` for malformed or unreadable
+exception files (also on `GET /api/v1/projects/license-compliance`). Missing optional
+files return an empty document. An existing empty primary file takes precedence
+over any fallback file. Configuration changes require re-processing existing SBOMs
+for stored compliance results to become consistent across endpoints.
 
 ### `GET /api/v1/license-policy`
 

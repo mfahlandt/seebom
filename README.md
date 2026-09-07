@@ -112,7 +112,7 @@ Two JSON config files control license governance. Edit them and restart the affe
 | File | Mounted in | Purpose |
 |------|-----------|---------|
 | `sboms/license-policy.json` | API Gateway, Workers | Defines which SPDX IDs are **permissive** vs. **copyleft**. Anything not listed = `unknown`. |
-| `sboms/license-exceptions.json` | API Gateway, Workers | Exempts specific licenses (blanket) or package+license combos from violation reporting. [CNCF format](https://github.com/cncf/foundation/blob/main/license-exceptions/exceptions.json). |
+| `sboms/license-exceptions.json` | API Gateway, Workers | Empty by default. Explicit organization-approved blanket or package/license/project exceptions. [Structure and configuration](examples/license-exceptions/README.md). |
 
 ### Custom Theme (CSS)
 
@@ -501,11 +501,21 @@ By default, BOMHort enforces the [CNCF Allowed Third-Party License Policy](https
 - **Copyleft (flagged):** GPL, LGPL, AGPL, MPL-2.0, EPL, EUPL, CPAL, and others (21 total)
 - **Unknown:** Any license not in either list is flagged for review
 
-### CNCF Exception List
+### License Exceptions
 
-The [CNCF license exceptions](https://github.com/cncf/foundation/blob/main/license-exceptions/exceptions.json) are automatically downloaded and applied. Packages covered by a CNCF Governing Board exception are marked as exempted rather than non-compliant.
+No exceptions are enabled or downloaded by default. Configure only approvals that
+apply to your organization using `licenseExceptions.custom` (a YAML object or JSON
+string), or `--set-file licenseExceptions.custom=./my-exceptions.json` with Helm.
+Docker Compose uses the initially empty `sboms/license-exceptions.json`.
 
-Exceptions with `"project": "All CNCF Projects"` are treated as blanket exceptions (apply to every SBOM).
+The [inactive example and migration guide](examples/license-exceptions/README.md)
+describe the structure and matching rules. Package exceptions stay package-scoped;
+`project` restricts them to an exact SBOM document name. There is no CNCF-specific
+blanket promotion. An empty configuration is authoritative and does not fall back
+to old approvals in the SBOM directory.
+
+Helm changes roll out both API and workers. **Re-process existing SBOMs** to update
+stored results after changing approvals; a watcher run alone skips unchanged files.
 
 ### Customising the Policy
 

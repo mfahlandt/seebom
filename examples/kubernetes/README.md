@@ -72,7 +72,10 @@ Used by `values-production.yaml` when `s3.buckets` is empty.
 A Kubernetes Job runs once at install time and:
 1. Does a **shallow `git clone`** of your SBOM repo into a temp directory
 2. **Flat-copies** all `.spdx.json` and `.openvex.json` files into the PVC (flattening nested directory paths into filenames to avoid collisions)
-3. Optionally downloads the [CNCF license exceptions](https://github.com/cncf/foundation/blob/main/license-exceptions/exceptions.json) into the PVC
+
+License exceptions are configured separately through `licenseExceptions.custom`.
+No approvals are downloaded or enabled by default. See the
+[inactive structure example and migration guide](../license-exceptions/README.md).
 
 ```yaml
 s3:
@@ -84,7 +87,6 @@ gitSync:
 seedJob:
   sbomRepo: "https://github.com/cncf/sbom.git"
   sbomBranch: main
-  cncfExceptionsURL: "https://raw.githubusercontent.com/cncf/foundation/main/license-exceptions/exceptions.json"
 
 sbomSource:
   storageSize: 20Gi        # must be large enough for the full repo
@@ -151,8 +153,11 @@ The Ingestion Watcher scans the SBOM directory **recursively** for:
 | `*.spdx.json` | SPDX SBOM | `my-project.spdx.json` |
 | `*.openvex.json` | OpenVEX statement | `my-project.openvex.json` |
 | `*.vex.json` | OpenVEX statement | `my-project.vex.json` |
-| `license-exceptions.json` | CNCF exceptions file | (auto-downloaded by seed job) |
-| `license-policy.json` | Custom license policy | (optional, overrides ConfigMap) |
+
+`license-exceptions.json` and `license-policy.json` are configuration files and
+are **not ingested as SBOMs**. Use their ConfigMaps to configure them.
+The legacy exception-file fallback in the SBOM directory is used only if the
+primary file is absent; an empty ConfigMap is authoritative.
 
 Files are **deduplicated by SHA256 hash** — uploading the same file twice will not create duplicate entries.
 

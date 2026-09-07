@@ -186,7 +186,8 @@ Lightweight daily CronJob that queries all unique PURLs (~20k) against the OSV A
 ## License Governance
 
 - **License Policy** (`license-policy.json`): Defines permissive vs. copyleft classifications
-- **License Exceptions** (`license-exceptions.json`): CNCF format, blanket + specific
+- **License Exceptions** (`license-exceptions.json`): Empty by default; explicit organization-managed blanket or package/license/project rules. No CNCF download or implicit global approval. Configure through `licenseExceptions.custom`; Helm rolls out API and workers on changes. Existing SBOMs must be re-processed to update stored compliance results.
+- **Argo CD / GitOps:** Git-backed Helm values update the exception ConfigMap and deterministic checksums on both Deployment pod templates. Argo sync triggers Kubernetes rollouts without Helm upgrade hooks; it does not re-process existing SBOMs. Deploy matching chart and API/worker image revisions. See [Argo CD deployment](../deployment/#argo-cd-gitops).
 - **Permissive licenses** (MIT, Apache-2.0, BSD) are **never** tracked as non-compliant
 - **Visual:** Green = exempted copyleft, Red = violation, Orange = exempted in dependency tree
 

@@ -88,7 +88,7 @@ bomhort/
 │   └── migrations/            # 001-012 SQL migrations
 ├── sboms/                     # Config files + example SBOMs/VEX
 │   ├── license-policy.json        # Permissive/copyleft classification
-│   ├── license-exceptions.json    # CNCF-format exceptions
+│   ├── license-exceptions.json    # Organization-managed exceptions; empty by default
 │   ├── _example.spdx.json
 │   ├── _example.openvex.json
 │   ├── golang-common.openvex.json
@@ -325,7 +325,11 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 
 **License Policy** (`license-policy.json`): Defines which SPDX IDs are permissive/copyleft. Read by API Gateway and workers. Anything not listed = `unknown`.
 
-**License Exceptions** (`license-exceptions.json`): CNCF format with blanket and specific exceptions. Blanket exceptions support prefix matching (e.g. `MPL-2.0` matches `MPL-2.0-no-copyleft-exception`). Written at ingest time into `exempted_packages` + `exemption_reason` columns and considered at query time in the dashboard. Read-only — no write API (frontend is public).
+**License Exceptions** (`license-exceptions.json`): Operator-managed blanket and package/license/project rules, empty by default. No automatic CNCF download or project-to-blanket promotion. An inactive structure example lives in `examples/license-exceptions/`. Blanket exceptions retain SPDX modifier-prefix matching (e.g. `MPL-2.0` matches `MPL-2.0-no-copyleft-exception`). Package rules match case-sensitive exact names or complete slash-delimited suffixes; optional project restrictions use the exact SBOM document name in both worker and API filtering. Multiple project rules are preserved and matching order is deterministic. Scope descriptions and dates remain audit metadata, not executable conditions.
+
+The first existing exception file is authoritative, even when empty. Fallback to the SBOM directory occurs only when the primary is missing. Unknown JSON fields, malformed structure, and read errors are surfaced (worker startup failure / exception-related API HTTP 500), not silently replaced by another list. Helm `licenseExceptions.custom` accepts a YAML object or JSON string and validates the two required arrays. ConfigMap checksums roll out API and worker pods together to refresh their `subPath` mounts; no live ConfigMap watch is assumed.
+
+Exemptions are written at ingest time into `exempted_packages` + `exemption_reason` columns and considered at query time. Existing SBOMs must be re-processed after changes: filtering stored violations cannot restore previously exempted packages after revocation. A watcher run alone does not bypass hash deduplication. Read-only — no write API (frontend is public), no schema changes or automatic data resets.
 
 **Permissive Licenses:** Packages with permissive licenses (MIT, Apache-2.0, BSD) are **never** tracked as non-compliant.
 
@@ -337,6 +341,7 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 **Configuration:**
 - Local: JSON files in `sboms/`, mounted via Docker Compose
 - K8s: ConfigMaps (`bomhort-license-policy`, `bomhort-license-exceptions`)
+- Argo CD: Git-backed `helm.valueFiles` or `helm.valuesObject` supplies `licenseExceptions.custom`. Rendering changes the exception ConfigMap and the deterministic `checksum/license-exceptions` annotation on both Deployment pod templates. Sync applies these resources and triggers Kubernetes rollouts without a Helm upgrade hook. Chart and API/worker images must contain the fixes; syncing does not re-process stored SBOMs. See the [Argo CD deployment checklist](content/docs/deployment/_index.md#argo-cd-gitops).
 
 ## 10a. GitHub Dependency Health
 

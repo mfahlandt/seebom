@@ -17,13 +17,14 @@ type Tab = 'non-compliant' | 'exceptions';
     <div class="violations-page">
       <h1>License Compliance</h1>
       <p class="subtitle">Non-compliant licenses filtered by configured exceptions. Exceptions are managed via <code>license-exceptions.json</code>.</p>
+      <p *ngIf="loadError" role="alert" class="load-error">{{ loadError }}</p>
 
       <div class="tabs">
         <button [class.active]="activeTab === 'non-compliant'" (click)="activeTab = 'non-compliant'">
           Non-Compliant ({{ violations.length | number }})
         </button>
         <button [class.active]="activeTab === 'exceptions'" (click)="activeTab = 'exceptions'">
-          Active Exceptions ({{ totalExceptions | number }})
+          Configured Exceptions ({{ totalExceptions | number }})
         </button>
       </div>
 
@@ -47,7 +48,7 @@ type Tab = 'non-compliant' | 'exceptions';
           </div>
         </cdk-virtual-scroll-viewport>
         <p *ngIf="loaded && violations.length === 0" class="empty">
-          No non-compliant licenses found. All items are covered by exceptions.
+          No non-compliant licenses found in the stored results.
         </p>
       </div>
 
@@ -56,12 +57,14 @@ type Tab = 'non-compliant' | 'exceptions';
         <div class="config-hint">
           <span class="hint-icon">ℹ</span>
           Exceptions are loaded from <code>license-exceptions.json</code> in the config volume.
-          Edit the file and restart the API to apply changes.
+          No exceptions are enabled by default; only approved rules apply.
+          Configure <code>licenseExceptions.custom</code> through Helm to roll out API and workers,
+          then re-process existing SBOMs. Direct file edits require restarting both services.
         </div>
 
         <div class="exceptions-section" *ngIf="exceptionsFile.blanketExceptions.length > 0">
           <h2>Blanket Exceptions</h2>
-          <p class="section-desc">Entire licenses exempted from violation reporting.</p>
+          <p class="section-desc">Approved rules exempt entire licenses for all packages and projects. Pending and revoked rules are inactive.</p>
           <div *ngFor="let be of exceptionsFile.blanketExceptions" class="exception-card blanket">
             <div class="exc-row">
               <span class="exc-license">{{ be.license }}</span>
@@ -75,7 +78,7 @@ type Tab = 'non-compliant' | 'exceptions';
 
         <div class="exceptions-section" *ngIf="exceptionsFile.exceptions.length > 0">
           <h2>Package Exceptions</h2>
-          <p class="section-desc">Specific package + license combinations exempted.</p>
+          <p class="section-desc">Approved package + license rules, optionally restricted to an exact SBOM document name. Scope descriptions are informational.</p>
           <div *ngFor="let exc of exceptionsFile.exceptions" class="exception-card">
             <div class="exc-row">
               <span class="exc-pkg">{{ exc.package }}</span>
@@ -89,7 +92,7 @@ type Tab = 'non-compliant' | 'exceptions';
           </div>
         </div>
 
-        <p *ngIf="totalExceptions === 0" class="empty-hint">
+        <p *ngIf="loaded && totalExceptions === 0" class="empty-hint">
           No exceptions configured. Add entries to <code>license-exceptions.json</code> to suppress known non-compliant licenses.
         </p>
       </div>
@@ -123,6 +126,7 @@ type Tab = 'non-compliant' | 'exceptions';
     .licenses { font-style: normal; }
     .pkgs { margin-left: 8px; }
     .empty { color: var(--status-success); font-size: 0.9rem; font-weight: 500; }
+    .load-error { color: var(--severity-critical); font-size: 0.85rem; }
 
     .config-hint {
       display: flex; align-items: flex-start; gap: 8px; padding: 10px 14px;
@@ -159,6 +163,7 @@ export class LicenseViolationsComponent implements OnInit {
     version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
   };
   loaded = false;
+  loadError = '';
   activeTab: Tab = 'non-compliant';
 
   constructor(
@@ -170,11 +175,17 @@ export class LicenseViolationsComponent implements OnInit {
     forkJoin({
       violations: this.api.getProjectsWithLicenseViolations(),
       exceptions: this.api.getLicenseExceptions(),
-    }).subscribe(({ violations, exceptions }) => {
-      this.violations = violations;
-      this.exceptionsFile = exceptions;
-      this.loaded = true;
-      this.cdr.markForCheck();
+    }).subscribe({
+      next: ({ violations, exceptions }) => {
+        this.violations = violations;
+        this.exceptionsFile = exceptions;
+        this.loaded = true;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.loadError = 'Could not load license compliance. Check API availability and the license exceptions configuration; invalid files are rejected.';
+        this.cdr.markForCheck();
+      },
     });
   }
 

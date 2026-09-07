@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -57,6 +58,9 @@ func main() {
 		log.Printf("Loaded license exceptions (%d blanket, %d specific)",
 			len(idx.Raw.BlanketExceptions), len(idx.Raw.Exceptions))
 	} else {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Fatalf("Invalid license exceptions configuration: %v", err)
+		}
 		log.Printf("No license exceptions loaded (tried %s, %s): %v", cfg.ExceptionsFile, sbomDirExceptionsPath, err)
 	}
 
@@ -406,7 +410,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	}
 
 	// 6. License compliance check (uses the already-resolved licenses).
-	licResults := license.CheckWithExceptions(result.Packages.PackageNames, result.Packages.PackageLicenses, exceptions)
+	licResults := license.CheckWithExceptions(result.Packages.PackageNames, result.Packages.PackageLicenses, exceptions, result.SBOM.DocumentName)
 	if len(licResults) > 0 {
 		licModels := make([]models.LicenseCompliance, len(licResults))
 		for i, lr := range licResults {

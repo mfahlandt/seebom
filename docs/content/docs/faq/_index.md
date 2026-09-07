@@ -260,7 +260,7 @@ The `sboms/` directory ships with several example files for testing and demonstr
 | `golang-common.openvex.json` | OpenVEX | Real-world VEX statements for common Go ecosystem false positives. |
 | `otel-protobuf.openvex.json` | OpenVEX | VEX statements for OpenTelemetry protobuf-related findings. |
 | `license-policy.json` | License Policy | The active license classification policy (permissive vs. copyleft SPDX IDs). Based on the [CNCF Allowed Third-Party License Policy](https://github.com/cncf/foundation/blob/main/policies-guidance/allowed-third-party-license-policy.md). |
-| `license-exceptions.json` | License Exceptions | Active license exceptions in [CNCF format](https://github.com/cncf/foundation/blob/main/license-exceptions/exceptions.json). Exempts specific packages from violation reporting. |
+| `license-exceptions.json` | License Exceptions | Empty by default. Add only organization-approved exceptions. An inactive structure example lives in `examples/license-exceptions/`; no CNCF approvals are automatically imported. |
 
 {{% alert title="Tip" color="success" %}}
 Files prefixed with `_` are treated as examples and are skipped by the scanner (configurable via `SBOM_IGNORE_PREFIX`). To include them, set `SBOM_IGNORE_PREFIX=` (empty). You can place any `.json` file in the `sboms/` directory — the format (SPDX, CycloneDX, in-toto) is auto-detected at parse time.

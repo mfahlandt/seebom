@@ -1,4 +1,18 @@
 {{- if .Values.licenseExceptions.enabled }}
+{{- $exceptions := dict "version" "1.0.0" "description" "No exceptions configured. Supply organization-approved rules explicitly." "blanketExceptions" (list) "exceptions" (list) }}
+{{- if not (and (kindIs "string" .Values.licenseExceptions.custom) (eq .Values.licenseExceptions.custom "")) }}
+{{- if kindIs "string" .Values.licenseExceptions.custom }}
+{{- $exceptions = mustFromJson .Values.licenseExceptions.custom }}
+{{- else }}
+{{- $exceptions = .Values.licenseExceptions.custom }}
+{{- end }}
+{{- end }}
+{{- if not (kindIs "map" $exceptions) }}
+{{- fail "licenseExceptions.custom must be an object (YAML mapping or JSON string)" }}
+{{- end }}
+{{- if or (not (kindIs "slice" $exceptions.blanketExceptions)) (not (kindIs "slice" $exceptions.exceptions)) }}
+{{- fail "licenseExceptions.custom must contain blanketExceptions and exceptions arrays (use [] for none)" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,12 +22,6 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
 data:
   license-exceptions.json: |-
-    {
-      "version": "1.0.0",
-      "lastUpdated": "2026-03-07",
-      "description": "License exceptions for BOMHort. Edit this ConfigMap to add/remove exceptions.",
-      "blanketExceptions": [],
-      "exceptions": []
-    }
+    {{- $exceptions | mustToPrettyJson | nindent 4 }}
 {{- end }}
 

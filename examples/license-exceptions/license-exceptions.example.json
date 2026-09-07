@@ -1,0 +1,27 @@
+{
+  "version": "1.0.0",
+  "description": "EXAMPLE ONLY. Replace placeholders, review scope, and approve explicitly. Not loaded by default.",
+  "blanketExceptions": [
+    {
+      "id": "example-blanket-review-required",
+      "license": "MPL-2.0",
+      "status": "pending",
+      "approvedDate": "",
+      "scope": "Example only: this rule would exempt this license for EVERY package and project.",
+      "comment": "Remove this rule unless an organization-wide approval is intended."
+    }
+  ],
+  "exceptions": [
+    {
+      "id": "example-package-review-required",
+      "package": "example.org/your-team/your-library",
+      "license": "MPL-2.0",
+      "project": "your-exact-sbom-document-name",
+      "status": "pending",
+      "approvedDate": "",
+      "scope": "Describe the reviewed usage; informational, not evaluated by the matcher.",
+      "results": "https://example.org/your-approval-record",
+      "comment": "Replace package and project, record approval, then change status to approved."
+    }
+  ]
+}

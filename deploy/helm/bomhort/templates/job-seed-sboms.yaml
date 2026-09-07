@@ -1,3 +1,6 @@
+{{- if .Values.seedJob.cncfExceptionsURL }}
+{{- fail "seedJob.cncfExceptionsURL is no longer supported: remove it and provide reviewed rules via licenseExceptions.custom or --set-file licenseExceptions.custom=./my-exceptions.json" }}
+{{- end }}
 {{- if not .Values.gitSync.enabled }}
 apiVersion: batch/v1
 kind: Job
@@ -60,14 +63,6 @@ spec:
                 echo "⏳ Waiting for SBOMs to be ready..."
                 sleep 30
               done
-              {{- if .Values.seedJob.cncfExceptionsURL }}
-              echo "⏳ Downloading CNCF license exceptions..."
-              if curl -sSL "{{ .Values.seedJob.cncfExceptionsURL }}" -o "$TARGET/license-exceptions.json"; then
-                echo "  ✅ license-exceptions.json downloaded"
-              else
-                echo "  ⚠️ Failed to download exceptions (non-fatal)"
-              fi
-              {{- end }}
 
               echo "✅ Seed complete: $SBOM_COUNT SBOMs, $VEX_COUNT VEX docs"
           volumeMounts:

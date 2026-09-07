@@ -72,7 +72,6 @@ gitSync:
 seedJob:
   sbomRepo: "https://github.com/cncf/sbom.git"
   sbomBranch: main
-  cncfExceptionsURL: "https://raw.githubusercontent.com/cncf/foundation/main/license-exceptions/exceptions.json"
 
 sbomSource:
   pvcName: bomhort-sbom-data
@@ -85,6 +84,7 @@ sbomSource:
 licenseExceptions:
   enabled: true
   mountPath: /data/config/license-exceptions.json
+  custom: "" # No approvals by default; see examples/license-exceptions/.
 
 licensePolicy:
   enabled: true

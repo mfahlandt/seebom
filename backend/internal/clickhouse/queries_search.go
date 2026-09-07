@@ -252,7 +252,7 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 		var violatingPkgs []string
 		for _, pkg := range packages {
 			if exceptions != nil {
-				if exempt, _ := exceptions.IsExempt(pkg, licenseID); exempt {
+				if exempt, _ := exceptions.IsExempt(pkg, licenseID, documentName); exempt {
 					continue
 				}
 			}

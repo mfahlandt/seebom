@@ -98,7 +98,6 @@ gitSync:
 seedJob:
   sbomRepo: "https://github.com/cncf/sbom.git"
   sbomBranch: main
-  cncfExceptionsURL: "https://raw.githubusercontent.com/cncf/foundation/main/license-exceptions/exceptions.json"
 
 sbomSource:
   storageSize: 20Gi
@@ -170,51 +169,73 @@ Files are **deduplicated by SHA256 hash** — uploading the same file twice will
 
 License exceptions suppress specific license violations. They are stored in a **ConfigMap** that is mounted read-only into the API Gateway and Workers.
 
-### Edit the default ConfigMap
+### Configure reviewed exceptions through Helm
 
-After `helm install`, edit the ConfigMap directly:
-
-```bash
-kubectl edit configmap bomhort-license-exceptions
-```
-
-The JSON format follows the [CNCF exceptions format](https://github.com/cncf/foundation/blob/main/license-exceptions/exceptions.json):
-
-```json
-{
-  "version": "1.0.0",
-  "lastUpdated": "2026-03-07",
-  "blanketExceptions": [
-    {
-      "id": "blanket-mpl-2.0",
-      "license": "MPL-2.0",
-      "status": "approved",
-      "approvedDate": "2026-03-07",
-      "comment": "MPL-2.0 is file-level copyleft, acceptable for unmodified deps."
-    }
-  ],
-  "exceptions": [
-    {
-      "id": "exc-001",
-      "package": "github.com/hashicorp/golang-lru",
-      "license": "MPL-2.0",
-      "status": "approved",
-      "approvedDate": "2026-03-07",
-      "comment": "Widely used LRU cache, unmodified."
-    }
-  ]
-}
-```
-
-### Apply changes
-
-After editing, restart the API Gateway to pick up changes:
+The default list is **empty**. No CNCF approvals are downloaded or implied.
+Use the [inactive example and migration guide](../examples/license-exceptions/README.md)
+as a structure to adapt, not as pre-approved policy.
 
 ```bash
-kubectl rollout restart deployment bomhort-api-gateway
+helm upgrade --install bomhort deploy/helm/bomhort -n bomhort \
+  -f my-values.yaml --set-file licenseExceptions.custom=./my-exceptions.json
 ```
 
-> **Note:** Violations are filtered at query time, so no re-ingestion is needed.
+Alternatively, supply a YAML object in your values. To explicitly disable all approvals:
+
+```yaml
+licenseExceptions:
+  enabled: true
+  custom:
+    version: "1.0.0"
+    blanketExceptions: []
+    exceptions: []
+```
+
+Both arrays are required. An empty file is authoritative; only a missing file
+permits fallback to `SBOM_DIR/license-exceptions.json`. Malformed configuration
+stops the worker and causes exception-related API requests to return HTTP 500.
+`enabled: false` disables only the Helm mount, not the legacy file fallback.
+
+Only rules with `status: "approved"` apply. Package rules match exact names or
+complete slash-delimited suffixes. `project` is the exact SBOM document name;
+empty or `"*"` means all projects. It never turns a package rule into a blanket
+rule. Use `blanketExceptions` only for genuinely organization-wide approvals.
+`scope` and dates are informational, not executable conditions.
+
+### Apply changes and migrate
+
+Helm checksums trigger rollouts of **both** API Gateway and workers when the
+exception ConfigMap changes. For emergency direct ConfigMap edits, restart both
+deployments manually; subsequent Helm upgrades overwrite such edits.
+
+Remove the former `seedJob.cncfExceptionsURL` setting from existing values;
+the chart rejects it with instructions to use `licenseExceptions.custom` instead.
+Review old `"All CNCF Projects"` rules explicitly: that value now has only literal
+project-name semantics, not global approval semantics.
+
+**Re-process existing SBOMs** after changing exceptions, particularly removals.
+Query-time filtering alone cannot recover previously exempted packages from stored
+results, and the watcher skips unchanged hashes. Back up data and plan a re-scan;
+development full-reset helpers are destructive and are not a production
+license-only refresh mechanism.
+
+### Argo CD (GitOps)
+
+Store `licenseExceptions.custom` in Git-backed Helm values referenced by your
+Application's `helm.valueFiles` or `helm.valuesObject`. For multi-source
+Applications, configure the entry that renders the Helm chart.
+See the [Argo CD example and deployment checklist](content/docs/deployment/_index.md#argo-cd-gitops).
+
+Argo only needs to render and sync the chart: changed exceptions alter the
+ConfigMap and checksum annotations on both API and worker pod templates, so
+Kubernetes rolls out both Deployments during sync. No Helm upgrade hook or manual
+restart is required. Sync all affected resources and keep edits in Git rather
+than modifying the live ConfigMap.
+
+Deploy a chart revision and API/worker images that include the fixes, and remove
+`seedJob.cncfExceptionsURL` from all Argo values/parameters. A successful Argo sync
+does **not** re-process existing SBOMs; plan that separately to refresh stored
+compliance results after changing or revoking approvals.
 
 ---
 
@@ -586,7 +607,7 @@ ingress:
 | **SBOMs (S3)** | S3-compatible buckets | Configure `s3.buckets` in Helm values, CronJob streams objects |
 | **SBOMs (volume)** | PVC via seed job or git-sync | Push to Git, seed job clones or git-sync re-syncs |
 | **VEX files** | Same S3 bucket or directory as SBOMs | Place `*.openvex.json` or `*.vex.json` alongside SBOMs |
-| **License Exceptions** | `bomhort-license-exceptions` ConfigMap | `kubectl edit configmap` → restart API |
+| **License Exceptions** | `bomhort-license-exceptions` ConfigMap | `licenseExceptions.custom` → Helm rollout of API + workers → re-process existing SBOMs |
 | **License Policy** | `bomhort-license-policy` ConfigMap | `kubectl edit configmap` → restart API + Workers |
 | **Custom Theme** | `bomhort-custom-theme` ConfigMap | `kubectl create configmap` → restart UI |
 | **Site Config** | `bomhort-ui-config` ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |

@@ -1,15 +1,18 @@
 package license
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
 	json "github.com/goccy/go-json"
 )
 
-// ExceptionsFile represents the top-level license-exceptions.json structure,
-// modeled after https://github.com/cncf/foundation/blob/main/license-exceptions/exceptions.json
+// ExceptionsFile represents operator-managed license exceptions.
+// No organization-specific approvals are implied by this format.
 type ExceptionsFile struct {
 	Version           string             `json:"version"`
 	LastUpdated       string             `json:"lastUpdated"`
@@ -31,9 +34,9 @@ type BlanketException struct {
 // Exception exempts a specific package+license combination.
 type Exception struct {
 	ID           string `json:"id"`
-	Package      string `json:"package"`           // package name or PURL pattern
+	Package      string `json:"package"`           // package name, exact or path-segment suffix
 	License      string `json:"license"`           // SPDX license ID
-	Project      string `json:"project,omitempty"` // optional: restrict to specific project
+	Project      string `json:"project,omitempty"` // exact SBOM document name; empty or * means all
 	Status       string `json:"status"`            // approved, revoked
 	ApprovedDate string `json:"approvedDate"`
 	Scope        string `json:"scope,omitempty"`
@@ -46,9 +49,11 @@ type ExceptionIndex struct {
 	// blanketLicenses are licenses globally exempted (exact match on SPDX ID).
 	blanketLicenses map[string]*BlanketException
 	// packageLicense maps "package\x00license" → Exception for specific package+license pairs.
-	packageLicense map[string]*Exception
+	packageLicense map[string][]*Exception
 	// packageAny maps "package" → Exception for packages exempted regardless of license.
-	packageAny map[string]*Exception
+	packageAny map[string][]*Exception
+	// ordered rules make suffix matching deterministic (file order).
+	packageRules []*Exception
 
 	Raw *ExceptionsFile
 }
@@ -60,17 +65,25 @@ func LoadExceptions(path string) (*ExceptionIndex, error) {
 		return nil, fmt.Errorf("failed to read exceptions file %s: %w", path, err)
 	}
 
-	var ef ExceptionsFile
-	if err := json.Unmarshal(data, &ef); err != nil {
+	var ef *ExceptionsFile
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&ef); err != nil {
 		return nil, fmt.Errorf("failed to parse exceptions file %s: %w", path, err)
 	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return nil, fmt.Errorf("exceptions file %s must contain exactly one JSON object", path)
+	}
+	if ef == nil || ef.BlanketExceptions == nil || ef.Exceptions == nil {
+		return nil, fmt.Errorf("exceptions file %s must contain blanketExceptions and exceptions arrays (use [] for none)", path)
+	}
 
-	return BuildIndex(&ef), nil
+	return BuildIndex(ef), nil
 }
 
 // LoadExceptionsWithFallback tries the primary path first, then falls back to
-// additional paths. This allows the API Gateway to load exceptions from a
-// ConfigMap first, and fall back to a downloaded file in the SBOM PVC.
+// additional paths only when a file is absent. A valid empty file is authoritative;
+// an unreadable or invalid primary must never enable approvals from a fallback.
 func LoadExceptionsWithFallback(paths ...string) (*ExceptionIndex, error) {
 	var lastErr error
 	for _, p := range paths {
@@ -79,15 +92,13 @@ func LoadExceptionsWithFallback(paths ...string) (*ExceptionIndex, error) {
 		}
 		idx, err := LoadExceptions(p)
 		if err != nil {
+			if !errors.Is(err, os.ErrNotExist) {
+				return nil, err
+			}
 			lastErr = err
 			continue
 		}
-		// Return the first file that loads successfully and has actual content
-		if idx.Raw != nil && (len(idx.Raw.BlanketExceptions) > 0 || len(idx.Raw.Exceptions) > 0) {
-			return idx, nil
-		}
-		// File loaded but is empty, keep looking
-		lastErr = fmt.Errorf("exceptions file %s is empty", p)
+		return idx, nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no valid exceptions file paths provided")
@@ -99,8 +110,8 @@ func LoadExceptionsWithFallback(paths ...string) (*ExceptionIndex, error) {
 func BuildIndex(ef *ExceptionsFile) *ExceptionIndex {
 	idx := &ExceptionIndex{
 		blanketLicenses: make(map[string]*BlanketException),
-		packageLicense:  make(map[string]*Exception),
-		packageAny:      make(map[string]*Exception),
+		packageLicense:  make(map[string][]*Exception),
+		packageAny:      make(map[string][]*Exception),
 		Raw:             ef,
 	}
 
@@ -119,30 +130,16 @@ func BuildIndex(ef *ExceptionsFile) *ExceptionIndex {
 			continue
 		}
 
-		// CNCF exceptions with "All CNCF Projects" are effectively blanket
-		// exceptions — they apply globally regardless of which SBOM uses them.
-		if strings.EqualFold(exc.Project, "All CNCF Projects") {
-			for _, lic := range splitLicenses(exc.License) {
-				// Promote to blanket exception so IsExempt matches any package.
-				idx.blanketLicenses[lic] = &BlanketException{
-					ID:           exc.ID,
-					License:      lic,
-					Status:       exc.Status,
-					ApprovedDate: exc.ApprovedDate,
-					Scope:        exc.Scope,
-					Comment:      exc.Comment,
-				}
-			}
-			continue
-		}
-
 		if exc.License != "" && exc.Package != "" {
 			for _, lic := range splitLicenses(exc.License) {
 				key := exc.Package + "\x00" + lic
-				idx.packageLicense[key] = exc
+				idx.packageLicense[key] = append(idx.packageLicense[key], exc)
 			}
 		} else if exc.Package != "" {
-			idx.packageAny[exc.Package] = exc
+			idx.packageAny[exc.Package] = append(idx.packageAny[exc.Package], exc)
+		}
+		if exc.Package != "" {
+			idx.packageRules = append(idx.packageRules, exc)
 		}
 	}
 
@@ -196,7 +193,8 @@ func splitLicenses(expr string) []string {
 
 // IsExempt checks if a package+license combination is covered by an exception.
 // Returns the matching exception reason or empty string if not exempt.
-func (idx *ExceptionIndex) IsExempt(packageName, licenseID string) (exempt bool, reason string) {
+// project is the SBOM document name. Omitting it never matches a scoped rule.
+func (idx *ExceptionIndex) IsExempt(packageName, licenseID string, project ...string) (exempt bool, reason string) {
 	if idx == nil {
 		return false, ""
 	}
@@ -208,44 +206,54 @@ func (idx *ExceptionIndex) IsExempt(packageName, licenseID string) (exempt bool,
 
 	// 1b. Check blanket license exceptions (prefix match for SPDX modifiers).
 	// e.g. "MPL-2.0-no-copyleft-exception" should match blanket "MPL-2.0".
-	for baseLicense, be := range idx.blanketLicenses {
-		if strings.HasPrefix(licenseID, baseLicense+"-") {
-			return true, fmt.Sprintf("Blanket exception: %s (via %s) – %s", be.ID, baseLicense, be.Comment)
+	// Prefer the longest matching base, independent of map iteration order.
+	for end := strings.LastIndex(licenseID, "-"); end > 0; end = strings.LastIndex(licenseID[:end], "-") {
+		if be, ok := idx.blanketLicenses[licenseID[:end]]; ok {
+			return true, fmt.Sprintf("Blanket exception: %s (via %s) – %s", be.ID, licenseID[:end], be.Comment)
 		}
 	}
 
 	// 2. Check specific package+license (exact match).
 	key := packageName + "\x00" + licenseID
-	if exc, ok := idx.packageLicense[key]; ok {
-		return true, fmt.Sprintf("Exception: %s – %s", exc.ID, exc.Comment)
-	}
-
-	// 2b. Check package+license with substring matching on package name.
-	// CNCF exceptions use short names like "cyphar/filepath-securejoin" but
-	// SBOM packages have full names like "github.com/cyphar/filepath-securejoin".
-	lowerPkg := strings.ToLower(packageName)
-	for compoundKey, exc := range idx.packageLicense {
-		parts := strings.SplitN(compoundKey, "\x00", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		excPkg, excLic := parts[0], parts[1]
-		if excLic == licenseID && strings.Contains(lowerPkg, strings.ToLower(excPkg)) {
+	for _, exc := range idx.packageLicense[key] {
+		if matchesProject(exc.Project, project) {
 			return true, fmt.Sprintf("Exception: %s – %s", exc.ID, exc.Comment)
 		}
 	}
 
-	// 3. Check package-only exceptions (any license, exact match).
-	if exc, ok := idx.packageAny[packageName]; ok {
-		return true, fmt.Sprintf("Exception: %s – %s", exc.ID, exc.Comment)
+	// 2b. Allow qualified names to match a complete path suffix, not arbitrary
+	// substrings (e.g. foo/bar must not exempt foo/bar-evil or notfoo/bar).
+	for _, exc := range idx.packageRules {
+		if !strings.HasSuffix(packageName, "/"+exc.Package) || !matchesProject(exc.Project, project) {
+			continue
+		}
+		for _, lic := range splitLicenses(exc.License) {
+			if lic == licenseID {
+				return true, fmt.Sprintf("Exception: %s – %s", exc.ID, exc.Comment)
+			}
+		}
 	}
 
-	// 3b. Package-only exceptions with substring matching.
-	for excPkg, exc := range idx.packageAny {
-		if strings.Contains(lowerPkg, strings.ToLower(excPkg)) {
+	// 3. Check package-only exceptions (any license, exact match).
+	for _, exc := range idx.packageAny[packageName] {
+		if matchesProject(exc.Project, project) {
+			return true, fmt.Sprintf("Exception: %s – %s", exc.ID, exc.Comment)
+		}
+	}
+
+	// 3b. Package-only exceptions with path-segment suffix matching.
+	for _, exc := range idx.packageRules {
+		if exc.License == "" && strings.HasSuffix(packageName, "/"+exc.Package) && matchesProject(exc.Project, project) {
 			return true, fmt.Sprintf("Exception: %s – %s", exc.ID, exc.Comment)
 		}
 	}
 
 	return false, ""
+}
+
+func matchesProject(scope string, projects []string) bool {
+	if scope == "" || scope == "*" || scope == "All Projects" {
+		return true
+	}
+	return len(projects) > 0 && scope == projects[0]
 }

@@ -140,6 +140,8 @@ parsingWorker:
   batchSize: 50
   skipOSV: false            # Set to true for fast initial bulk load
   skipGitHubResolve: false  # Skip GitHub license resolution for unknown licenses
+  skipNPMResolve: false     # Skip npm registry license resolution for unknown npm licenses
+  skipNuGetResolve: false   # Skip NuGet license resolution for unknown NuGet licenses
   resources:
     requests:
       cpu: 250m

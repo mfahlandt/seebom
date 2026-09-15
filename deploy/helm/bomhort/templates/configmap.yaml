@@ -15,6 +15,8 @@ data:
   WORKER_BATCH_SIZE: {{ .Values.parsingWorker.batchSize | quote }}
   SKIP_OSV: {{ .Values.parsingWorker.skipOSV | quote }}
   SKIP_GITHUB_RESOLVE: {{ .Values.parsingWorker.skipGitHubResolve | quote }}
+  SKIP_NPM_RESOLVE: {{ .Values.parsingWorker.skipNPMResolve | default false | quote }}
+  SKIP_NUGET_RESOLVE: {{ .Values.parsingWorker.skipNuGetResolve | default false | quote }}
   SBOM_LIMIT: {{ .Values.ingestionWatcher.sbomLimit | quote }}
   EXCEPTIONS_FILE: {{ .Values.licenseExceptions.mountPath | quote }}
   LICENSE_POLICY_FILE: {{ .Values.licensePolicy.mountPath | quote }}

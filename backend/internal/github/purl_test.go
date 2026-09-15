@@ -18,6 +18,13 @@ func TestExtractGitHubRepo(t *testing.T) {
 			wantOK:    true,
 		},
 		{
+			name:      "go standard library",
+			purl:      "pkg:golang/stdlib@v1.25.0",
+			wantOwner: "golang",
+			wantRepo:  "go",
+			wantOK:    true,
+		},
+		{
 			name:      "golang with subpath",
 			purl:      "pkg:golang/github.com/prometheus/client_golang/prometheus@v1.19.0",
 			wantOwner: "prometheus",

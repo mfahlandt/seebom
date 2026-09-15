@@ -8,6 +8,9 @@ import (
 // wellKnownGoModules maps non-github.com Go module prefixes to their GitHub owner/repo.
 // This covers popular Go packages that are hosted on GitHub but use custom import paths.
 var wellKnownGoModules = map[string][2]string{
+	// Go standard library (emitted as pkg:golang/stdlib by syft, waybill, etc.)
+	// is licensed together with the Go distribution.
+	"stdlib": {"golang", "go"},
 	// golang.org/x/* → github.com/golang/*
 	"golang.org/x/crypto":  {"golang", "crypto"},
 	"golang.org/x/net":     {"golang", "net"},

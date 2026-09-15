@@ -1,5 +1,6 @@
 // Package sbom provides multi-format SBOM parsing with automatic format detection.
-// Supported formats: SPDX JSON (plain + in-toto envelopes), CycloneDX JSON.
+// Supported formats: SPDX 2.x JSON (plain + in-toto envelopes), SPDX 3 JSON-LD
+// (always via protobom), CycloneDX JSON.
 //
 // Two parser backends are available:
 //   - Built-in (default): Lightweight, high-performance parsers using goccy/go-json.
@@ -56,12 +57,36 @@ type formatProbe struct {
 	SPDXVersion string `json:"spdxVersion"`
 	// in-toto envelope detection
 	PredicateType string `json:"predicateType"`
+	// SPDX 3 JSON-LD detection: "@context" is a string or an array of strings.
+	Context json.RawMessage `json:"@context"`
+}
+
+// isSPDX3Context reports whether a JSON-LD @context value references the
+// SPDX 3 context (e.g. "https://spdx.org/rdf/3.0.1/spdx-context.jsonld").
+func isSPDX3Context(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var single string
+	if err := json.Unmarshal(raw, &single); err == nil {
+		return strings.Contains(single, "spdx.org/rdf/3")
+	}
+	var many []string
+	if err := json.Unmarshal(raw, &many); err == nil {
+		for _, c := range many {
+			if strings.Contains(c, "spdx.org/rdf/3") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Parse reads an SBOM document from a reader, auto-detects the format, and dispatches
 // to the appropriate parser. Supported formats:
 //   - SPDX JSON (plain documents)
 //   - SPDX JSON wrapped in in-toto attestation envelopes
+//   - SPDX 3 JSON-LD (@context https://spdx.org/rdf/3.x/...) via protobom
 //   - CycloneDX JSON (bomFormat: "CycloneDX")
 //
 // If USE_PROTOBOM=true, all parsing is delegated to protobom for maximum format coverage.
@@ -81,6 +106,9 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (*ParseResult, error) {
 	_ = json.Unmarshal(data, &probe)
 
 	switch {
+	case isSPDX3Context(probe.Context):
+		// SPDX 3 is JSON-LD without a spdxVersion field; only protobom understands it.
+		return parseWithProtobom(data, sourceFile, sha256Hash)
 	case probe.BomFormat == "CycloneDX":
 		return parseCycloneDX(data, sourceFile, sha256Hash)
 	case probe.SPDXVersion != "":
@@ -119,7 +147,7 @@ func parseCycloneDX(data []byte, sourceFile, sha256Hash string) (*ParseResult, e
 }
 
 // parseWithProtobom delegates parsing to the protobom library for maximum format coverage.
-// This supports SPDX 2.3, CycloneDX 1.0–1.7, and any future formats protobom adds.
+// This supports SPDX 2.2/2.3, SPDX 3.0.1, CycloneDX 1.4–1.7, and any future formats protobom adds.
 func parseWithProtobom(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 	result, err := protobomparser.Parse(data, sourceFile, sha256Hash)
 	if err != nil {
@@ -130,7 +158,3 @@ func parseWithProtobom(data []byte, sourceFile, sha256Hash string) (*ParseResult
 		Packages: result.Packages,
 	}, nil
 }
-
-
-
-

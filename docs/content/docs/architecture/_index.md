@@ -201,6 +201,7 @@ BOMHort supports **multiple SBOM formats** through a format-detection dispatch l
 |--------|-----------|--------|
 | SPDX 2.3 JSON | `spdxVersion` field present | Built-in (`internal/spdx`) |
 | In-toto envelope (SPDX) | `predicateType` contains "spdx" | Built-in (`internal/spdx`) |
+| SPDX 3.0.1 JSON-LD | `@context` references `spdx.org/rdf/3.x` | protobom (`internal/protobomparser`), always |
 | CycloneDX 1.0–1.7 JSON | `bomFormat: "CycloneDX"` | Built-in (`internal/cyclonedx`) |
 | All above via protobom | (opt-in) | `internal/protobomparser` |
 
@@ -211,7 +212,7 @@ Files starting with a configurable prefix (`SBOM_IGNORE_PREFIX`, default `_`) ar
 Two parser backends are available:
 
 - **Built-in (default)** — Lightweight, high-performance parsers using `goccy/go-json`. Zero additional dependencies. Best for production with known formats.
-- **Protobom (opt-in)** — Uses [github.com/protobom/protobom](https://github.com/protobom/protobom) for maximum format coverage. Enable with `USE_PROTOBOM=true`.
+- **Protobom** — Uses [github.com/protobom/protobom](https://github.com/protobom/protobom) for maximum format coverage. Always used for SPDX 3 (JSON-LD), which the built-in parsers do not understand. Enable for all formats with `USE_PROTOBOM=true`.
 
 Both backends use `internal/sbomname` to replace empty or temporary (`tmp.*`)
 document names with an unambiguous described root package and version, or a source

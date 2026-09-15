@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,8 @@ import (
 	"time"
 
 	json "github.com/goccy/go-json"
+
+	"github.com/seebom-labs/bomhort/backend/internal/licensetext"
 )
 
 const (
@@ -24,8 +27,12 @@ const (
 )
 
 // licenseResponse is the GitHub API response for /repos/{owner}/{repo}/license.
+// Besides the classification, GitHub returns the license file itself
+// (base64), which lets us classify texts GitHub only labels as "Other".
 type licenseResponse struct {
-	License *licenseInfo `json:"license"`
+	License  *licenseInfo `json:"license"`
+	Content  string       `json:"content"`
+	Encoding string       `json:"encoding"`
 }
 
 type licenseInfo struct {
@@ -248,11 +255,41 @@ func (r *Resolver) fetchLicense(ctx context.Context, owner, repo string) string 
 		return ""
 	}
 
-	if lr.License == nil || lr.License.SPDXID == "" || lr.License.SPDXID == "NOASSERTION" {
-		return ""
+	if lr.License != nil && lr.License.SPDXID != "" && lr.License.SPDXID != "NOASSERTION" {
+		return lr.License.SPDXID
 	}
 
-	return lr.License.SPDXID
+	// GitHub labelled the file "Other" (custom preamble, reformatted text, …).
+	// Best effort: classify the license text ourselves.
+	if spdxID := detectFromContent(lr.Content, lr.Encoding); spdxID != "" {
+		log.Printf("  GitHub license for %s/%s classified from text: %s", owner, repo, spdxID)
+		return spdxID
+	}
+	return ""
+}
+
+// detectFromContent decodes the license file returned by the GitHub API and
+// runs the phrase-based classifier on it.
+func detectFromContent(content, encoding string) string {
+	if content == "" {
+		return ""
+	}
+	text := content
+	if encoding == "base64" || encoding == "" {
+		// GitHub wraps base64 at 60 chars with newlines.
+		compact := strings.Map(func(r rune) rune {
+			if r == '\n' || r == '\r' {
+				return -1
+			}
+			return r
+		}, content)
+		decoded, err := base64.StdEncoding.DecodeString(compact)
+		if err != nil {
+			return ""
+		}
+		text = string(decoded)
+	}
+	return licensetext.Detect(text)
 }
 
 // fetchRepoMetadata gets full repo info including archived status.

@@ -89,15 +89,17 @@ type IngestionJob struct {
 // original SBOM bytes captured at ingest, plus integrity metadata. The bytes
 // themselves live in the blob store addressed by StorageRef.
 type StoredDocument struct {
-	StoredAt       time.Time `json:"stored_at"`
-	SBOMID         uuid.UUID `json:"sbom_id"`
-	Cluster        string    `json:"cluster,omitempty"`
-	SourceFile     string    `json:"source_file"`
-	StorageBackend string    `json:"storage_backend"` // s3 | fs
-	StorageRef     string    `json:"storage_ref"`     // s3://bucket/key or fs://relative/path
-	SHA256Hash     string    `json:"sha256_hash"`
-	SizeBytes      uint64    `json:"size_bytes"`
-	ContentType    string    `json:"content_type"`
+	StoredAt        time.Time `json:"stored_at"`
+	SBOMID          uuid.UUID `json:"sbom_id"`
+	Cluster         string    `json:"cluster,omitempty"`
+	SourceFile      string    `json:"source_file"`
+	StorageBackend  string    `json:"storage_backend"` // s3 | fs
+	StorageRef      string    `json:"storage_ref"`     // s3://bucket/key or fs://relative/path
+	SHA256Hash      string    `json:"sha256_hash"`     // of the original (decoded) bytes
+	SizeBytes       uint64    `json:"size_bytes"`      // of the original (decoded) bytes
+	ContentType     string    `json:"content_type"`
+	ContentEncoding string    `json:"content_encoding"`  // "" (identity) | gzip — how the blob is stored
+	StoredSizeBytes uint64    `json:"stored_size_bytes"` // bytes actually occupied in the blob store
 }
 
 // Job status constants.

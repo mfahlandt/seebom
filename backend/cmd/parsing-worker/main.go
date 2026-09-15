@@ -518,26 +518,52 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 // the reference in document_store. The sha256 is computed here rather than
 // taken from the job because S3-discovered jobs carry the bucket ETag, which
 // is not a sha256.
+//
+// Blobs are gzip-compressed by the store; sha256/size describe the original
+// bytes, StoredSizeBytes what the object occupies on disk.
 func captureOriginal(ctx context.Context, chClient *clickhouse.Client, store docstore.Store, job models.IngestionJob, raw []byte, meta *models.SBOM) error {
-	ref, err := store.Put(ctx, docstore.Key(meta.SBOMID.String(), job.SourceFile), raw)
+	// Remember a previous capture (re-ingest of the same sbom_id) so its blob
+	// can be removed once the new one is safely written and recorded — the
+	// ReplacingMergeTree row is superseded, but the object would otherwise
+	// linger as an orphan and silently eat storage.
+	var previous *models.StoredDocument
+	if prev, err := chClient.QueryStoredDocument(ctx, meta.SBOMID.String()); err == nil {
+		previous = prev
+	} else if !errors.Is(err, clickhouse.ErrDocumentNotStored) {
+		log.Printf("  WARNING: previous-original lookup for %s failed (orphan cleanup skipped): %v", meta.SBOMID, err)
+	}
+
+	res, err := store.Put(ctx, docstore.Key(meta.SBOMID.String(), job.SourceFile), raw)
 	if err != nil {
 		return fmt.Errorf("failed to store original for %s: %w", job.SourceFile, err)
 	}
 
 	doc := &models.StoredDocument{
-		StoredAt:       time.Now(),
-		SBOMID:         meta.SBOMID,
-		Cluster:        job.Cluster,
-		SourceFile:     job.SourceFile,
-		StorageBackend: store.Backend(),
-		StorageRef:     ref,
-		SHA256Hash:     docstore.SHA256Hex(raw),
-		SizeBytes:      uint64(len(raw)),
-		ContentType:    "application/json",
+		StoredAt:        time.Now(),
+		SBOMID:          meta.SBOMID,
+		Cluster:         job.Cluster,
+		SourceFile:      job.SourceFile,
+		StorageBackend:  store.Backend(),
+		StorageRef:      res.Ref,
+		SHA256Hash:      docstore.SHA256Hex(raw),
+		SizeBytes:       uint64(len(raw)),
+		ContentType:     "application/json",
+		ContentEncoding: res.Encoding,
+		StoredSizeBytes: res.StoredBytes,
 	}
 	if err := chClient.InsertStoredDocument(ctx, doc); err != nil {
 		return fmt.Errorf("failed to record original for %s: %w", job.SourceFile, err)
 	}
-	log.Printf("  Stored original (%d bytes, %s) at %s", len(raw), store.Backend(), ref)
+	log.Printf("  Stored original (%d bytes → %d stored, %s, %s) at %s", len(raw), res.StoredBytes, res.Encoding, store.Backend(), res.Ref)
+
+	// Best effort: the new capture is durable, so losing the old blob is the
+	// desired outcome and a failure here must not fail the job.
+	if previous != nil && previous.StorageRef != res.Ref && previous.StorageBackend == store.Backend() {
+		if err := store.Delete(ctx, previous.StorageRef); err != nil {
+			log.Printf("  WARNING: could not remove superseded original %s: %v", previous.StorageRef, err)
+		} else {
+			log.Printf("  Removed superseded original %s", previous.StorageRef)
+		}
+	}
 	return nil
 }

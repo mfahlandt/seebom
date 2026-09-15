@@ -20,7 +20,8 @@ func (c *Client) InsertStoredDocument(ctx context.Context, doc *models.StoredDoc
 	batch, err := c.Conn.PrepareBatch(ctx,
 		`INSERT INTO document_store (
 			stored_at, sbom_id, cluster, source_file,
-			storage_backend, storage_ref, sha256_hash, size_bytes, content_type
+			storage_backend, storage_ref, sha256_hash, size_bytes, content_type,
+			content_encoding, stored_size_bytes
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare document_store batch: %w", err)
@@ -36,6 +37,8 @@ func (c *Client) InsertStoredDocument(ctx context.Context, doc *models.StoredDoc
 		doc.SHA256Hash,
 		doc.SizeBytes,
 		doc.ContentType,
+		doc.ContentEncoding,
+		doc.StoredSizeBytes,
 	); err != nil {
 		return fmt.Errorf("failed to append document_store row: %w", err)
 	}
@@ -48,7 +51,8 @@ func (c *Client) InsertStoredDocument(ctx context.Context, doc *models.StoredDoc
 func (c *Client) QueryStoredDocument(ctx context.Context, sbomID string) (*models.StoredDocument, error) {
 	rows, err := c.Conn.Query(ctx, `
 		SELECT stored_at, sbom_id, cluster, source_file,
-		       storage_backend, storage_ref, sha256_hash, size_bytes, content_type
+		       storage_backend, storage_ref, sha256_hash, size_bytes, content_type,
+		       content_encoding, stored_size_bytes
 		FROM document_store FINAL
 		WHERE sbom_id = ?
 		ORDER BY stored_at DESC
@@ -76,6 +80,8 @@ func (c *Client) QueryStoredDocument(ctx context.Context, sbomID string) (*model
 		&doc.SHA256Hash,
 		&doc.SizeBytes,
 		&doc.ContentType,
+		&doc.ContentEncoding,
+		&doc.StoredSizeBytes,
 	); err != nil {
 		return nil, fmt.Errorf("failed to scan document_store row for sbom %s: %w", sbomID, err)
 	}

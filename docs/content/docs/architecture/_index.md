@@ -273,20 +273,25 @@ ClickHouse is tuned as an **analytical** store: `sbom_packages` holds the depend
 ```
 Parsing Worker                                  Blob store              ClickHouse
 ──────────────                                  ──────────              ──────────
-read source ──▶ sha256 ──▶ Put(<sbom_id>/<name>) ──▶ s3://bucket/_bomhort/originals/…
-                                                     or  fs://<sbom_id>/<name>
-                                     └──▶ INSERT document_store (ref, sha256, size)
+read source ──▶ sha256 ──▶ gzip ──▶ Put(<sbom_id>/<name>.gz) ──▶ s3://bucket/_bomhort/originals/…
+                                                     or  fs://<sbom_id>/<name>.gz
+                                     └──▶ INSERT document_store (ref, sha256, size, stored_size)
                                                     ──▶ then sboms, sbom_packages, …
 API Gateway
 ───────────
-GET /sboms/{id}/download ──▶ document_store? ──▶ Get(ref) ──▶ stream original
+GET /sboms/{id}/download ──▶ document_store? ──▶ GetEncoded(ref) ──▶ pass gzip through (Accept-Encoding: gzip)
+                                  │                              └── else Get(ref) ──▶ gunzip ──▶ stream
                                   └── none / unreadable ──▶ fall back to source_file
 ```
 
 **Design decisions**
 
-- **Bytes never go into ClickHouse.** MB-scale blobs in a MergeTree bloat parts and slow merges. `document_store` holds only `(sbom_id, cluster, source_file, storage_backend, storage_ref, sha256_hash, size_bytes, content_type)` as a `ReplacingMergeTree(stored_at)` keyed by `sbom_id`.
-- **Two backends, one interface** (`internal/docstore`): `s3` writes to a configured bucket under a reserved prefix (default `_bomhort/originals/`, skipped by the ingestion watcher so originals are never re-ingested); `fs` writes atomically (temp file + rename) below a directory — a PVC shared by workers and gateway for air-gapped setups. References are opaque (`s3://…`, `fs://…`), so the gateway resolves them without knowing how they were produced.
+- **Bytes never go into ClickHouse.** MB-scale blobs in a MergeTree bloat parts and slow merges. `document_store` holds only `(sbom_id, cluster, source_file, storage_backend, storage_ref, sha256_hash, size_bytes, content_type, content_encoding, stored_size_bytes)` as a `ReplacingMergeTree(stored_at)` keyed by `sbom_id`.
+- **Originals are gzip-compressed at rest.** SBOM JSON is extremely repetitive (PURLs, license ids, hashes) and shrinks 6–10× even at `gzip.BestSpeed`, which is what the worker uses so the ingestion hot path pays a few ms per document rather than a few hundred. The `.gz` suffix on the reference is the encoding marker — a reader never needs the ClickHouse row to decode a blob. `sha256_hash`/`size_bytes` always describe the *original* bytes (that is the integrity contract), `stored_size_bytes` is what the object actually occupies.
+- **Downloads pass the compressed bytes straight through.** If the client sends `Accept-Encoding: gzip` (every browser, `curl --compressed`) the gateway streams the stored object as-is with `Content-Encoding: gzip` — no decompression on the gateway, 6–10× less on the wire. Clients that don't accept gzip get the decoded original; both variants carry the same `ETag`/`X-BOMHort-SHA256` of the decoded bytes.
+- **Re-ingest replaces, it doesn't accumulate.** A second capture for the same `sbom_id` supersedes the `document_store` row (`ReplacingMergeTree`) *and* deletes the previous blob once the new one is durable, so re-processing never leaves orphans behind. The S3 backend refuses to delete anything outside its own prefix as a guard against a misconfigured `ORIGINAL_STORE_S3_PREFIX` pointing at ingestion sources.
+- **Memory: one buffer, not two.** `sbom.Parse` already needs the whole document in memory; the worker reads the source exactly once and hands the same buffer to the parser and the capture. The compressed copy adds ~10–15 % on top for the duration of the `Put`.
+- **Two backends, one interface** (`internal/docstore`): `s3` writes to a configured bucket under a reserved prefix (default `_bomhort/originals/`, skipped by the ingestion watcher so originals are never re-ingested); `fs` writes atomically (temp file + rename) below a directory — a PVC shared by workers and gateway for air-gapped setups. References are opaque (`s3://…`, `fs://…`), so the gateway resolves them without knowing how they were produced. Compression lives in the shared layer above both, so a new backend only has to move bytes.
 - **Capture happens before any ClickHouse insert.** If the blob store is unavailable the job fails and is retried; had the SBOM row been written first, the idempotency guard would skip the retry and the original would be lost for good.
 - **The worker computes the sha256 itself.** S3-discovered jobs carry the bucket ETag as their dedup hash, which is not a sha256 (and never is for multipart uploads).
 - **Download stays backward compatible.** `GET /api/v1/sboms/{id}/download` prefers the stored original (with `ETag`, `X-BOMHort-SHA256`, `X-BOMHort-Original: true`) and falls back to re-reading `source_file` for SBOMs ingested before this feature or with the store disabled.

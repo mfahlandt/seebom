@@ -257,11 +257,13 @@ originalStore:
     storageClassName: nfs
 ```
 
-Sizing: originals are stored uncompressed, once per `sbom_id`; budget roughly the total size of your SBOM corpus plus growth. A worker that cannot reach the blob store fails the job (it is retried later) rather than ingesting without the original.
+Sizing: originals are **gzip-compressed** and stored once per `sbom_id` (a re-ingest replaces the previous blob instead of adding a second one). SBOM JSON typically shrinks 6–10×, so budget roughly **10–15 % of the raw size of your SBOM corpus** plus growth — a 50 GB corpus needs about 5–8 GB. `document_store.stored_size_bytes` tells you the exact footprint per SBOM (`SELECT sum(stored_size_bytes), sum(size_bytes) FROM document_store FINAL`). A worker that cannot reach the blob store fails the job (it is retried later) rather than ingesting without the original.
+
+Performance: compression runs at `gzip.BestSpeed` and costs a few milliseconds per document on the worker; the gateway never decompresses for clients that accept gzip (all browsers, `curl --compressed`) — it passes the stored bytes through with `Content-Encoding: gzip`, so downloads of stored originals are usually *faster* than reading the source file.
 
 **Volume ownership.** The images run as `nobody` (uid/gid 65534). A freshly provisioned PVC is normally root-owned, so the chart sets `podSecurityContext.fsGroup: 65534` (with `fsGroupChangePolicy: OnRootMismatch`) on the worker and gateway pods by default. The worker also probes the directory at startup and refuses to start with a `not writable by uid 65534 … set fsGroup / chown` error instead of failing every job. If your cluster forbids `fsGroup` (e.g. a restrictive admission policy) set `podSecurityContext: null` and make the volume writable for uid 65534 yourself. The same applies to `sbomSource.writable` for push uploads.
 
-The download endpoint advertises a served original with `X-BOMHort-Original: true` and its digest in `ETag` / `X-BOMHort-SHA256`; SBOMs ingested before this feature fall back to the source file transparently.
+The download endpoint advertises a served original with `X-BOMHort-Original: true` and its digest in `ETag` / `X-BOMHort-SHA256` (always the sha256 of the *decoded* document, regardless of transfer encoding); SBOMs ingested before this feature fall back to the source file transparently.
 
 ---
 

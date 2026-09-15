@@ -11,13 +11,22 @@ import (
 )
 
 // FSStore persists originals below a root directory (typically a PVC mounted
-// into both the parsing-worker and the api-gateway).
+// into both the parsing-worker and the api-gateway). It is the raw backend;
+// NewFSStore wraps it in the shared compression layer.
 type FSStore struct {
 	root string
 }
 
 // NewFSStore returns a Store rooted at dir, creating it if necessary.
-func NewFSStore(dir string) (*FSStore, error) {
+func NewFSStore(dir string) (Store, error) {
+	raw, err := newFSStore(dir)
+	if err != nil {
+		return nil, err
+	}
+	return newEncodedStore(raw), nil
+}
+
+func newFSStore(dir string) (*FSStore, error) {
 	if dir == "" {
 		return nil, errors.New("docstore: filesystem root is required")
 	}
@@ -31,7 +40,7 @@ func NewFSStore(dir string) (*FSStore, error) {
 	return &FSStore{root: abs}, nil
 }
 
-// Backend implements Store.
+// Backend implements rawStore.
 func (f *FSStore) Backend() string { return BackendFS }
 
 // CheckWritable verifies that the process can create files below the root.
@@ -50,9 +59,9 @@ func (f *FSStore) CheckWritable() error {
 	return nil
 }
 
-// Put implements Store. Writes are atomic (temp file + rename) so a crashed
-// worker never leaves a truncated original behind.
-func (f *FSStore) Put(ctx context.Context, key string, data []byte) (string, error) {
+// putRaw implements rawStore. Writes are atomic (temp file + rename) so a
+// crashed worker never leaves a truncated original behind.
+func (f *FSStore) putRaw(ctx context.Context, key string, data []byte) (string, error) {
 	rel, err := f.safeRel(key)
 	if err != nil {
 		return "", err
@@ -85,8 +94,8 @@ func (f *FSStore) Put(ctx context.Context, key string, data []byte) (string, err
 	return "fs://" + filepath.ToSlash(rel), nil
 }
 
-// Get implements Store.
-func (f *FSStore) Get(ctx context.Context, ref string) (io.ReadCloser, error) {
+// getRaw implements rawStore.
+func (f *FSStore) getRaw(ctx context.Context, ref string) (io.ReadCloser, error) {
 	rest, err := splitRef(ref, "fs")
 	if err != nil {
 		return nil, err
@@ -103,6 +112,27 @@ func (f *FSStore) Get(ctx context.Context, ref string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("docstore: open %s: %w", ref, err)
 	}
 	return file, nil
+}
+
+// deleteRaw implements rawStore. The per-SBOM directory is removed too once
+// it is empty so re-ingests don't leave thousands of empty directories behind.
+func (f *FSStore) deleteRaw(ctx context.Context, ref string) error {
+	rest, err := splitRef(ref, "fs")
+	if err != nil {
+		return err
+	}
+	rel, err := f.safeRel(rest)
+	if err != nil {
+		return err
+	}
+	abs := filepath.Join(f.root, rel)
+	if err := os.Remove(abs); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("docstore: remove %s: %w", ref, err)
+	}
+	if dir := filepath.Dir(abs); dir != f.root {
+		_ = os.Remove(dir) // fails harmlessly when not empty
+	}
+	return nil
 }
 
 // safeRel normalises key into a relative path that cannot escape the root.

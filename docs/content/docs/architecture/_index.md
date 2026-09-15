@@ -49,7 +49,9 @@ Parsing Workers (N replicas)
        ├── job_type=sbom:
        │     1. Auto-detect format (SPDX / CycloneDX / in-toto envelope)
        │     2. Parse via appropriate backend (built-in or protobom)
-       │     2. Resolve unknown licenses via GitHub API
+       │     2a. Store original bytes → blob store, INSERT document_store
+       │         (before any other row, so a blob-store outage retries cleanly)
+       │     2b. Resolve unknown licenses via GitHub API
        │        (well-known Go module mappings + API fallback + static overrides)
        │        then via package registries (npm, NuGet) for what is still unknown
        │     3. Batch INSERT sboms + sbom_packages (with resolved licenses)
@@ -83,6 +85,7 @@ API Gateway (REST) → 24 Endpoints → Angular UI
 | `github_license_cache` | ReplacingMergeTree | Resolved GitHub licenses cache |
 | `github_repo_metadata` | ReplacingMergeTree | GitHub repo metadata (archived, fork, stars) |
 | `registry_license_cache` | ReplacingMergeTree | Resolved package-registry licenses cache (npm, NuGet), keyed by `(registry, package@version)` |
+| `document_store` | ReplacingMergeTree | Reference + `sha256` of the **original SBOM bytes** captured at ingest (#256). The bytes live in a blob store (S3 prefix or PVC), not in ClickHouse. |
 
 All core tables (`sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`, `vex_statements`) include a `cluster LowCardinality(String) DEFAULT ''` column for multi-cluster support.
 
@@ -261,6 +264,38 @@ Results (including negative ones) are cached in-memory and persisted to the `reg
 
 {{% alert title="Important" color="warning" %}}
 License resolution runs **before** the ClickHouse insert so that `sbom_packages.package_licenses` contains the resolved values from the start. This ensures the dependency tree API returns correct licenses without requiring a separate join or lookup.
+{{% /alert %}}
+
+## Original Document Store (Tier-2 Fidelity)
+
+ClickHouse is tuned as an **analytical** store: `sbom_packages` holds the dependency tree as parallel `Array()` columns, which is ideal for search and aggregation but drops most document-level detail (copyright text, supplier/originator, external references, formatting). To hand back the *exact* document later — download, enriched export, re-signing (#255) — the parsing worker captures the original bytes at ingest (#256).
+
+```
+Parsing Worker                                  Blob store              ClickHouse
+──────────────                                  ──────────              ──────────
+read source ──▶ sha256 ──▶ Put(<sbom_id>/<name>) ──▶ s3://bucket/_bomhort/originals/…
+                                                     or  fs://<sbom_id>/<name>
+                                     └──▶ INSERT document_store (ref, sha256, size)
+                                                    ──▶ then sboms, sbom_packages, …
+API Gateway
+───────────
+GET /sboms/{id}/download ──▶ document_store? ──▶ Get(ref) ──▶ stream original
+                                  └── none / unreadable ──▶ fall back to source_file
+```
+
+**Design decisions**
+
+- **Bytes never go into ClickHouse.** MB-scale blobs in a MergeTree bloat parts and slow merges. `document_store` holds only `(sbom_id, cluster, source_file, storage_backend, storage_ref, sha256_hash, size_bytes, content_type)` as a `ReplacingMergeTree(stored_at)` keyed by `sbom_id`.
+- **Two backends, one interface** (`internal/docstore`): `s3` writes to a configured bucket under a reserved prefix (default `_bomhort/originals/`, skipped by the ingestion watcher so originals are never re-ingested); `fs` writes atomically (temp file + rename) below a directory — a PVC shared by workers and gateway for air-gapped setups. References are opaque (`s3://…`, `fs://…`), so the gateway resolves them without knowing how they were produced.
+- **Capture happens before any ClickHouse insert.** If the blob store is unavailable the job fails and is retried; had the SBOM row been written first, the idempotency guard would skip the retry and the original would be lost for good.
+- **The worker computes the sha256 itself.** S3-discovered jobs carry the bucket ETag as their dedup hash, which is not a sha256 (and never is for multipart uploads).
+- **Download stays backward compatible.** `GET /api/v1/sboms/{id}/download` prefers the stored original (with `ETag`, `X-BOMHort-SHA256`, `X-BOMHort-Original: true`) and falls back to re-reading `source_file` for SBOMs ingested before this feature or with the store disabled.
+- **Single capture point covers push uploads too.** `POST /api/v1/sboms/upload` only stages the file and enqueues a job; the worker reads that same file, so pushed and pulled SBOMs are treated identically.
+
+Configuration: `ORIGINAL_STORE_BACKEND=auto|s3|fs|none` (`auto` → `s3` when S3 buckets are configured, else `fs` when `ORIGINAL_STORE_FS_PATH` is set, else `none`), `ORIGINAL_STORE_S3_BUCKET`, `ORIGINAL_STORE_S3_PREFIX`, `ORIGINAL_STORE_FS_PATH`. See the [Deployment Guide](/docs/deployment/#original-document-store) for Helm values.
+
+{{% alert title="Forward-only" color="warning" %}}
+Originals can only be captured at ingest. SBOMs ingested before this feature was enabled, or while `ORIGINAL_STORE_BACKEND=none`, are permanently limited to the parsed representation — a full re-ingestion is the only way to back-fill them.
 {{% /alert %}}
 
 ## Angular UI

@@ -1,0 +1,22 @@
+{{- if .Values.originalStore.fs.enabled }}
+# Blob store for original SBOM bytes (#256, filesystem backend). Mounted
+# read-write into parsing workers and the API gateway.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.originalStore.fs.pvcName }}
+  labels:
+    app.kubernetes.io/name: bomhort
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: original-store
+spec:
+  accessModes:
+    - {{ .Values.originalStore.fs.accessMode | default "ReadWriteOnce" }}
+  {{- with .Values.originalStore.fs.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.originalStore.fs.storageSize | default "10Gi" }}
+{{- end }}
+

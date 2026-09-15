@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"github.com/seebom-labs/bomhort/backend/internal/docstore"
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
@@ -117,6 +119,23 @@ func main() {
 		}
 	}
 
+	// Tier-2 fidelity capture (#256): blob store for the original SBOM bytes.
+	// A nil store means capture is disabled (ORIGINAL_STORE_BACKEND=none or
+	// nothing to auto-detect); a misconfigured store is fatal because silently
+	// skipping capture would defeat the purpose of the feature.
+	originals, err := docstore.FromConfig(cfg, s3c)
+	if err != nil {
+		log.Fatalf("Failed to initialize original document store: %v", err)
+	}
+	if originals == nil {
+		log.Printf("Original document store disabled (ORIGINAL_STORE_BACKEND=%s) — SBOMs will not be retained byte-for-byte", cfg.OriginalStoreBackend)
+	} else {
+		if err := docstore.CheckWritable(originals); err != nil {
+			log.Fatalf("Original document store is not usable: %v", err)
+		}
+		log.Printf("Original document store: backend=%s", originals.Backend())
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -156,7 +175,7 @@ func main() {
 		log.Printf("Claimed %d jobs, processing...", len(jobs))
 
 		for _, job := range jobs {
-			if err := processJob(ctx, cfg, chClient, osvClient, exceptionsIndex, ghResolver, registryResolvers, s3c, job); err != nil {
+			if err := processJob(ctx, cfg, chClient, osvClient, exceptionsIndex, ghResolver, registryResolvers, s3c, originals, job); err != nil {
 				log.Printf("ERROR: Failed to process %s: %v", job.SourceFile, err)
 				if failErr := chClient.FailJob(ctx, job, err.Error()); failErr != nil {
 					log.Printf("ERROR: Failed to mark job as failed: %v", failErr)
@@ -173,7 +192,7 @@ func main() {
 	}
 }
 
-func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, s3c *s3client.Client, job models.IngestionJob) error {
+func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, s3c *s3client.Client, originals docstore.Store, job models.IngestionJob) error {
 	// Determine how to open the file: S3 URI or local path.
 	openFile := func() (io.ReadCloser, error) {
 		if strings.HasPrefix(job.SourceFile, "s3://") {
@@ -196,7 +215,7 @@ func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Cl
 		return processVEXJob(ctx, chClient, openFile, job)
 	}
 
-	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, openFile, job)
+	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, openFile, originals, job)
 }
 
 func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
@@ -255,16 +274,22 @@ func excludeIndices(names, licenses []string, skip []uint32) ([]string, []string
 	return outNames, outLics
 }
 
-func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
+func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), originals docstore.Store, job models.IngestionJob) error {
 
-	// 1. Parse the SBOM file (auto-detects SPDX or CycloneDX).
+	// 1. Read the whole document once. The bytes are needed twice — for the
+	// parser and for the Tier-2 original capture (#256) — and sbom.Parse reads
+	// everything into memory anyway.
 	rc, err := openFile()
 	if err != nil {
 		return fmt.Errorf("failed to open SBOM source %s: %w", job.SourceFile, err)
 	}
-	defer rc.Close()
+	raw, err := io.ReadAll(rc)
+	rc.Close()
+	if err != nil {
+		return fmt.Errorf("failed to read SBOM source %s: %w", job.SourceFile, err)
+	}
 
-	result, err := sbom.Parse(rc, job.SourceFile, job.SHA256Hash)
+	result, err := sbom.Parse(bytes.NewReader(raw), job.SourceFile, job.SHA256Hash)
 	if err != nil {
 		return err
 	}
@@ -278,6 +303,16 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	if exists, _ := chClient.SBOMExists(ctx, result.SBOM.SBOMID); exists {
 		log.Printf("  Skipping %s (already ingested, sbom_id=%s)", job.SourceFile, result.SBOM.SBOMID)
 		return nil
+	}
+
+	// 1c. Tier-2 fidelity capture (#256): persist the original bytes BEFORE any
+	// ClickHouse row is written. If the blob store is unavailable the job fails
+	// here and is retried later; had we inserted first, the SBOMExists guard
+	// above would skip the retry and the original would be lost for good.
+	if originals != nil {
+		if err := captureOriginal(ctx, chClient, originals, job, raw, &result.SBOM); err != nil {
+			return err
+		}
 	}
 
 	// 2. Resolve unknown licenses via GitHub API BEFORE inserting into ClickHouse,
@@ -476,5 +511,33 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		}
 	}
 
+	return nil
+}
+
+// captureOriginal stores the raw document bytes in the blob store and records
+// the reference in document_store. The sha256 is computed here rather than
+// taken from the job because S3-discovered jobs carry the bucket ETag, which
+// is not a sha256.
+func captureOriginal(ctx context.Context, chClient *clickhouse.Client, store docstore.Store, job models.IngestionJob, raw []byte, meta *models.SBOM) error {
+	ref, err := store.Put(ctx, docstore.Key(meta.SBOMID.String(), job.SourceFile), raw)
+	if err != nil {
+		return fmt.Errorf("failed to store original for %s: %w", job.SourceFile, err)
+	}
+
+	doc := &models.StoredDocument{
+		StoredAt:       time.Now(),
+		SBOMID:         meta.SBOMID,
+		Cluster:        job.Cluster,
+		SourceFile:     job.SourceFile,
+		StorageBackend: store.Backend(),
+		StorageRef:     ref,
+		SHA256Hash:     docstore.SHA256Hex(raw),
+		SizeBytes:      uint64(len(raw)),
+		ContentType:    "application/json",
+	}
+	if err := chClient.InsertStoredDocument(ctx, doc); err != nil {
+		return fmt.Errorf("failed to record original for %s: %w", job.SourceFile, err)
+	}
+	log.Printf("  Stored original (%d bytes, %s) at %s", len(raw), store.Backend(), ref)
 	return nil
 }

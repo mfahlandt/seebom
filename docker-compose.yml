@@ -24,6 +24,16 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-shot: hand the originals volume to uid 65534 ("nobody", the user the
+  # backend images run as). Named volumes are created root-owned, which would
+  # make every ingestion fail with "permission denied" (#256).
+  originals-init:
+    image: alpine:3.21@sha256:48b0309ca019d89d40f670aa1bc06e426dc0931948452e8491e3d65087abc07d
+    user: "0:0"
+    command: ["sh", "-c", "chown 65534:65534 /data/originals && chmod 0755 /data/originals"]
+    volumes:
+      - originals_data:/data/originals
+    restart: "no"
   api-gateway:
     build:
       context: ./backend
@@ -57,13 +67,20 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_USE_PATH_STYLE: ${S3_USE_PATH_STYLE:-}
       S3_USE_SSL: ${S3_USE_SSL:-}
+      # Original SBOM bytes (#256): read side. auto → s3 when S3 is configured,
+      # else the shared originals volume below.
+      ORIGINAL_STORE_BACKEND: ${ORIGINAL_STORE_BACKEND:-auto}
+      ORIGINAL_STORE_FS_PATH: /data/originals
     volumes:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
       - ./sboms/license-policy.json:/data/config/license-policy.json:ro
+      - originals_data:/data/originals:ro
     depends_on:
       clickhouse:
         condition: service_healthy
+      originals-init:
+        condition: service_completed_successfully
 
   ingestion-watcher:
     build:
@@ -127,13 +144,20 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY:-}
       S3_USE_PATH_STYLE: ${S3_USE_PATH_STYLE:-}
       S3_USE_SSL: ${S3_USE_SSL:-}
+      # Original SBOM bytes (#256): write side. Same backend selection as the
+      # gateway; the worker needs the originals volume read-write.
+      ORIGINAL_STORE_BACKEND: ${ORIGINAL_STORE_BACKEND:-auto}
+      ORIGINAL_STORE_FS_PATH: /data/originals
     volumes:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
       - ./sboms/license-policy.json:/data/config/license-policy.json:ro
+      - originals_data:/data/originals
     depends_on:
       clickhouse:
         condition: service_healthy
+      originals-init:
+        condition: service_completed_successfully
 
   ui:
     build:
@@ -169,4 +193,5 @@ services:
 
 volumes:
   clickhouse_data:
+  originals_data:
 

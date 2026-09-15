@@ -119,7 +119,7 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 - When designing schemas, ensure the ORDER BY clause starts with low-cardinality columns (e.g., timestamp, category) to minimize data scanning and optimize performance.
 - Extract frequently queried JSON keys into top-level columns rather than relying entirely on generic Map or String types.
 - Avoid single-row inserts; always aggregate and batch inserts in Go.
-- Current tables: `sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`, `dashboard_stats_mv`, `vex_statements`, `cve_refresh_log`, `github_license_cache`, `github_repo_metadata`, `registry_license_cache` (13 migrations in `db/migrations/`; the next free number is `014` — see the Schema Change Register in `ROADMAP.md` before adding one). All core tables include a `cluster LowCardinality(String) DEFAULT ''` column for multi-cluster support.
+- Current tables: `sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`, `dashboard_stats_mv`, `vex_statements`, `cve_refresh_log`, `github_license_cache`, `github_repo_metadata`, `registry_license_cache`, `document_store` (14 migrations in `db/migrations/`; the next free number is `015` — see the Schema Change Register in `ROADMAP.md` before adding one). All core tables include a `cluster LowCardinality(String) DEFAULT ''` column for multi-cluster support.
 
 ## Angular (Frontend)
 - Use strict TypeScript mode and standalone components.

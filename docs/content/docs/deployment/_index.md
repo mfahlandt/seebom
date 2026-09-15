@@ -220,6 +220,49 @@ apiGateway:
   maxUploadSizeMB: 25
 ```
 
+### Original Document Store (Tier-2 Fidelity) {#original-document-store}
+
+From v0.7 the parsing worker keeps the **original bytes** of every ingested SBOM so it can be reproduced byte-for-byte later (download, enriched export, re-signing — see [Architecture](/docs/architecture/#original-document-store-tier-2-fidelity)). ClickHouse only stores a reference and `sha256`; the bytes go to a blob store selected by `originalStore.backend`:
+
+| `backend` | Where originals go | When to use |
+|-----------|-------------------|-------------|
+| `auto` (default) | `s3` if `s3.buckets` is set, else `fs` if `originalStore.fs.enabled`, else `none` | Almost always — follows your ingestion setup. |
+| `s3` | `originalStore.s3.bucket` (default: first non-`skipScan` bucket) under `originalStore.s3.prefix` (default `_bomhort/originals/`) | Any deployment with object storage. Anything under `_bomhort/` is ignored by the ingestion watcher, so originals are never re-ingested. |
+| `fs` | A dedicated PVC (`originalStore.fs.pvcName`) mounted read-write into the workers and read-only into the API gateway | Air-gapped / filesystem-only deployments. |
+| `none` | Nowhere | Only deliberately — SBOMs ingested while disabled can **never** be recovered byte-for-byte. |
+
+**S3 (default with buckets configured) — nothing to do.** Optionally pin a dedicated archive bucket:
+
+```yaml
+s3:
+  buckets: '[{"name":"cncf-subproject-sboms","region":"us-east-1"},{"name":"bomhort-archive","region":"us-east-1","skipScan":true}]'
+
+originalStore:
+  s3:
+    bucket: bomhort-archive
+    prefix: originals/
+```
+
+**Filesystem (no S3):**
+
+```yaml
+originalStore:
+  backend: fs
+  fs:
+    enabled: true
+    storageSize: 20Gi
+    # Required if parsingWorker.replicas > 1 (they all write) — needs a
+    # ReadWriteMany-capable storage class (EFS, Azure Files, NFS, …).
+    accessMode: ReadWriteMany
+    storageClassName: nfs
+```
+
+Sizing: originals are stored uncompressed, once per `sbom_id`; budget roughly the total size of your SBOM corpus plus growth. A worker that cannot reach the blob store fails the job (it is retried later) rather than ingesting without the original.
+
+**Volume ownership.** The images run as `nobody` (uid/gid 65534). A freshly provisioned PVC is normally root-owned, so the chart sets `podSecurityContext.fsGroup: 65534` (with `fsGroupChangePolicy: OnRootMismatch`) on the worker and gateway pods by default. The worker also probes the directory at startup and refuses to start with a `not writable by uid 65534 … set fsGroup / chown` error instead of failing every job. If your cluster forbids `fsGroup` (e.g. a restrictive admission policy) set `podSecurityContext: null` and make the volume writable for uid 65534 yourself. The same applies to `sbomSource.writable` for push uploads.
+
+The download endpoint advertises a served original with `X-BOMHort-Original: true` and its digest in `ETag` / `X-BOMHort-SHA256`; SBOMs ingested before this feature fall back to the source file transparently.
+
 ---
 
 ## 2. License Exceptions
@@ -783,7 +826,9 @@ kubectl logs -n bomhort job/bomhort-data-migration-1 -f
 The Job migrates these tables (skipping any that are empty or already populated in the target):
 - `sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`
 - `ingestion_queue`, `vex_statements`, `cve_refresh_log`
-- `github_license_cache`, `github_repo_metadata`, `registry_license_cache`
+- `github_license_cache`, `github_repo_metadata`, `registry_license_cache`, `document_store`
+
+Stored originals themselves (the blobs referenced by `document_store`) are not moved by the Job — they stay in their S3 prefix or PVC; make sure the new release points at the same bucket / volume.
 
 The `dashboard_stats_mv` materialized view repopulates automatically.
 

@@ -25,6 +25,10 @@ spec:
         bomhort.io/sbom-volume: "true"
         {{- end }}
     spec:
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if not .Values.gitSync.enabled }}
       affinity:
         podAffinity:
@@ -130,6 +134,11 @@ spec:
               subPath: license-policy.json
               readOnly: true
             {{- end }}
+            {{- if .Values.originalStore.fs.enabled }}
+            - name: originals
+              mountPath: {{ .Values.originalStore.fs.mountPath }}
+              readOnly: true
+            {{- end }}
       volumes:
         - name: sbom-data
           {{- if .Values.gitSync.enabled }}
@@ -138,6 +147,11 @@ spec:
           persistentVolumeClaim:
             claimName: {{ .Values.sbomSource.pvcName }}
           {{- end }}
+        {{- if .Values.originalStore.fs.enabled }}
+        - name: originals
+          persistentVolumeClaim:
+            claimName: {{ .Values.originalStore.fs.pvcName }}
+        {{- end }}
         {{- if .Values.licenseExceptions.enabled }}
         - name: license-exceptions
           configMap:

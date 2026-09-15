@@ -74,7 +74,31 @@ type Config struct {
 
 	// Push-model upload (#135)
 	MaxUploadSizeMB int // Max accepted body size for POST /api/v1/sboms/upload, in MB (default 50)
+
+	// Tier-2 fidelity capture (#256): where the original SBOM bytes are kept.
+	//   OriginalStoreBackend: "auto" (default) | "s3" | "fs" | "none"
+	//     auto → "s3" when any S3 bucket is configured, else "fs" when
+	//     OriginalStoreFSPath is set, else "none".
+	//   OriginalStoreS3Bucket: bucket to write to; must be one of S3Buckets
+	//     (default: first non-skipScan bucket, else first bucket).
+	//   OriginalStoreS3Prefix: key prefix inside that bucket
+	//     (default "_bomhort/originals/" — skipped by the ingestion watcher).
+	//   OriginalStoreFSPath: directory for the fs backend (a PVC shared by
+	//     parsing-worker and api-gateway).
+	OriginalStoreBackend  string
+	OriginalStoreS3Bucket string
+	OriginalStoreS3Prefix string
+	OriginalStoreFSPath   string
 }
+
+// Original-store backend identifiers (mirrors internal/docstore constants so
+// config does not import docstore).
+const (
+	OriginalStoreAuto = "auto"
+	OriginalStoreS3   = "s3"
+	OriginalStoreFS   = "fs"
+	OriginalStoreNone = "none"
+)
 
 // Load reads configuration from environment variables with sensible defaults.
 func Load() (*Config, error) {
@@ -103,6 +127,17 @@ func Load() (*Config, error) {
 		ServiceToken:       getEnv("SERVICE_TOKEN", ""),
 		APIKeys:            parseAPIKeys(getEnv("API_KEYS", "")),
 		MaxUploadSizeMB:    getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
+
+		OriginalStoreBackend:  strings.ToLower(getEnv("ORIGINAL_STORE_BACKEND", OriginalStoreAuto)),
+		OriginalStoreS3Bucket: getEnv("ORIGINAL_STORE_S3_BUCKET", ""),
+		OriginalStoreS3Prefix: getEnv("ORIGINAL_STORE_S3_PREFIX", "_bomhort/originals/"),
+		OriginalStoreFSPath:   getEnv("ORIGINAL_STORE_FS_PATH", ""),
+	}
+
+	switch cfg.OriginalStoreBackend {
+	case OriginalStoreAuto, OriginalStoreS3, OriginalStoreFS, OriginalStoreNone:
+	default:
+		return nil, fmt.Errorf("invalid ORIGINAL_STORE_BACKEND %q (want auto|s3|fs|none)", cfg.OriginalStoreBackend)
 	}
 
 	if cfg.WorkerID == "" {
@@ -174,6 +209,41 @@ func Load() (*Config, error) {
 // HasS3Sources returns true if any S3 buckets are configured.
 func (c *Config) HasS3Sources() bool {
 	return len(c.S3Buckets) > 0
+}
+
+// ResolvedOriginalStoreBackend resolves "auto" to a concrete backend:
+// s3 when any S3 bucket is configured, else fs when a path is set, else none.
+func (c *Config) ResolvedOriginalStoreBackend() string {
+	if c.OriginalStoreBackend != OriginalStoreAuto {
+		return c.OriginalStoreBackend
+	}
+	switch {
+	case c.HasS3Sources():
+		return OriginalStoreS3
+	case c.OriginalStoreFSPath != "":
+		return OriginalStoreFS
+	default:
+		return OriginalStoreNone
+	}
+}
+
+// OriginalStoreBucket returns the S3 bucket originals are written to:
+// the explicit ORIGINAL_STORE_S3_BUCKET, else the first bucket that is not a
+// skipScan (push-upload) bucket, else the first configured bucket. Returns ""
+// when no S3 bucket is configured.
+func (c *Config) OriginalStoreBucket() string {
+	if c.OriginalStoreS3Bucket != "" {
+		return c.OriginalStoreS3Bucket
+	}
+	for _, b := range c.S3Buckets {
+		if !b.SkipScan {
+			return b.Name
+		}
+	}
+	if len(c.S3Buckets) > 0 {
+		return c.S3Buckets[0].Name
+	}
+	return ""
 }
 
 // ClickHouseDSN returns the ClickHouse connection string.

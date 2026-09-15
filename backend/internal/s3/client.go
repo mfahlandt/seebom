@@ -202,6 +202,13 @@ func (c *Client) ListObjects(ctx context.Context) <-chan ObjectResult {
 					continue
 				}
 
+				// Objects BOMHort itself writes into a source bucket (stored
+				// originals, #256) must never be re-ingested as new SBOMs.
+				if IsReservedKey(obj.Key) {
+					skipped++
+					continue
+				}
+
 				// Classify by file extension.
 				fileType := ClassifyKey(obj.Key)
 				if fileType == "" {
@@ -297,6 +304,17 @@ func (c *Client) RemoveObject(ctx context.Context, bucket, key string) error {
 // S3 returns ETags like `"d41d8cd98f00b204e9800998ecf8427e"` or `"hash-partcount"` for multipart.
 func sanitizeETag(etag string) string {
 	return strings.Trim(etag, `"`)
+}
+
+// ReservedPrefix is the path segment under which BOMHort writes its own
+// objects into a bucket (e.g. "_bomhort/originals/<sbom_id>/…"). Keys below it
+// are ignored by ListObjects.
+const ReservedPrefix = "_bomhort/"
+
+// IsReservedKey reports whether key lies under ReservedPrefix at any depth,
+// so a configured bucket Prefix in front of it does not defeat the check.
+func IsReservedKey(key string) bool {
+	return strings.Contains("/"+key, "/"+ReservedPrefix)
 }
 
 // ClassifyKey determines the file type from an S3 object key.

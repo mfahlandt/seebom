@@ -23,6 +23,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"github.com/seebom-labs/bomhort/backend/internal/docstore"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
@@ -82,6 +83,16 @@ func main() {
 		} else {
 			log.Printf("S3 client initialized for downloads (%d bucket(s))", len(cfg.S3Buckets))
 		}
+	}
+
+	// Tier-2 originals (#256): the download endpoint prefers the byte-exact
+	// original captured at ingest over re-reading the (possibly changed or
+	// deleted) source file. A misconfigured store is only a warning here —
+	// the gateway can still serve from the source path.
+	originals, err := docstore.FromConfig(cfg, s3c)
+	if err != nil {
+		log.Printf("WARNING: original document store unavailable for downloads: %v", err)
+		originals = nil
 	}
 
 	// Push-model upload storage (#135): either a dedicated skipScan S3 bucket,
@@ -471,6 +482,15 @@ func main() {
 			log.Printf("ERROR: sbom download lookup for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusNotFound, "SBOM not found")
 			return
+		}
+
+		// Preferred path (#256): serve the byte-exact original captured at
+		// ingest. Falls through to the source file when nothing was captured
+		// (pre-#256 SBOMs, store disabled) or the blob is unreachable.
+		if originals != nil {
+			if served := serveStoredOriginal(w, r, chClient, originals, sbomID, sourceFile); served {
+				return
+			}
 		}
 
 		// Determine filename for Content-Disposition.
@@ -1225,4 +1245,58 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			"cluster":     cluster,
 		})
 	}
+}
+
+// serveStoredOriginal streams the captured original for sbomID if one exists
+// and is readable. It returns true when a response has been written (success
+// or a hard error such as a client disconnect mid-stream); false means the
+// caller should fall back to the source file. Lookup and open errors are
+// logged but never surfaced, so the fallback keeps working when the blob
+// store is degraded.
+func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *clickhouse.Client, store docstore.Store, sbomID, sourceFile string) bool {
+	doc, err := chClient.QueryStoredDocument(r.Context(), sbomID)
+	if err != nil {
+		if !errors.Is(err, clickhouse.ErrDocumentNotStored) {
+			log.Printf("WARNING: stored-original lookup for %s: %v", sanitizeLogParam(sbomID), err)
+		}
+		return false
+	}
+
+	rc, err := store.Get(r.Context(), doc.StorageRef)
+	if err != nil {
+		log.Printf("WARNING: stored-original open for %s (%s): %v — falling back to source file", sanitizeLogParam(sbomID), sanitizeLogParam(doc.StorageRef), err)
+		return false
+	}
+	defer rc.Close()
+
+	filename := filepath.Base(doc.SourceFile)
+	if filename == "." || filename == "/" || filename == "" {
+		filename = filepath.Base(sourceFile)
+	}
+	if filename == "." || filename == "/" || filename == "" {
+		filename = sbomID + ".json"
+	}
+
+	contentType := doc.ContentType
+	if contentType == "" {
+		contentType = "application/json"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
+	if doc.SizeBytes > 0 {
+		w.Header().Set("Content-Length", strconv.FormatUint(doc.SizeBytes, 10))
+	}
+	if doc.SHA256Hash != "" {
+		// Integrity hint for clients; matches the sha256 the worker computed
+		// over exactly these bytes.
+		w.Header().Set("ETag", "\""+doc.SHA256Hash+"\"")
+		w.Header().Set("X-BOMHort-SHA256", doc.SHA256Hash)
+	}
+	w.Header().Set("X-BOMHort-Original", "true")
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.Copy(w, rc); err != nil {
+		log.Printf("ERROR: stored-original stream for %s: %v", sanitizeLogParam(sbomID), err)
+	}
+	return true
 }

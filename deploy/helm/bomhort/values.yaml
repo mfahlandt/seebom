@@ -93,6 +93,45 @@ sbomSource:
   # opt-in.
   writable: false
 
+# Tier-2 fidelity capture (#256): keep the original SBOM bytes as ingested so
+# every document can be reproduced byte-for-byte (download, enriched export,
+# re-signing). ClickHouse only stores a reference + sha256; the bytes go to a
+# blob store.
+originalStore:
+  # auto (default) | s3 | fs | none
+  #   auto → s3 when s3.buckets is set, else fs when fs.enabled, else none.
+  #   none disables capture — SBOMs ingested while disabled can never be
+  #   recovered byte-for-byte later, so only use this deliberately.
+  backend: auto
+  s3:
+    # Bucket to write to. Must be one of s3.buckets. Empty = first bucket
+    # that is not a skipScan (push-upload) bucket.
+    bucket: ""
+    # Key prefix inside the bucket. Anything under "_bomhort/" is skipped by
+    # the ingestion watcher, so originals are never re-ingested.
+    prefix: "_bomhort/originals/"
+  fs:
+    # Filesystem backend for deployments without object storage. Creates a
+    # PVC that is mounted read-write into the parsing workers and the API
+    # gateway. With more than one replica of either, the storage class must
+    # support ReadWriteMany.
+    enabled: false
+    pvcName: bomhort-originals
+    mountPath: /data/originals
+    storageSize: 10Gi
+    accessMode: ReadWriteOnce
+    storageClassName: ""
+
+# Pod-level security context applied to the parsing-worker and api-gateway
+# pods. The images run as user "nobody" (uid/gid 65534); a freshly provisioned
+# PVC is usually root-owned, so without fsGroup the workers cannot write
+# originals (originalStore.fs) and the gateway cannot persist push uploads
+# (sbomSource.writable). fsGroupChangePolicy: OnRootMismatch avoids a
+# recursive chown on every pod start for large volumes.
+podSecurityContext:
+  fsGroup: 65534
+  fsGroupChangePolicy: OnRootMismatch
+
 # git-sync: alternative to S3 — pulls SBOMs from a Git repository into a PVC.
 # Only suitable for small repos (< 1 GB). For large-scale ingestion, use S3 instead.
 gitSync:

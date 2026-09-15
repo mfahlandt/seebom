@@ -44,3 +44,4 @@ local/
 docs/public/
 docs/resources/
 docs/node_modules/
+__pycache__/

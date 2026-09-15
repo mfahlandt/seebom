@@ -85,6 +85,21 @@ type IngestionJob struct {
 	Cluster      string     `json:"cluster,omitempty"`
 }
 
+// StoredDocument is a row in document_store (#256): the reference to the
+// original SBOM bytes captured at ingest, plus integrity metadata. The bytes
+// themselves live in the blob store addressed by StorageRef.
+type StoredDocument struct {
+	StoredAt       time.Time `json:"stored_at"`
+	SBOMID         uuid.UUID `json:"sbom_id"`
+	Cluster        string    `json:"cluster,omitempty"`
+	SourceFile     string    `json:"source_file"`
+	StorageBackend string    `json:"storage_backend"` // s3 | fs
+	StorageRef     string    `json:"storage_ref"`     // s3://bucket/key or fs://relative/path
+	SHA256Hash     string    `json:"sha256_hash"`
+	SizeBytes      uint64    `json:"size_bytes"`
+	ContentType    string    `json:"content_type"`
+}
+
 // Job status constants.
 const (
 	JobStatusPending    = "pending"

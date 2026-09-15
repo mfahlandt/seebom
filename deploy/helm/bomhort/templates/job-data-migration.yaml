@@ -86,7 +86,7 @@ data:
     set -e
 
     # ── Tables to migrate (order matters: parent tables first) ──
-    TABLES="sboms sbom_packages vulnerabilities license_compliance ingestion_queue vex_statements cve_refresh_log github_license_cache github_repo_metadata registry_license_cache"
+    TABLES="sboms sbom_packages vulnerabilities license_compliance ingestion_queue vex_statements cve_refresh_log github_license_cache github_repo_metadata registry_license_cache document_store"
 
     echo "╔══════════════════════════════════════════════════════════════╗"
     echo "║  BOMHort Data Migration (seebom → bomhort)                 ║"

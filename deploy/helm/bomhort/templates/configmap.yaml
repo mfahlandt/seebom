@@ -20,6 +20,16 @@ data:
   SBOM_LIMIT: {{ .Values.ingestionWatcher.sbomLimit | quote }}
   EXCEPTIONS_FILE: {{ .Values.licenseExceptions.mountPath | quote }}
   LICENSE_POLICY_FILE: {{ .Values.licensePolicy.mountPath | quote }}
+  {{- with .Values.originalStore }}
+  ORIGINAL_STORE_BACKEND: {{ .backend | default "auto" | quote }}
+  {{- if .s3.bucket }}
+  ORIGINAL_STORE_S3_BUCKET: {{ .s3.bucket | quote }}
+  {{- end }}
+  ORIGINAL_STORE_S3_PREFIX: {{ .s3.prefix | default "_bomhort/originals/" | quote }}
+  {{- if .fs.enabled }}
+  ORIGINAL_STORE_FS_PATH: {{ .fs.mountPath | quote }}
+  {{- end }}
+  {{- end }}
   {{- if .Values.s3.buckets }}
   {{- if kindIs "string" .Values.s3.buckets }}
   S3_BUCKETS: {{ .Values.s3.buckets | quote }}

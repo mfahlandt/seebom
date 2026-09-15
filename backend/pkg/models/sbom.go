@@ -35,6 +35,10 @@ type SBOMPackages struct {
 	RelTargetIndices []uint32  `json:"rel_target_indices"`
 	RelTypes         []string  `json:"rel_types"`
 	Cluster          string    `json:"cluster,omitempty"`
+	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
+	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
+	// but excluded from license compliance. Not persisted to ClickHouse.
+	RootIndices []uint32 `json:"-"`
 }
 
 // Vulnerability represents a single vulnerability discovered via the OSV API.

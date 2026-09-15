@@ -19,12 +19,23 @@ import (
 // These appear in SPDX data when Go SBOM tools capture the temp build directory as a package name.
 var goTempModuleRe = regexp.MustCompile(`^tmp\.[a-zA-Z0-9]{6,}$`)
 
+// fileArtifactNameRe matches names that look like plain source/build files rather than
+// software packages (shell scripts, manifests, lock files). Used only as a fallback
+// heuristic together with "no PURL, no version, no relationships" – see isFileArtifact.
+var fileArtifactNameRe = regexp.MustCompile(
+	`(?i)\.(sh|bash|zsh|bat|ps1|toml|txt|json|ya?ml|lock|mod|sum|xml|cfg|ini|md)$`)
+
+// defaultDocumentSPDXID is the conventional SPDX identifier of the document itself.
+const defaultDocumentSPDXID = "SPDXRef-DOCUMENT"
+
 // SPDXDocument represents the top-level structure of an SPDX 2.3 JSON document.
 // We only extract the fields we need for ingestion.
 type SPDXDocument struct {
+	SPDXID            string             `json:"SPDXID"`
 	SPDXVersion       string             `json:"spdxVersion"`
 	Name              string             `json:"name"`
 	DocumentNamespace string             `json:"documentNamespace"`
+	DocumentDescribes []string           `json:"documentDescribes"`
 	CreationInfo      SPDXCreationInfo   `json:"creationInfo"`
 	Packages          []SPDXPackage      `json:"packages"`
 	Relationships     []SPDXRelationship `json:"relationships"`
@@ -44,6 +55,15 @@ type SPDXPackage struct {
 	ExternalRefs     []SPDXExternalRef `json:"externalRefs"`
 	LicenseConcluded string            `json:"licenseConcluded"`
 	LicenseDeclared  string            `json:"licenseDeclared"`
+	Annotations      []SPDXAnnotation  `json:"annotations"`
+}
+
+// SPDXAnnotation holds a package-level annotation. Some generators (e.g. waybill)
+// encode structured metadata as JSON inside the comment field.
+type SPDXAnnotation struct {
+	Annotator      string `json:"annotator"`
+	AnnotationType string `json:"annotationType"`
+	Comment        string `json:"comment"`
 }
 
 // SPDXExternalRef holds external reference data (e.g., purl).
@@ -109,6 +129,78 @@ func cleanPackageName(name, purl, spdxID string) string {
 	}
 
 	return name
+}
+
+// purlOf returns the first purl external reference of a package, or "".
+func purlOf(pkg SPDXPackage) string {
+	for _, ref := range pkg.ExternalRefs {
+		if ref.ReferenceType == "purl" {
+			return ref.ReferenceLocator
+		}
+	}
+	return ""
+}
+
+// waybillAnnotation is the JSON payload waybill stores in annotation comments:
+// {"schema":"waybill-annotation/v1","field":"waybill:component-tier","value":"file"}
+type waybillAnnotation struct {
+	Field string          `json:"field"`
+	Value json.RawMessage `json:"value"`
+}
+
+// isFileArtifact reports whether an SPDX package entry actually describes a single
+// source/build file (e.g. "test.sh", "Cargo.toml") rather than a software component.
+// Generators such as waybill emit every file with a matching hash as its own package,
+// which pollutes the package list and the NOASSERTION license bucket.
+//
+// Detection is explicit first (waybill "component-tier" == "file" annotation) and
+// falls back to a conservative heuristic: no PURL, no version, not referenced by any
+// relationship, and a name that looks like a file.
+func isFileArtifact(pkg SPDXPackage, purl string, referenced bool) bool {
+	for _, a := range pkg.Annotations {
+		if !strings.Contains(a.Comment, "waybill:component-tier") {
+			continue
+		}
+		var wa waybillAnnotation
+		if err := json.Unmarshal([]byte(a.Comment), &wa); err != nil {
+			continue
+		}
+		if wa.Field == "waybill:component-tier" && strings.Trim(string(wa.Value), `"`) == "file" {
+			return true
+		}
+	}
+	if purl != "" || referenced {
+		return false
+	}
+	if v := pkg.VersionInfo; v != "" && v != "NOASSERTION" {
+		return false
+	}
+	name := strings.TrimSpace(pkg.Name)
+	return name != "" && !strings.ContainsAny(name, " \t") && fileArtifactNameRe.MatchString(name)
+}
+
+// describedRoots returns the set of SPDX IDs the document DESCRIBES – i.e. the
+// product(s) the SBOM is about, as opposed to their dependencies.
+func describedRoots(doc *SPDXDocument) map[string]bool {
+	roots := make(map[string]bool)
+	for _, id := range doc.DocumentDescribes {
+		if id != "" {
+			roots[id] = true
+		}
+	}
+	docID := doc.SPDXID
+	if docID == "" {
+		docID = defaultDocumentSPDXID
+	}
+	for _, rel := range doc.Relationships {
+		if rel.RelationshipType != "DESCRIBES" {
+			continue
+		}
+		if rel.SPDXElementID == docID || rel.SPDXElementID == defaultDocumentSPDXID {
+			roots[rel.RelatedSPDXElement] = true
+		}
+	}
+	return roots
 }
 
 // inTotoStatement represents an in-toto attestation envelope.
@@ -192,38 +284,45 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 		CreatorTools:      tools,
 	}
 
-	// Build parallel arrays from packages.
+	// SPDX IDs that participate in at least one relationship. Used by the
+	// file-artifact heuristic: real components are usually wired into the
+	// dependency graph, stray file entries are not.
+	referenced := make(map[string]bool, len(doc.Relationships)*2)
+	for _, rel := range doc.Relationships {
+		referenced[rel.SPDXElementID] = true
+		referenced[rel.RelatedSPDXElement] = true
+	}
+	roots := describedRoots(&doc)
+	// Build parallel arrays from packages. Indices are assigned after filtering,
+	// so relationship indices below always point at retained packages.
 	spdxIDToIndex := make(map[string]uint32, len(doc.Packages))
-
 	var (
-		spdxIDs  []string
-		names    []string
-		versions []string
-		purls    []string
-		licenses []string
+		spdxIDs     []string
+		names       []string
+		versions    []string
+		purls       []string
+		licenses    []string
+		rootIndices []uint32
 	)
-
-	for i, pkg := range doc.Packages {
-		idx := uint32(i)
-		spdxIDToIndex[pkg.SPDXID] = idx
-
-		spdxIDs = append(spdxIDs, pkg.SPDXID)
-
+	for _, pkg := range doc.Packages {
 		// Find PURL from external references (needed before name cleaning).
-		purl := ""
-		for _, ref := range pkg.ExternalRefs {
-			if ref.ReferenceType == "purl" {
-				purl = ref.ReferenceLocator
-				break
-			}
+		purl := purlOf(pkg)
+		// Drop entries that describe single files instead of components.
+		// The described root is never dropped, even if it looks file-like.
+		if !roots[pkg.SPDXID] && isFileArtifact(pkg, purl, referenced[pkg.SPDXID]) {
+			continue
 		}
+		idx := uint32(len(spdxIDs))
+		spdxIDToIndex[pkg.SPDXID] = idx
+		if roots[pkg.SPDXID] {
+			rootIndices = append(rootIndices, idx)
+		}
+		spdxIDs = append(spdxIDs, pkg.SPDXID)
 		purls = append(purls, purl)
-
 		// Clean up Go temp build directory names (e.g. "tmp.ej9m9OiO2V").
 		name := cleanPackageName(pkg.Name, purl, pkg.SPDXID)
 		names = append(names, name)
 		versions = append(versions, pkg.VersionInfo)
-
 		// Prefer declared license, fall back to concluded.
 		lic := pkg.LicenseDeclared
 		if lic == "" || lic == "NOASSERTION" {
@@ -231,7 +330,6 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 		}
 		licenses = append(licenses, lic)
 	}
-
 	// Build relationship arrays.
 	var (
 		relSources []uint32
@@ -261,6 +359,7 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 		RelSourceIndices: relSources,
 		RelTargetIndices: relTargets,
 		RelTypes:         relTypes,
+		RootIndices:      rootIndices,
 	}
 
 	return &ParseResult{

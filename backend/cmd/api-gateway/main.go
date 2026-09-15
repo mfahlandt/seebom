@@ -1262,9 +1262,26 @@ func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *click
 		return false
 	}
 
-	rc, err := store.Get(r.Context(), doc.StorageRef)
-	if err != nil {
-		log.Printf("WARNING: stored-original open for %s (%s): %v — falling back to source file", sanitizeLogParam(sbomID), sanitizeLogParam(doc.StorageRef), err)
+	// Blobs are stored gzip-compressed. If the client accepts gzip we pass the
+	// stored bytes through untouched (Content-Encoding: gzip) — no decompression
+	// on the gateway, ~6–10x less to send, and browsers/curl --compressed decode
+	// transparently. Otherwise the store decodes on the fly.
+	passthrough := acceptsGzip(r)
+	var (
+		rc       io.ReadCloser
+		encoding string
+		err2     error
+	)
+	if passthrough {
+		rc, encoding, err2 = store.GetEncoded(r.Context(), doc.StorageRef)
+		if err2 == nil && encoding != docstore.EncodingGzip {
+			passthrough = false // stored as identity; nothing to pass through
+		}
+	} else {
+		rc, err2 = store.Get(r.Context(), doc.StorageRef)
+	}
+	if err2 != nil {
+		log.Printf("WARNING: stored-original open for %s (%s): %v — falling back to source file", sanitizeLogParam(sbomID), sanitizeLogParam(doc.StorageRef), err2)
 		return false
 	}
 	defer rc.Close()
@@ -1284,12 +1301,18 @@ func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *click
 
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
-	if doc.SizeBytes > 0 {
+	if passthrough {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Vary", "Accept-Encoding")
+		if doc.StoredSizeBytes > 0 {
+			w.Header().Set("Content-Length", strconv.FormatUint(doc.StoredSizeBytes, 10))
+		}
+	} else if doc.SizeBytes > 0 {
 		w.Header().Set("Content-Length", strconv.FormatUint(doc.SizeBytes, 10))
 	}
 	if doc.SHA256Hash != "" {
 		// Integrity hint for clients; matches the sha256 the worker computed
-		// over exactly these bytes.
+		// over the decoded original bytes.
 		w.Header().Set("ETag", "\""+doc.SHA256Hash+"\"")
 		w.Header().Set("X-BOMHort-SHA256", doc.SHA256Hash)
 	}
@@ -1299,4 +1322,20 @@ func serveStoredOriginal(w http.ResponseWriter, r *http.Request, chClient *click
 		log.Printf("ERROR: stored-original stream for %s: %v", sanitizeLogParam(sbomID), err)
 	}
 	return true
+}
+
+// acceptsGzip reports whether the request advertises gzip in Accept-Encoding
+// (ignoring an explicit q=0 opt-out).
+func acceptsGzip(r *http.Request) bool {
+	for _, part := range strings.Split(r.Header.Get("Accept-Encoding"), ",") {
+		enc, params, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if enc != "gzip" && enc != "*" {
+			continue
+		}
+		if q := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(params), "q=")); params != "" && (q == "0" || strings.HasPrefix(q, "0.0")) {
+			return false
+		}
+		return true
+	}
+	return false
 }

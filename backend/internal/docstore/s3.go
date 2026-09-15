@@ -11,7 +11,8 @@ import (
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 )
 
-// S3Store persists originals as objects under bucket/prefix.
+// S3Store persists originals as objects under bucket/prefix. It is the raw
+// backend; NewS3Store wraps it in the shared compression layer.
 type S3Store struct {
 	client *s3client.Client
 	bucket string
@@ -21,7 +22,15 @@ type S3Store struct {
 // NewS3Store returns a Store writing to bucket under prefix. The client must
 // already be configured for that bucket (it is looked up by name). An empty
 // prefix falls back to ReservedS3Prefix.
-func NewS3Store(client *s3client.Client, bucket, prefix string) (*S3Store, error) {
+func NewS3Store(client *s3client.Client, bucket, prefix string) (Store, error) {
+	raw, err := newS3Store(client, bucket, prefix)
+	if err != nil {
+		return nil, err
+	}
+	return newEncodedStore(raw), nil
+}
+
+func newS3Store(client *s3client.Client, bucket, prefix string) (*S3Store, error) {
 	if client == nil {
 		return nil, errors.New("docstore: S3 client is nil")
 	}
@@ -37,11 +46,11 @@ func NewS3Store(client *s3client.Client, bucket, prefix string) (*S3Store, error
 	return &S3Store{client: client, bucket: bucket, prefix: prefix}, nil
 }
 
-// Backend implements Store.
+// Backend implements rawStore.
 func (s *S3Store) Backend() string { return BackendS3 }
 
-// Put implements Store.
-func (s *S3Store) Put(ctx context.Context, key string, data []byte) (string, error) {
+// putRaw implements rawStore.
+func (s *S3Store) putRaw(ctx context.Context, key string, data []byte) (string, error) {
 	objKey := s.prefix + strings.TrimPrefix(key, "/")
 	if err := s.client.PutObject(ctx, s.bucket, objKey, bytes.NewReader(data), int64(len(data))); err != nil {
 		return "", fmt.Errorf("docstore: put %s: %w", objKey, err)
@@ -49,20 +58,46 @@ func (s *S3Store) Put(ctx context.Context, key string, data []byte) (string, err
 	return "s3://" + s.bucket + "/" + objKey, nil
 }
 
-// Get implements Store. Any "s3://" reference is accepted as long as the
-// client knows the bucket, so a store can read originals written under a
+// getRaw implements rawStore. Any "s3://" reference is accepted as long as
+// the client knows the bucket, so a store can read originals written under a
 // different prefix (e.g. after a prefix change).
-func (s *S3Store) Get(ctx context.Context, ref string) (io.ReadCloser, error) {
-	if _, err := splitRef(ref, "s3"); err != nil {
-		return nil, err
-	}
-	bucket, key, err := s3client.ParseURI(ref)
+func (s *S3Store) getRaw(ctx context.Context, ref string) (io.ReadCloser, error) {
+	bucket, key, err := s.resolve(ref)
 	if err != nil {
-		return nil, fmt.Errorf("docstore: %w", err)
+		return nil, err
 	}
 	rc, err := s.client.GetObject(ctx, bucket, key)
 	if err != nil {
 		return nil, fmt.Errorf("docstore: get %s: %w", ref, err)
 	}
 	return rc, nil
+}
+
+// deleteRaw implements rawStore. Only objects below this store's own prefix
+// are ever removed — a reference pointing elsewhere (foreign prefix, source
+// bucket) is refused so a misconfigured ORIGINAL_STORE_S3_PREFIX can never
+// delete ingestion sources.
+func (s *S3Store) deleteRaw(ctx context.Context, ref string) error {
+	bucket, key, err := s.resolve(ref)
+	if err != nil {
+		return err
+	}
+	if bucket != s.bucket || !strings.HasPrefix(key, s.prefix) {
+		return fmt.Errorf("docstore: refusing to delete %s outside s3://%s/%s", ref, s.bucket, s.prefix)
+	}
+	if err := s.client.RemoveObject(ctx, bucket, key); err != nil {
+		return fmt.Errorf("docstore: remove %s: %w", ref, err)
+	}
+	return nil
+}
+
+func (s *S3Store) resolve(ref string) (bucket, key string, err error) {
+	if _, err := splitRef(ref, "s3"); err != nil {
+		return "", "", err
+	}
+	bucket, key, err = s3client.ParseURI(ref)
+	if err != nil {
+		return "", "", fmt.Errorf("docstore: %w", err)
+	}
+	return bucket, key, nil
 }

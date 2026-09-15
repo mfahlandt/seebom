@@ -10,17 +10,24 @@
 --
 -- ReplacingMergeTree(stored_at) keyed by sbom_id: re-ingesting the same
 -- document (same sbom_id) replaces the reference; the latest capture wins.
+--
+-- Blobs are gzip-compressed at rest (content_encoding = 'gzip'); SBOM JSON
+-- shrinks 6-10x. sha256_hash / size_bytes always describe the ORIGINAL
+-- (decoded) bytes, stored_size_bytes is what the object actually occupies.
 
 CREATE TABLE IF NOT EXISTS document_store (
-    stored_at        DateTime                DEFAULT now(),
-    sbom_id          UUID,
-    cluster          LowCardinality(String)  DEFAULT '',
-    source_file      String,                                   -- as seen by the ingestion queue (s3://… or relative path)
-    storage_backend  LowCardinality(String),                   -- s3 | fs
-    storage_ref      String,                                   -- s3://bucket/key or fs://relative/path
-    sha256_hash      String,                                   -- hex sha256 of the stored bytes (computed by the worker, not the S3 ETag)
-    size_bytes       UInt64,
-    content_type     LowCardinality(String)  DEFAULT 'application/json'
+    stored_at          DateTime                DEFAULT now(),
+    sbom_id            UUID,
+    cluster            LowCardinality(String)  DEFAULT '',
+    source_file        String,                                   -- as seen by the ingestion queue (s3://… or relative path)
+    storage_backend    LowCardinality(String),                   -- s3 | fs
+    storage_ref        String,                                   -- s3://bucket/key or fs://relative/path
+    sha256_hash        String,                                   -- hex sha256 of the ORIGINAL bytes (computed by the worker, not the S3 ETag)
+    size_bytes         UInt64,                                   -- size of the ORIGINAL bytes
+    content_type       LowCardinality(String)  DEFAULT 'application/json',
+    content_encoding   LowCardinality(String)  DEFAULT '',       -- '' (identity) | gzip
+    stored_size_bytes  UInt64                  DEFAULT 0         -- bytes on disk / in bucket (compressed)
 ) ENGINE = ReplacingMergeTree(stored_at)
 ORDER BY (sbom_id);
+
 

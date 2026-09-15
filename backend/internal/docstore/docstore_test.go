@@ -1,13 +1,18 @@
 package docstore
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 )
 
 func TestKey(t *testing.T) {
@@ -72,20 +77,36 @@ func TestFSStoreRoundTrip(t *testing.T) {
 	data := []byte(`{"spdxVersion":"SPDX-2.3","name":"test"}`)
 	key := Key("11111111-2222-3333-4444-555555555555", "s3://b/app.spdx.json")
 
-	ref, err := store.Put(ctx, key, data)
+	res, err := store.Put(ctx, key, data)
 	if err != nil {
 		t.Fatalf("Put: %v", err)
 	}
+	ref := res.Ref
 	if !strings.HasPrefix(ref, "fs://") {
 		t.Fatalf("ref should use fs scheme, got %q", ref)
 	}
-	if ref != "fs://"+key {
-		t.Fatalf("ref = %q, want %q", ref, "fs://"+key)
+	// Objects are stored gzip-compressed and carry the .gz suffix so the
+	// encoding can be derived from the reference alone.
+	if ref != "fs://"+key+".gz" {
+		t.Fatalf("ref = %q, want %q", ref, "fs://"+key+".gz")
+	}
+	if res.Encoding != EncodingGzip {
+		t.Fatalf("Encoding = %q, want gzip", res.Encoding)
+	}
+	if res.StoredBytes == 0 {
+		t.Fatal("StoredBytes must be reported")
+	}
+	if EncodingOf(ref) != EncodingGzip {
+		t.Fatalf("EncodingOf(%q) = %q", ref, EncodingOf(ref))
 	}
 
 	// File exists at the expected path and no temp files are left behind.
-	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(key))); err != nil {
+	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(key)+".gz"))
+	if err != nil {
 		t.Fatalf("stored file missing: %v", err)
+	}
+	if uint64(info.Size()) != res.StoredBytes {
+		t.Fatalf("StoredBytes = %d, file is %d", res.StoredBytes, info.Size())
 	}
 	entries, _ := os.ReadDir(filepath.Join(root, "11111111-2222-3333-4444-555555555555"))
 	for _, e := range entries {
@@ -106,17 +127,97 @@ func TestFSStoreRoundTrip(t *testing.T) {
 	if string(got) != string(data) {
 		t.Fatalf("round-trip mismatch:\n got %q\nwant %q", got, data)
 	}
+
+	// GetEncoded hands out the stored (compressed) bytes untouched.
+	erc, enc, err := store.GetEncoded(ctx, ref)
+	if err != nil {
+		t.Fatalf("GetEncoded: %v", err)
+	}
+	defer erc.Close()
+	if enc != EncodingGzip {
+		t.Fatalf("GetEncoded encoding = %q, want gzip", enc)
+	}
+	rawStored, _ := io.ReadAll(erc)
+	if uint64(len(rawStored)) != res.StoredBytes {
+		t.Fatalf("GetEncoded returned %d bytes, want %d", len(rawStored), res.StoredBytes)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(rawStored))
+	if err != nil {
+		t.Fatalf("stored bytes are not gzip: %v", err)
+	}
+	decoded, _ := io.ReadAll(zr)
+	if string(decoded) != string(data) {
+		t.Fatalf("manual gunzip mismatch: %q", decoded)
+	}
+}
+
+func TestCompressionActuallyShrinksSBOMLikeJSON(t *testing.T) {
+	store, _ := NewFSStore(t.TempDir())
+	ctx := context.Background()
+	// Repetitive JSON, like a real SBOM package list.
+	var sb strings.Builder
+	sb.WriteString(`{"packages":[`)
+	for i := 0; i < 2000; i++ {
+		fmt.Fprintf(&sb, `{"name":"pkg-%d","versionInfo":"1.0.%d","licenseConcluded":"Apache-2.0","externalRefs":[{"referenceCategory":"PACKAGE-MANAGER","referenceType":"purl","referenceLocator":"pkg:golang/example.com/pkg-%d@v1.0.%d"}]},`, i, i, i, i)
+	}
+	sb.WriteString(`{}]}`)
+	data := []byte(sb.String())
+
+	res, err := store.Put(ctx, "id/big.json", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.StoredBytes*4 > uint64(len(data)) {
+		t.Fatalf("expected at least 4x compression, got %d -> %d", len(data), res.StoredBytes)
+	}
+}
+
+func TestFSStoreDelete(t *testing.T) {
+	root := t.TempDir()
+	store, _ := NewFSStore(root)
+	ctx := context.Background()
+
+	res, err := store.Put(ctx, "some-id/a.json", []byte("v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Delete(ctx, res.Ref); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := store.Get(ctx, res.Ref); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted object should be gone, got %v", err)
+	}
+	// Empty per-SBOM directory is cleaned up too.
+	if _, err := os.Stat(filepath.Join(root, "some-id")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("empty sbom dir should be removed, stat err = %v", err)
+	}
+	// Deleting twice is not an error.
+	if err := store.Delete(ctx, res.Ref); err != nil {
+		t.Fatalf("second Delete must be a no-op, got %v", err)
+	}
+	// Non-empty directory survives.
+	a, _ := store.Put(ctx, "other/a.json", []byte("a"))
+	_, _ = store.Put(ctx, "other/b.json", []byte("b"))
+	if err := store.Delete(ctx, a.Ref); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "other")); err != nil {
+		t.Fatalf("non-empty dir must survive: %v", err)
+	}
+	// Wrong scheme is refused.
+	if err := store.Delete(ctx, "s3://bucket/key"); !errors.Is(err, ErrBackendMismatch) {
+		t.Fatalf("s3 ref on fs store should yield ErrBackendMismatch, got %v", err)
+	}
 }
 
 func TestFSStorePutOverwrites(t *testing.T) {
 	store, _ := NewFSStore(t.TempDir())
 	ctx := context.Background()
-	ref, _ := store.Put(ctx, "id/a.json", []byte("v1"))
+	res, _ := store.Put(ctx, "id/a.json", []byte("v1"))
 	if _, err := store.Put(ctx, "id/a.json", []byte("v2-longer")); err != nil {
 		t.Fatalf("second Put: %v", err)
 	}
-	rc, _ := store.Get(ctx, ref)
-	defer rc.Close()
+	rc, _ := store.Get(ctx, res.Ref)
 	got, _ := io.ReadAll(rc)
 	if string(got) != "v2-longer" {
 		t.Fatalf("expected latest write to win, got %q", got)
@@ -124,10 +225,11 @@ func TestFSStorePutOverwrites(t *testing.T) {
 }
 
 func TestFSStoreGetErrors(t *testing.T) {
-	store, _ := NewFSStore(t.TempDir())
+	root := t.TempDir()
+	store, _ := NewFSStore(root)
 	ctx := context.Background()
 
-	if _, err := store.Get(ctx, "fs://does/not/exist.json"); !errors.Is(err, ErrNotFound) {
+	if _, err := store.Get(ctx, "fs://does/not/exist.json.gz"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing object should yield ErrNotFound, got %v", err)
 	}
 	if _, err := store.Get(ctx, "s3://bucket/key"); !errors.Is(err, ErrBackendMismatch) {
@@ -135,6 +237,27 @@ func TestFSStoreGetErrors(t *testing.T) {
 	}
 	if _, err := store.Get(ctx, "fs://"); err == nil {
 		t.Fatal("empty fs ref must error")
+	}
+
+	// A .gz reference whose bytes are not gzip must fail loudly, not stream garbage.
+	if err := os.WriteFile(filepath.Join(root, "bad.json.gz"), []byte("not gzip"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Get(ctx, "fs://bad.json.gz"); err == nil {
+		t.Fatal("corrupt gzip must error")
+	}
+	// Identity objects (no .gz suffix) are read as-is.
+	if err := os.WriteFile(filepath.Join(root, "plain.json"), []byte(`{"a":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rc, err := store.Get(ctx, "fs://plain.json")
+	if err != nil {
+		t.Fatalf("identity Get: %v", err)
+	}
+	defer rc.Close()
+	got, _ := io.ReadAll(rc)
+	if string(got) != `{"a":1}` {
+		t.Fatalf("identity Get = %q", got)
 	}
 }
 
@@ -144,17 +267,17 @@ func TestFSStoreRejectsPathTraversal(t *testing.T) {
 	ctx := context.Background()
 
 	// Put with traversal components must stay inside root.
-	ref, err := store.Put(ctx, "../../escape.json", []byte("x"))
+	res, err := store.Put(ctx, "../../escape.json", []byte("x"))
 	if err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if ref != "fs://escape.json" {
-		t.Fatalf("traversal should be collapsed, got ref %q", ref)
+	if res.Ref != "fs://escape.json.gz" {
+		t.Fatalf("traversal should be collapsed, got ref %q", res.Ref)
 	}
-	if _, err := os.Stat(filepath.Join(root, "escape.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "escape.json.gz")); err != nil {
 		t.Fatalf("file should be inside root: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(filepath.Dir(root)), "escape.json")); err == nil {
+	if _, err := os.Stat(filepath.Join(filepath.Dir(filepath.Dir(root)), "escape.json.gz")); err == nil {
 		t.Fatal("file escaped the root directory")
 	}
 
@@ -214,14 +337,38 @@ func TestCheckWritableIgnoresBackendsWithoutProbe(t *testing.T) {
 type noProbeStore struct{}
 
 func (noProbeStore) Backend() string { return "test" }
-func (noProbeStore) Put(context.Context, string, []byte) (string, error) {
-	return "", nil
+func (noProbeStore) Put(context.Context, string, []byte) (PutResult, error) {
+	return PutResult{}, nil
 }
 func (noProbeStore) Get(context.Context, string) (io.ReadCloser, error) { return nil, ErrNotFound }
+func (noProbeStore) GetEncoded(context.Context, string) (io.ReadCloser, string, error) {
+	return nil, "", ErrNotFound
+}
+func (noProbeStore) Delete(context.Context, string) error { return nil }
 
 func TestNewS3StoreValidation(t *testing.T) {
 	if _, err := NewS3Store(nil, "b", ""); err == nil {
 		t.Fatal("nil client must error")
+	}
+}
+
+func TestS3StoreDeleteRefusesForeignObjects(t *testing.T) {
+	// The prefix guard runs before any network call, so an empty client is
+	// enough to exercise it.
+	raw := &S3Store{client: &s3client.Client{}, bucket: "archive", prefix: "_bomhort/originals/"}
+	ctx := context.Background()
+
+	for _, ref := range []string{
+		"s3://archive/prod/app.spdx.json.gz",     // source object in the same bucket
+		"s3://other-bucket/_bomhort/originals/x", // right prefix, wrong bucket
+		"s3://archive/_bomhort/other/x",          // sibling reserved prefix
+	} {
+		if err := raw.deleteRaw(ctx, ref); err == nil || !strings.Contains(err.Error(), "refusing to delete") {
+			t.Fatalf("deleteRaw(%q) should refuse, got %v", ref, err)
+		}
+	}
+	if err := raw.deleteRaw(ctx, "fs://archive/_bomhort/originals/x"); !errors.Is(err, ErrBackendMismatch) {
+		t.Fatalf("fs ref on s3 store should be ErrBackendMismatch, got %v", err)
 	}
 }
 

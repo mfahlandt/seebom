@@ -225,6 +225,32 @@ func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile fu
 	return nil
 }
 
+// excludeIndices returns copies of the parallel names/licenses slices without the
+// entries at the given indices. With no indices to skip, the inputs are returned as-is.
+func excludeIndices(names, licenses []string, skip []uint32) ([]string, []string) {
+	if len(skip) == 0 {
+		return names, licenses
+	}
+	skipSet := make(map[uint32]bool, len(skip))
+	for _, i := range skip {
+		skipSet[i] = true
+	}
+	outNames := make([]string, 0, len(names))
+	outLics := make([]string, 0, len(licenses))
+	for i := range names {
+		if skipSet[uint32(i)] {
+			continue
+		}
+		outNames = append(outNames, names[i])
+		if i < len(licenses) {
+			outLics = append(outLics, licenses[i])
+		} else {
+			outLics = append(outLics, "")
+		}
+	}
+	return outNames, outLics
+}
+
 func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
 
 	// 1. Parse the SBOM file (auto-detects SPDX or CycloneDX).
@@ -410,7 +436,10 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	}
 
 	// 6. License compliance check (uses the already-resolved licenses).
-	licResults := license.CheckWithExceptions(result.Packages.PackageNames, result.Packages.PackageLicenses, exceptions, result.SBOM.DocumentName)
+	// The described root (the product itself) is not a dependency and must not
+	// show up in the license breakdown, e.g. as a NOASSERTION finding.
+	licNames, licLicenses := excludeIndices(result.Packages.PackageNames, result.Packages.PackageLicenses, result.Packages.RootIndices)
+	licResults := license.CheckWithExceptions(licNames, licLicenses, exceptions, result.SBOM.DocumentName)
 	if len(licResults) > 0 {
 		licModels := make([]models.LicenseCompliance, len(licResults))
 		for i, lr := range licResults {

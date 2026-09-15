@@ -306,6 +306,10 @@ type Tab = 'vulns' | 'licenses' | 'deps';
       max-height: 300px; overflow-y: auto;
     }
     .lic-pkg-item {
+      /* flex-shrink: 0 – otherwise items in the max-height column flex container
+         shrink below their content height (overflow:hidden permits it) and
+         all rows get squashed into 300px instead of scrolling. */
+      flex-shrink: 0;
       padding: 5px 10px; border-radius: 3px; font-size: 0.75rem;
       background: var(--bg); border: 1px solid var(--border);
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap;

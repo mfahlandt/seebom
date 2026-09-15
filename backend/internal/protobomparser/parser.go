@@ -1,5 +1,6 @@
 // Package protobomparser provides an SBOM parser backed by protobom.
-// This enables parsing of all formats supported by protobom (SPDX 2.3, CycloneDX 1.0–1.7)
+// This enables parsing of all formats supported by protobom (SPDX 2.2/2.3, SPDX 3.0.1,
+// CycloneDX 1.4–1.7)
 // through a unified interface. It can be used as an alternative to the lightweight
 // built-in parsers when broader format coverage or future protobom features are desired.
 package protobomparser
@@ -27,8 +28,9 @@ type ParseResult struct {
 
 // Parse reads an SBOM document (any format supported by protobom) from raw bytes
 // and converts it to BOMHort's internal model. Supported formats:
-//   - SPDX 2.3 JSON
-//   - CycloneDX 1.0–1.7 JSON
+//   - SPDX 2.2 / 2.3 JSON
+//   - SPDX 3.0.1 JSON-LD
+//   - CycloneDX 1.4–1.7 JSON
 func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 	r := reader.New()
 

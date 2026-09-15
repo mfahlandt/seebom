@@ -45,7 +45,7 @@ Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce
 git clone https://github.com/seebom-labs/BOMHort.git && cd BOMHort
 
 # 2. Place your SBOM files in the sboms/ directory
-#    Supports SPDX JSON, CycloneDX JSON, and in-toto attestation envelopes (auto-detected)
+#    Supports SPDX 2.x JSON, SPDX 3 JSON-LD, CycloneDX JSON, and in-toto attestation envelopes (auto-detected)
 #    (examples included: sboms/_example.spdx.json, sboms/_example.cdx.json)
 
 # 3. Start everything
@@ -378,7 +378,8 @@ sboms/*.spdx.json + *.openvex.json
 The Parsing Worker processes each SBOM in a carefully ordered pipeline:
 
 1. **Parse** — Auto-detect format and decode:
-   - **SPDX JSON** (plain documents with `spdxVersion` field)
+   - **SPDX 2.x JSON** (plain documents with `spdxVersion` field)
+   - **SPDX 3 JSON-LD** (detected via `@context: https://spdx.org/rdf/3.x/...`, parsed via protobom)
    - **In-toto attestation envelopes** (SPDX wrapped in `predicate` field, common with Syft/BuildKit)
    - **CycloneDX JSON** (detected via `bomFormat: "CycloneDX"`, versions 1.0–1.7)
    - Optional: Set `USE_PROTOBOM=true` to delegate all parsing to [protobom](https://github.com/protobom/protobom) for maximum format coverage

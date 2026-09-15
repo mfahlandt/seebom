@@ -3,6 +3,8 @@ package sbom
 import (
 	"strings"
 	"testing"
+
+	json "github.com/goccy/go-json"
 )
 
 func TestParse_DetectsSPDX(t *testing.T) {
@@ -117,5 +119,55 @@ func TestParse_ProtobomBackend(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected 'proto-pkg' in packages, got: %v", result.Packages.PackageNames)
+	}
+}
+func TestParse_DetectsSPDX3(t *testing.T) {
+	// SPDX 3 must be routed to protobom even when the protobom backend is not
+	// enabled globally – the built-in SPDX parser cannot read JSON-LD.
+	if UseProtobom() {
+		t.Fatal("precondition: protobom backend must be disabled")
+	}
+	spdx3 := `{
+"@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld",
+"@graph": [
+{"type": "CreationInfo", "@id": "_:ci", "specVersion": "3.0.1",
+ "created": "2026-01-01T00:00:00Z",
+ "createdBy": ["https://spdx.org/rdf/3.0.1/terms/Core/SpdxOrganization"]},
+{"type": "SpdxDocument", "spdxId": "https://example.com/doc", "name": "spdx3-doc",
+ "creationInfo": "_:ci", "profileConformance": ["core", "software"],
+ "rootElement": ["https://example.com/doc#pkg"]},
+{"type": "software_Package", "spdxId": "https://example.com/doc#pkg",
+ "creationInfo": "_:ci", "name": "spdx3-pkg", "software_packageVersion": "1.0.0",
+ "software_packageUrl": "pkg:npm/spdx3-pkg@1.0.0"}
+]
+}`
+	result, err := Parse(strings.NewReader(spdx3), "doc.spdx3.json", "hash-spdx3")
+	if err != nil {
+		t.Fatalf("Parse SPDX 3 failed: %v", err)
+	}
+	if result.SBOM.SPDXVersion != "SPDX-3.0.1" {
+		t.Errorf("SPDXVersion = %q, want SPDX-3.0.1", result.SBOM.SPDXVersion)
+	}
+	if len(result.Packages.PackageNames) != 1 || result.Packages.PackageNames[0] != "spdx3-pkg" {
+		t.Errorf("packages = %v, want [spdx3-pkg]", result.Packages.PackageNames)
+	}
+	if result.Packages.PackagePURLs[0] != "pkg:npm/spdx3-pkg@1.0.0" {
+		t.Errorf("purl = %q", result.Packages.PackagePURLs[0])
+	}
+}
+func TestIsSPDX3Context(t *testing.T) {
+	tests := map[string]bool{
+		`"https://spdx.org/rdf/3.0.1/spdx-context.jsonld"`:                  true,
+		`["https://spdx.org/rdf/3.0.1/spdx-context.jsonld", "https://x/y"]`: true,
+		`"https://spdx.org/rdf/3.0.0/spdx-context.jsonld"`:                  true,
+		`"https://cyclonedx.org/schema/bom-1.6.schema.json"`:                false,
+		`{"@vocab": "https://spdx.org/rdf/3.0.1/terms/"}`:                   false,
+		`null`: false,
+		``:     false,
+	}
+	for in, want := range tests {
+		if got := isSPDX3Context(json.RawMessage(in)); got != want {
+			t.Errorf("isSPDX3Context(%s) = %v, want %v", in, got, want)
+		}
 	}
 }

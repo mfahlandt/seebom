@@ -1,0 +1,121 @@
+{
+  "@context": "https://spdx.org/rdf/3.0.1/spdx-context.jsonld",
+  "@graph": [
+    {
+      "type": "CreationInfo",
+      "@id": "_:creationinfo",
+      "specVersion": "3.0.1",
+      "created": "2026-09-01T12:00:00Z",
+      "createdBy": ["https://example.com/agents#tool"]
+    },
+    {
+      "type": "Tool",
+      "spdxId": "https://example.com/agents#tool",
+      "name": "example-generator",
+      "creationInfo": "_:creationinfo"
+    },
+    {
+      "type": "SpdxDocument",
+      "spdxId": "https://example.com/sbom/demo-app",
+      "name": "demo-app",
+      "creationInfo": "_:creationinfo",
+      "profileConformance": ["core", "software", "simpleLicensing"],
+      "rootElement": ["https://example.com/sbom/demo-app#sbom"]
+    },
+    {
+      "type": "software_Sbom",
+      "spdxId": "https://example.com/sbom/demo-app#sbom",
+      "creationInfo": "_:creationinfo",
+      "software_sbomType": ["build"],
+      "rootElement": ["https://example.com/sbom/demo-app#pkg-demo-app"],
+      "element": [
+        "https://example.com/sbom/demo-app#pkg-demo-app",
+        "https://example.com/sbom/demo-app#pkg-gin",
+        "https://example.com/sbom/demo-app#pkg-lodash"
+      ]
+    },
+    {
+      "type": "software_Package",
+      "spdxId": "https://example.com/sbom/demo-app#pkg-demo-app",
+      "creationInfo": "_:creationinfo",
+      "name": "demo-app",
+      "software_packageVersion": "1.2.3",
+      "software_packageUrl": "pkg:generic/demo-app@1.2.3",
+      "software_primaryPurpose": "application"
+    },
+    {
+      "type": "software_Package",
+      "spdxId": "https://example.com/sbom/demo-app#pkg-gin",
+      "creationInfo": "_:creationinfo",
+      "name": "github.com/gin-gonic/gin",
+      "software_packageVersion": "v1.10.0",
+      "software_packageUrl": "pkg:golang/github.com/gin-gonic/gin@v1.10.0",
+      "software_primaryPurpose": "library"
+    },
+    {
+      "type": "software_Package",
+      "spdxId": "https://example.com/sbom/demo-app#pkg-lodash",
+      "creationInfo": "_:creationinfo",
+      "name": "lodash",
+      "software_packageVersion": "4.17.21",
+      "software_packageUrl": "pkg:npm/lodash@4.17.21",
+      "software_primaryPurpose": "library"
+    },
+    {
+      "type": "simplelicensing_LicenseExpression",
+      "spdxId": "https://example.com/sbom/demo-app#lic-mit",
+      "creationInfo": "_:creationinfo",
+      "simplelicensing_licenseExpression": "MIT"
+    },
+    {
+      "type": "simplelicensing_LicenseExpression",
+      "spdxId": "https://example.com/sbom/demo-app#lic-apache",
+      "creationInfo": "_:creationinfo",
+      "simplelicensing_licenseExpression": "Apache-2.0"
+    },
+    {
+      "type": "Relationship",
+      "spdxId": "https://example.com/sbom/demo-app#rel-describes",
+      "creationInfo": "_:creationinfo",
+      "from": "https://example.com/sbom/demo-app",
+      "relationshipType": "describes",
+      "to": ["https://example.com/sbom/demo-app#pkg-demo-app"]
+    },
+    {
+      "type": "Relationship",
+      "spdxId": "https://example.com/sbom/demo-app#rel-deps",
+      "creationInfo": "_:creationinfo",
+      "from": "https://example.com/sbom/demo-app#pkg-demo-app",
+      "relationshipType": "dependsOn",
+      "to": [
+        "https://example.com/sbom/demo-app#pkg-gin",
+        "https://example.com/sbom/demo-app#pkg-lodash"
+      ]
+    },
+    {
+      "type": "Relationship",
+      "spdxId": "https://example.com/sbom/demo-app#rel-lic-gin",
+      "creationInfo": "_:creationinfo",
+      "from": "https://example.com/sbom/demo-app#pkg-gin",
+      "relationshipType": "hasDeclaredLicense",
+      "to": ["https://example.com/sbom/demo-app#lic-mit"]
+    },
+    {
+      "type": "Relationship",
+      "spdxId": "https://example.com/sbom/demo-app#rel-lic-lodash",
+      "creationInfo": "_:creationinfo",
+      "from": "https://example.com/sbom/demo-app#pkg-lodash",
+      "relationshipType": "hasConcludedLicense",
+      "to": ["https://example.com/sbom/demo-app#lic-mit"]
+    },
+    {
+      "type": "Relationship",
+      "spdxId": "https://example.com/sbom/demo-app#rel-lic-app",
+      "creationInfo": "_:creationinfo",
+      "from": "https://example.com/sbom/demo-app#pkg-demo-app",
+      "relationshipType": "hasDeclaredLicense",
+      "to": ["https://example.com/sbom/demo-app#lic-apache"]
+    }
+  ]
+}
+

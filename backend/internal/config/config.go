@@ -56,6 +56,8 @@ type Config struct {
 	// Feature flags
 	SkipOSV           bool   // Skip OSV vulnerability lookups (fast ingestion, licenses only)
 	SkipGitHubResolve bool   // Skip GitHub license resolution for unknown licenses
+	SkipNPMResolve    bool   // Skip npm registry license resolution for unknown licenses
+	SkipNuGetResolve  bool   // Skip NuGet license resolution for unknown licenses
 	SBOMLimit         int    // Max number of SBOMs to enqueue (0 = unlimited)
 	IgnorePrefix      string // Files with this prefix are skipped during local scan (default "_")
 	ExceptionsFile    string // Path to license-exceptions.json
@@ -89,6 +91,8 @@ func Load() (*Config, error) {
 		WorkerBatchSize:    getEnvInt("WORKER_BATCH_SIZE", 10),
 		SkipOSV:            getEnvBool("SKIP_OSV", false),
 		SkipGitHubResolve:  getEnvBool("SKIP_GITHUB_RESOLVE", false),
+		SkipNPMResolve:     getEnvBool("SKIP_NPM_RESOLVE", false),
+		SkipNuGetResolve:   getEnvBool("SKIP_NUGET_RESOLVE", false),
 		SBOMLimit:          getEnvInt("SBOM_LIMIT", 0),
 		IgnorePrefix:       getEnv("SBOM_IGNORE_PREFIX", "_"),
 		ExceptionsFile:     getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),

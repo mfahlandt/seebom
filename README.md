@@ -81,6 +81,8 @@ cp .env.example .env
 | `SKIP_OSV` | `false` | Skip OSV vulnerability API calls. Set `true` for fast initial bulk load (licenses only), then re-run with `false`. |
 | `SKIP_GITHUB_RESOLVE` | `false` | Skip GitHub license resolution for packages with `NOASSERTION`/empty licenses. |
 | `GITHUB_TOKEN` | *(empty)* | GitHub personal access token for license resolution. Increases rate limit from 60 to 5000 req/h. No scopes needed. |
+| `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution for `pkg:npm/*` packages with `NOASSERTION`/empty licenses. |
+| `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution for `pkg:nuget/*` packages with `NOASSERTION`/empty licenses. Legacy packages without `licenseExpression` fall back to their GitHub repository license. |
 | `CLUSTER_NAME` | *(empty)* | Cluster identifier for multi-cluster deployments. All ingested data is tagged with this value. Empty = single-instance mode. |
 | `AUTH_ENABLED` | `false` | Enable API authentication middleware. When `false` (default), all API endpoints are unauthenticated. |
 | `SERVICE_TOKEN` | *(empty)* | Shared secret for upstream proxy/gateway integrations. Accepted via `Authorization: Bearer <token>` or `X-Service-Token: <token>`. |

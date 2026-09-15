@@ -87,6 +87,10 @@ func main() {
 		log.Println("GitHub license resolver disabled (SKIP_GITHUB_RESOLVE=true)")
 	}
 
+	// Initialize package-registry license resolvers (npm, NuGet) for licenses
+	// that are still unknown after the GitHub pass.
+	registryResolvers := newRegistryResolvers(context.Background(), cfg, chClient, ghResolver)
+
 	// Initialize S3 client if S3 buckets are configured.
 	var s3c *s3client.Client
 	if cfg.HasS3Sources() {
@@ -152,7 +156,7 @@ func main() {
 		log.Printf("Claimed %d jobs, processing...", len(jobs))
 
 		for _, job := range jobs {
-			if err := processJob(ctx, cfg, chClient, osvClient, exceptionsIndex, ghResolver, s3c, job); err != nil {
+			if err := processJob(ctx, cfg, chClient, osvClient, exceptionsIndex, ghResolver, registryResolvers, s3c, job); err != nil {
 				log.Printf("ERROR: Failed to process %s: %v", job.SourceFile, err)
 				if failErr := chClient.FailJob(ctx, job, err.Error()); failErr != nil {
 					log.Printf("ERROR: Failed to mark job as failed: %v", failErr)
@@ -169,7 +173,7 @@ func main() {
 	}
 }
 
-func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, s3c *s3client.Client, job models.IngestionJob) error {
+func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, s3c *s3client.Client, job models.IngestionJob) error {
 	// Determine how to open the file: S3 URI or local path.
 	openFile := func() (io.ReadCloser, error) {
 		if strings.HasPrefix(job.SourceFile, "s3://") {
@@ -192,7 +196,7 @@ func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Cl
 		return processVEXJob(ctx, chClient, openFile, job)
 	}
 
-	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, openFile, job)
+	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, openFile, job)
 }
 
 func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
@@ -251,7 +255,7 @@ func excludeIndices(names, licenses []string, skip []uint32) ([]string, []string
 	return outNames, outLics
 }
 
-func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
+func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), job models.IngestionJob) error {
 
 	// 1. Parse the SBOM file (auto-detects SPDX or CycloneDX).
 	rc, err := openFile()
@@ -317,6 +321,9 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 			_ = chClient.InsertGitHubRepoMetadata(ctx, metaEntries)
 		}
 	}
+
+	// 2b. Resolve remaining unknown licenses via package registries (npm, NuGet).
+	resolveViaRegistries(ctx, chClient, registryResolvers, result.Packages.PackagePURLs, result.Packages.PackageLicenses)
 
 	// 3. Insert SBOM metadata.
 	result.SBOM.Cluster = job.Cluster

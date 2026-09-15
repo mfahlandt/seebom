@@ -527,6 +527,17 @@ helm install bomhort deploy/helm/bomhort/ -n bomhort -f values.yaml \
 
 See [FAQ: Should I use a GitHub token?](/docs/faq/#should-i-use-a-github-token) for more details and how to re-ingest after adding a token.
 
+Licenses that are still unknown after the GitHub pass are looked up in the public package registries for **npm** (`registry.npmjs.org`) and **NuGet** (`api.nuget.org`). These lookups need no credentials and are rate-limited client-side (5 req/s per worker). They can be disabled individually, e.g. in air-gapped environments:
+
+```yaml
+parsingWorker:
+  skipGitHubResolve: false
+  skipNPMResolve: false
+  skipNuGetResolve: false
+```
+
+See [Architecture: License Resolution](/docs/architecture/#license-resolution) for the exact resolution strategy.
+
 ---
 
 ## 8. Full Deployment Example
@@ -772,7 +783,7 @@ kubectl logs -n bomhort job/bomhort-data-migration-1 -f
 The Job migrates these tables (skipping any that are empty or already populated in the target):
 - `sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`
 - `ingestion_queue`, `vex_statements`, `cve_refresh_log`
-- `github_license_cache`, `github_repo_metadata`
+- `github_license_cache`, `github_repo_metadata`, `registry_license_cache`
 
 The `dashboard_stats_mv` materialized view repopulates automatically.
 

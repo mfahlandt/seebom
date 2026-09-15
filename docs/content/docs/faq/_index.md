@@ -107,6 +107,7 @@ A full re-ingestion (truncate + re-ingest) is required when:
 | Changed the **license policy** (`license-policy.json`) | Existing packages need reclassification |
 | Enabled/disabled **OSV scanning** (`skipOSV`) | Vulnerability data needs to be fetched or cleared |
 | Enabled/disabled **GitHub license resolution** (`skipGitHubResolve`) | Unknown licenses need re-resolution |
+| Enabled/disabled **npm / NuGet license resolution** (`skipNPMResolve`, `skipNuGetResolve`) | Unknown `pkg:npm/*` / `pkg:nuget/*` licenses need re-resolution |
 | Upgraded **parsing logic** (new image version) | Existing SBOMs may parse differently (e.g., new in-toto attestation support or improved license resolution with well-known Go module mappings) |
 | Changed **license exceptions** | Exception matching is applied during ingestion |
 | Added a **GitHub token** (`GITHUB_TOKEN`) | Previously rate-limited resolution may have missed packages — a re-ingestion with the token resolves all licenses |

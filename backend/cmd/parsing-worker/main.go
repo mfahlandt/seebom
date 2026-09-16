@@ -242,11 +242,7 @@ func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile fu
 	// The VEX parser only sees the document, not the job, so the ownership
 	// dimensions have to be stamped on here. This also fixes cluster, which
 	// was silently left empty on every VEX row before #138/#57.
-	for i := range result.Statements {
-		result.Statements[i].Cluster = job.Cluster
-		result.Statements[i].Namespace = job.Namespace
-		result.Statements[i].Project = job.Project
-	}
+	ownershipOf(job).applyVEXStatements(result.Statements)
 
 	if len(result.Statements) > 0 {
 		if err := chClient.InsertVEXStatements(ctx, result.Statements); err != nil {
@@ -369,18 +365,16 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	// 2b. Resolve remaining unknown licenses via package registries (npm, NuGet).
 	resolveViaRegistries(ctx, chClient, registryResolvers, result.Packages.PackagePURLs, result.Packages.PackageLicenses)
 
-	// 3. Insert SBOM metadata.
-	result.SBOM.Cluster = job.Cluster
-	result.SBOM.Namespace = job.Namespace
-	result.SBOM.Project = job.Project
+	// 3. Insert SBOM metadata. Every row written from here on carries the
+	// job's ownership dimensions (#131 cluster, #138 namespace, #57 project).
+	own := ownershipOf(job)
+	own.applySBOM(&result.SBOM)
 	if err := chClient.InsertSBOM(ctx, &result.SBOM); err != nil {
 		return err
 	}
 
 	// 4. Insert package arrays (with resolved licenses).
-	result.Packages.Cluster = job.Cluster
-	result.Packages.Namespace = job.Namespace
-	result.Packages.Project = job.Project
+	own.applyPackages(&result.Packages)
 	if err := chClient.InsertSBOMPackages(ctx, &result.Packages); err != nil {
 		return err
 	}
@@ -465,7 +459,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 					affectedVersions := osvutil.ExtractAffectedVersions(entry)
 					rawJSON, _ := json.Marshal(entry)
 
-					vulns = append(vulns, models.Vulnerability{
+					v := models.Vulnerability{
 						DiscoveredAt:     time.Now(),
 						SBOMID:           result.SBOM.SBOMID,
 						SourceFile:       job.SourceFile,
@@ -476,10 +470,9 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 						AffectedVersions: affectedVersions,
 						FixedVersion:     fixedVersion,
 						OSVJSON:          string(rawJSON),
-						Cluster:          job.Cluster,
-						Namespace:        job.Namespace,
-						Project:          job.Project,
-					})
+					}
+					own.applyVulnerability(&v)
+					vulns = append(vulns, v)
 				}
 			}
 
@@ -518,10 +511,8 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 				NonCompliantPackages: nonCompliant,
 				ExemptedPackages:     exempted,
 				ExemptionReason:      lr.ExemptionReason,
-				Cluster:              job.Cluster,
-				Namespace:            job.Namespace,
-				Project:              job.Project,
 			}
+			own.applyLicenseCompliance(&licModels[i])
 		}
 		if err := chClient.InsertLicenseCompliance(ctx, licModels); err != nil {
 			return err
@@ -558,9 +549,6 @@ func captureOriginal(ctx context.Context, chClient *clickhouse.Client, store doc
 	doc := &models.StoredDocument{
 		StoredAt:        time.Now(),
 		SBOMID:          meta.SBOMID,
-		Cluster:         job.Cluster,
-		Namespace:       job.Namespace,
-		Project:         job.Project,
 		SourceFile:      job.SourceFile,
 		StorageBackend:  store.Backend(),
 		StorageRef:      res.Ref,
@@ -570,6 +558,8 @@ func captureOriginal(ctx context.Context, chClient *clickhouse.Client, store doc
 		ContentEncoding: res.Encoding,
 		StoredSizeBytes: res.StoredBytes,
 	}
+	ownershipOf(job).applyStoredDocument(doc)
+
 	if err := chClient.InsertStoredDocument(ctx, doc); err != nil {
 		return fmt.Errorf("failed to record original for %s: %w", job.SourceFile, err)
 	}

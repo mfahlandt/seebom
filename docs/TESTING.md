@@ -103,11 +103,14 @@ These packages contain only thin orchestration (`main()` functions) with no test
 
 | Package | Top-Level | Subtests | What's Covered |
 |---------|-----------|----------|---------------|
-| `cmd/api-gateway` | 23 | 7 | Auth middleware (12 scenarios: disabled/enabled, Bearer/X-Service-Token/X-API-Key, public paths, OPTIONS bypass, coexistence), download endpoint (content-disposition, invalid UUID), input validation |
-| `internal/clickhouse` | 4 | 0 | Query method signatures exist, cluster helper functions, SanitizeClusterName |
-| `internal/config` | 17 | 0 | Default values, custom env vars, S3 buckets JSON, single S3 bucket, shared S3 credentials, shared settings inheritance (endpoint/region/pathstyle/SSL), invalid S3 JSON, S3BucketNames, ClusterName, bucket cluster override, auth modes (disabled/token/apikeys/empty), IgnorePrefix (default/custom) |
+| `cmd/api-gateway` | 48 | 130 | Auth middleware (12 scenarios: disabled/enabled, Bearer/X-Service-Token/X-API-Key, public paths, OPTIONS bypass, coexistence), download endpoint (content-disposition, invalid UUID), stored-original download, input validation, push upload (#135), upload ownership params `?cluster=`/`?namespace=`/`?project=` incl. blank-param fallback (#138, #57) |
+| `internal/clickhouse` | 13 | 9 | Query method signatures exist, cluster helper functions, SanitizeClusterName, **migration/schema drift (no DB required)**: migrations replayed into an in-memory schema, every `INSERT INTO` column asserted to exist, ownership columns required on all data tables, all 5 `ingestion_queue` writers asserted to share one column list, migration numbers unique + contiguous |
+| `internal/config` | 34 | 0 | Default values, custom env vars, S3 buckets JSON, single S3 bucket, shared S3 credentials, shared settings inheritance (endpoint/region/pathstyle/SSL), invalid S3 JSON, S3BucketNames, ClusterName, bucket cluster override, auth modes (disabled/token/apikeys/empty), IgnorePrefix (default/custom), original store (#256), ownership defaults `NAMESPACE`/`PROJECT`, `INGEST_PATH_LAYOUT` validation (valid + rejected), per-bucket namespace/project/pathLayout overrides (#138, #57) |
+| `cmd/ingestion-watcher` | 7 | 22 | Bucket-prefix stripping before layout matching, per-object ownership resolution, explicit-config precedence, shallow paths, `firstNonEmpty` |
+| `cmd/parsing-worker` | 12 | 10 | excludeIndices, registry resolver application + cache persistence, **ownership propagation** (#131, #138, #57): job -> every row type (SBOM/packages/vulnerability/license/document/VEX), all statements in a VEX document, empty job clears stale values, other fields untouched, SPDX `DocumentNamespace` never confused with the deployment `Namespace` |
 | `internal/cyclonedx` | 3 | 0 | CycloneDX parsing (minimal valid, full with licenses+deps, not-CycloneDX rejection) |
 | `internal/github` | 35 | 22 | ExtractGitHubRepo (19 PURL patterns: golang github.com, subpath, pkg:github, well-known Go module mappings for golang.org/x/crypto, gopkg.in/yaml.v3, go.uber.org/zap, k8s.io/client-go, oras.land/oras-go/v2, dario.cat/mergo, unknown non-github, npm, empty), RepoKey (5 patterns), Resolve (happy path, cache hit, non-GitHub PURL, well-known mapping), ResolveWithMetadata (archived repo, not-found, non-GitHub, cache hit), PreloadCache, PreloadMetadataCache, CacheEntries, MetadataCacheEntries, ETag sanitization |
+| `internal/ingestpath` | 8 | 20 | Layout parsing (valid, empty, rejected: unknown segment, duplicate dimension, empty segment), derivation (exact/deeper/shallower path, root file, leading + doubled separators, dot segments, backslashes), `_` skip token, reordered layouts, precedence (explicit config outranks derivation) |
 | `internal/license` | 44 | 20 | Categorize (15 SPDX IDs incl. BSD-3-Clause, ISC, 0BSD, NOASSERTION, NONE), Check, CheckWithExceptions (blanket + package + prefix), LoadPolicy, LoadExceptions, LoadExceptionsWithFallback (4 scenarios), BuildIndex (empty, All CNCF Projects promoted to blanket, compound OR, compound AND), IsExempt substring matching (package+license, package-any), SplitLicenses (7 patterns), GoTempNamesFiltered, GetPolicy, edge cases |
 | `internal/osv` | 6 | 0 | Empty input, mock server, server error, context cancellation, no-vulns response, HydrateVulns cache |
 | `internal/osvutil` | 40 | 35 | ClassifySeverity (17 CVSS scenarios incl. vector strings, database-specific fallback), ParseCVSSScore (9 inputs incl. vectors), ComputeCVSSv3BaseScore (5 scenarios), ExtractFixedVersion (5 scenarios), ExtractAffectedVersions (4 scenarios) |
@@ -119,7 +122,7 @@ These packages contain only thin orchestration (`main()` functions) with no test
 | `internal/vex` | 13 | 8 | Full parse, invalid JSON, empty doc, normalizeVulnID (9 URL patterns), URL-based vuln @id |
 | `pkg/dto` | 3 | 0 | VersionSkew JSON serialization, ProjectListItem fields, ClusterStats DTO |
 | `pkg/models` | 6 | 0 | Cluster fields, SBOM ClusterOmitEmpty, VEXStatement cluster, LicenseCompliance cluster, IngestionJob cluster propagation, Vulnerability cluster |
-| **Total** | **247** | **119** | **366 test invocations** |
+| **Total** | **281** | **345** | **981 test invocations** |
 
 ---
 

@@ -231,7 +231,75 @@ S3 project grouping continues to use the source path. See the
 | GET | `/api/v1/clusters/{name}/stats` | Per-cluster dashboard statistics |
 | GET | `/api/v1/clusters/{name}/sboms?page=&page_size=` | Paginated SBOM list for a specific cluster |
 
-## 4. ClickHouse Schema (12 Migrations)
+## 4. ClickHouse Schema (15 Migrations)
+
+### Ownership Columns
+
+Every core table carries three orthogonal, low-cardinality ownership
+dimensions. All are `LowCardinality(String) DEFAULT ''`, all are regular
+columns — **none is in `ORDER BY`**, because MergeTree cannot alter a sort
+key in place and a full rebuild is not worth it for filter dimensions at
+these cardinalities. Filtering is by `WHERE`.
+
+| Column | Migration | Question it answers | Example | Cardinality |
+|--------|-----------|---------------------|---------|-------------|
+| `cluster` | `012` (#131) | Where is it deployed? | `prod-eu` | 1–50 |
+| `namespace` | `015` (#138) | Which tenant/team boundary inside the cluster? | `payments` | 10–500 |
+| `project` | `015` (#57) | What is it / who owns it? | `payment-service` | 50–5000 |
+
+Tables covered: `sboms`, `sbom_packages`, `vulnerabilities`,
+`license_compliance`, `ingestion_queue`, `vex_statements`, `document_store`.
+
+**How values get there.** The ingestion watcher resolves all three once per
+object and stamps them onto the `ingestion_queue` row; the parsing worker
+copies them from the job onto every data row it writes. Because the queue
+is append-only (status changes are new rows), all five queue writers share
+a single column list — a dimension dropped on claim/complete would
+resurface as empty data.
+
+Resolution order, highest priority first:
+
+1. **Per-object upload params** — `?cluster=`, `?namespace=`, `?project=` on
+   `POST /api/v1/sboms/upload`. The server cannot infer ownership from an
+   uploaded body, so the pusher states it.
+2. **Per-bucket config** — `cluster`/`namespace`/`project` in an `s3.buckets`
+   entry, for the bucket-per-team case.
+3. **Instance defaults** — `CLUSTER_NAME` / `NAMESPACE` / `PROJECT`.
+4. **Path derivation** — `INGEST_PATH_LAYOUT` (see below). Fills *only* what
+   the levels above left empty: explicit configuration always wins, because
+   silently overriding a named value from directory structure would be
+   impossible to debug.
+
+### Ingestion Path Layout (`internal/ingestpath`)
+
+Teams already organise buckets hierarchically. Rather than guessing that
+structure — which silently mislabels an entire fleet when the guess is
+wrong — the layout is declared explicitly and is **off by default**:
+
+```
+INGEST_PATH_LAYOUT="cluster/namespace/project"
+
+prod-eu/payments/payment-service/app.spdx.json
+  -> cluster=prod-eu  namespace=payments  project=payment-service
+```
+
+Segments map positionally onto the leading path segments, relative to the
+ingestion root (`SBOM_DIR`, or a bucket's configured `prefix`, which is
+stripped first — otherwise a bucket with prefix `k3s-io/` would label
+everything `cluster=k3s-io`). The filename is never consumed.
+
+Valid segments are `cluster`, `namespace`, `project`, and `_` to skip a
+level that carries no meaning (`cluster/_/project`). Derivation is
+deliberately tolerant at the edges — a path shallower than the layout fills
+what it can, a deeper one matches from the left — so one oddly-placed file
+cannot fail an ingestion run. A *malformed layout*, by contrast, fails at
+startup: accepting it would ingest the whole fleet unlabelled, which
+`DEFAULT ''` makes indistinguishable from "genuinely unassigned" and only
+a full re-ingest would fix.
+
+Per-bucket override: `pathLayout` in an `s3.buckets` entry, for fleets where
+one bucket is nested and another flat.
+
 
 | Table | Engine | ORDER BY | Purpose |
 |-------|--------|----------|---------|
@@ -250,6 +318,8 @@ S3 project grouping continues to use the source path. See the
 | `cve_refresh_log` | MergeTree | (started_at, refresh_id) | CVE refresh run history (timestamp, results, status) |
 | `github_license_cache` | ReplacingMergeTree | (repo) | Cache for resolved GitHub licenses (avoids API redundancy) |
 | `github_repo_metadata` | ReplacingMergeTree | (repo) | GitHub repo metadata (archived, fork, stars, pushed_at) for dependency health |
+| `registry_license_cache` | ReplacingMergeTree | (registry, package) | Cache for npm/NuGet resolved licenses |
+| `document_store` | ReplacingMergeTree | (sbom_id) | Reference + sha256 of the captured original SBOM bytes (#256); bytes live in the blob store |
 
 ### Key Queries for Search Features
 

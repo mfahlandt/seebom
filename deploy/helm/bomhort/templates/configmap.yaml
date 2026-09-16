@@ -11,6 +11,12 @@ data:
   CLICKHOUSE_DATABASE: {{ .Values.clickhouse.database | quote }}
   CLICKHOUSE_USER: {{ .Values.clickhouse.user | quote }}
   SBOM_DIR: {{ .Values.sbomSource.mountPath | quote }}
+  {{- with .Values.ownership }}
+  CLUSTER_NAME: {{ .cluster | default "" | quote }}
+  NAMESPACE: {{ .namespace | default "" | quote }}
+  PROJECT: {{ .project | default "" | quote }}
+  INGEST_PATH_LAYOUT: {{ .pathLayout | default "" | quote }}
+  {{- end }}
   API_PORT: {{ .Values.apiGateway.port | quote }}
   WORKER_BATCH_SIZE: {{ .Values.parsingWorker.batchSize | quote }}
   SKIP_OSV: {{ .Values.parsingWorker.skipOSV | quote }}

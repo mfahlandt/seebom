@@ -907,6 +907,18 @@ func readyzHandler(p pinger) http.HandlerFunc {
 	}
 }
 
+// queryOverride returns a trimmed query parameter, or fallback when the
+// parameter is absent or blank. Blank is treated as absent so that a
+// client sending "?namespace=" cannot blank out the configured default
+// while a client omitting it entirely inherits it -- two spellings of the
+// same intent must not produce different data.
+func queryOverride(r *http.Request, param, fallback string) string {
+	if v := strings.TrimSpace(r.URL.Query().Get(param)); v != "" {
+		return v
+	}
+	return fallback
+}
+
 // uploadStore is the minimal surface uploadHandler needs, kept small for testing.
 type uploadStore interface {
 	HashExists(ctx context.Context, hash string) (bool, error)
@@ -1157,11 +1169,14 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			}
 		}
 
-		// Cluster: query param overrides this instance's configured default.
-		cluster := cfg.ClusterName
-		if c := strings.TrimSpace(r.URL.Query().Get("cluster")); c != "" {
-			cluster = c
-		}
+		// Ownership dimensions: query params override this instance's configured
+		// defaults. Deliberately query params rather than headers, matching the
+		// existing ?cluster= contract (#131) -- a pushing CI job names where the
+		// artifact belongs, the server cannot infer it for an uploaded body the
+		// way the watcher can from an object key.
+		cluster := queryOverride(r, "cluster", cfg.ClusterName)
+		namespace := queryOverride(r, "namespace", cfg.Namespace)
+		project := queryOverride(r, "project", cfg.Project)
 
 		// Persist to whichever backend is active. Both paths only commit the
 		// content to its final, discoverable location after hashing and
@@ -1206,6 +1221,8 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			Status:     models.JobStatusPending,
 			JobType:    fileType,
 			Cluster:    cluster,
+			Namespace:  namespace,
+			Project:    project,
 		}
 		// Single-row insert, deliberately: the API contract returns job_id
 		// synchronously, so the row has to be durable before we respond — there
@@ -1235,7 +1252,10 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("Upload accepted: %s (job=%s, type=%s, cluster=%s, source=%s)", sanitizeLogParam(filename), job.JobID, fileType, sanitizeLogParam(cluster), sanitizeLogParam(sourceFile))
+		log.Printf("Upload accepted: %s (job=%s, type=%s, cluster=%s, namespace=%s, project=%s, source=%s)",
+			sanitizeLogParam(filename), job.JobID, fileType,
+			sanitizeLogParam(cluster), sanitizeLogParam(namespace), sanitizeLogParam(project),
+			sanitizeLogParam(sourceFile))
 
 		writeJSON(w, http.StatusAccepted, map[string]string{
 			"status":      "pending",
@@ -1243,6 +1263,8 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			"sha256_hash": hash,
 			"job_type":    fileType,
 			"cluster":     cluster,
+			"namespace":   namespace,
+			"project":     project,
 		})
 	}
 }

@@ -34,6 +34,25 @@ dev-down: ## docker compose down
 dev-restart: ## Restart with new .env values (keeps data)
 	docker compose up -d --force-recreate
 
+sync-migrations: ## Copy db/migrations into the Helm chart (they must not drift)
+	@echo "⏳ Syncing db/migrations -> deploy/helm/bomhort/migrations..."
+	@cp db/migrations/*.sql deploy/helm/bomhort/migrations/
+	@echo "✅ In sync."
+
+check-migrations: ## Fail if the Helm chart's migrations have drifted from db/migrations
+	@for f in db/migrations/*.sql; do \
+		b=$$(basename "$$f"); \
+		if [ ! -f "deploy/helm/bomhort/migrations/$$b" ]; then \
+			echo "❌ Missing from Helm chart: $$b"; \
+			echo "   Run 'make sync-migrations'."; exit 1; \
+		fi; \
+		if ! cmp -s "$$f" "deploy/helm/bomhort/migrations/$$b"; then \
+			echo "❌ Content differs: $$b"; \
+			echo "   Run 'make sync-migrations'."; exit 1; \
+		fi; \
+	done
+	@echo "✅ Helm migrations in sync."
+
 migrate: ## Run all pending database migrations
 	@echo "⏳ Running migrations..."
 	@for f in db/migrations/*.sql; do \

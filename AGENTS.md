@@ -16,6 +16,7 @@ The platform consists of **4 Go binaries**, an **Angular UI**, and a **ClickHous
 Key shared packages:
 - `internal/clickhouse` – ClickHouse client, batch inserts (`insert.go`), queue operations (`queue.go`), and all query logic split across `queries.go`, `queries_projects.go`, `queries_search.go`, `queries_refresh.go`, `queries_github_cache.go`
 - `internal/config` – Environment-based configuration loader (`config.Load()` reads env vars with sensible defaults)
+- `internal/ingestpath` – Derives the `cluster`/`namespace`/`project` dimensions from an SBOM's position in its source, driven by an explicit `INGEST_PATH_LAYOUT` (e.g. `cluster/namespace/project`). Opt-in: unset means nothing is derived. Explicit configuration always outranks derivation.
 - `internal/repo` – Directory scanner with SHA256 hashing and file type classification. Accepts any `.json` file (format auto-detected by parser), with configurable ignore prefix (`SBOM_IGNORE_PREFIX`, default `_`) to skip demo/example files. VEX files detected via `*.openvex.json` / `*.vex.json` suffix.
 - `internal/osvutil` – Shared OSV helpers (ClassifySeverity, ExtractFixedVersion, ExtractAffectedVersions)
 - `internal/license` – License compliance + externalized policy + exceptions with prefix-matching
@@ -119,7 +120,7 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 - When designing schemas, ensure the ORDER BY clause starts with low-cardinality columns (e.g., timestamp, category) to minimize data scanning and optimize performance.
 - Extract frequently queried JSON keys into top-level columns rather than relying entirely on generic Map or String types.
 - Avoid single-row inserts; always aggregate and batch inserts in Go.
-- Current tables: `sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`, `dashboard_stats_mv`, `vex_statements`, `cve_refresh_log`, `github_license_cache`, `github_repo_metadata`, `registry_license_cache`, `document_store` (14 migrations in `db/migrations/`; the next free number is `015` — see the Schema Change Register in `ROADMAP.md` before adding one). All core tables include a `cluster LowCardinality(String) DEFAULT ''` column for multi-cluster support.
+- Current tables: `sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`, `dashboard_stats_mv`, `vex_statements`, `cve_refresh_log`, `github_license_cache`, `github_repo_metadata`, `registry_license_cache`, `document_store` (15 migrations in `db/migrations/`; the next free number is `016` — see the Schema Change Register in `ROADMAP.md` before adding one). All core tables include three orthogonal ownership columns, each `LowCardinality(String) DEFAULT ''` and none in `ORDER BY`: `cluster` (#131, migration `012`), `namespace` (#138) and `project` (#57, both migration `015`). **`db/migrations/` must stay byte-identical to `deploy/helm/bomhort/migrations/`** — the chart ships its own copy, so drift means a Kubernetes deployment silently never applies a migration. Run `make check-migrations` (CI-safe) or `make sync-migrations` after adding one.
 
 ## Angular (Frontend)
 - Use strict TypeScript mode and standalone components.

@@ -239,6 +239,15 @@ func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile fu
 		return nil
 	}
 
+	// The VEX parser only sees the document, not the job, so the ownership
+	// dimensions have to be stamped on here. This also fixes cluster, which
+	// was silently left empty on every VEX row before #138/#57.
+	for i := range result.Statements {
+		result.Statements[i].Cluster = job.Cluster
+		result.Statements[i].Namespace = job.Namespace
+		result.Statements[i].Project = job.Project
+	}
+
 	if len(result.Statements) > 0 {
 		if err := chClient.InsertVEXStatements(ctx, result.Statements); err != nil {
 			return err
@@ -362,12 +371,16 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 
 	// 3. Insert SBOM metadata.
 	result.SBOM.Cluster = job.Cluster
+	result.SBOM.Namespace = job.Namespace
+	result.SBOM.Project = job.Project
 	if err := chClient.InsertSBOM(ctx, &result.SBOM); err != nil {
 		return err
 	}
 
 	// 4. Insert package arrays (with resolved licenses).
 	result.Packages.Cluster = job.Cluster
+	result.Packages.Namespace = job.Namespace
+	result.Packages.Project = job.Project
 	if err := chClient.InsertSBOMPackages(ctx, &result.Packages); err != nil {
 		return err
 	}
@@ -464,6 +477,8 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 						FixedVersion:     fixedVersion,
 						OSVJSON:          string(rawJSON),
 						Cluster:          job.Cluster,
+						Namespace:        job.Namespace,
+						Project:          job.Project,
 					})
 				}
 			}
@@ -504,6 +519,8 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 				ExemptedPackages:     exempted,
 				ExemptionReason:      lr.ExemptionReason,
 				Cluster:              job.Cluster,
+				Namespace:            job.Namespace,
+				Project:              job.Project,
 			}
 		}
 		if err := chClient.InsertLicenseCompliance(ctx, licModels); err != nil {
@@ -542,6 +559,8 @@ func captureOriginal(ctx context.Context, chClient *clickhouse.Client, store doc
 		StoredAt:        time.Now(),
 		SBOMID:          meta.SBOMID,
 		Cluster:         job.Cluster,
+		Namespace:       job.Namespace,
+		Project:         job.Project,
 		SourceFile:      job.SourceFile,
 		StorageBackend:  store.Backend(),
 		StorageRef:      res.Ref,

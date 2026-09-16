@@ -278,6 +278,12 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `cluster` | string | Overrides this instance's configured `CLUSTER_NAME` for the resulting ingestion job. |
+| `namespace` | string | Overrides the configured `NAMESPACE` (#138). The deployment namespace the artifact belongs to, e.g. `payments`. |
+| `project` | string | Overrides the configured `PROJECT` (#57), e.g. `payment-service`. |
+
+All three are optional and independent. A parameter that is absent **or blank** inherits the instance default — `?namespace=` and omitting it entirely mean the same thing, so a client cannot accidentally blank out a configured value. Values are trimmed.
+
+Unlike the bucket/directory ingestion path, the server cannot infer these from an uploaded body, so a pushing CI job states them explicitly. They are stamped onto the ingestion job and copied onto every row the parsing worker writes (`sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `vex_statements`, `document_store`).
 
 **Response (accepted):** `202 Accepted`
 ```json
@@ -286,7 +292,9 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
   "job_id": "d465b76c-5b91-48a1-b069-97069e9759a1",
   "sha256_hash": "3a7bd3e2360a3d4b1f8e...",
   "job_type": "sbom",
-  "cluster": "production"
+  "cluster": "production",
+  "namespace": "payments",
+  "project": "payment-service"
 }
 ```
 
@@ -313,6 +321,14 @@ VEX uploads are validated with the same OpenVEX parser the worker uses (a `@cont
 **Example:**
 ```bash
 curl -X POST http://localhost:8080/api/v1/sboms/upload \
+  -H "X-API-Key: <api-key>" \
+  -H "X-Filename: my-service.spdx.json" \
+  --data-binary @my-service.spdx.json
+```
+
+Tagging the upload with all three ownership dimensions:
+```bash
+curl -X POST "http://localhost:8080/api/v1/sboms/upload?cluster=prod-eu&namespace=payments&project=payment-service" \
   -H "X-API-Key: <api-key>" \
   -H "X-Filename: my-service.spdx.json" \
   --data-binary @my-service.spdx.json

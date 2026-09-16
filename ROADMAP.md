@@ -1,6 +1,6 @@
 # BOMHort Product Roadmap
 
-> Last updated: 2026-09-15
+> Last updated: 2026-09-16
 > Project Board: https://github.com/orgs/seebom-labs/projects/1
 > Milestone v1.0.0: https://github.com/seebom-labs/BOMHort/milestone/1
 
@@ -52,7 +52,7 @@ Migration `013` is taken by `013_create_registry_license_cache` (shipped in v0.6
 | Migration | # | Issue | Type | Why pre-1.0 |
 |-----------|---|-------|------|-------------|
 | `014_create_document_store` | **#256** | Tier-2 fidelity capture — persist original SBOM bytes at ingest | New table (`ReplacingMergeTree`, reference + `sha256` only; bytes in configurable blob store: S3/MinIO prefix **or** PVC) | **The real 1.0 driver.** Forward-only: SBOMs ingested before this exist permanently lose round-trip/export fidelity. Also needs a follow-up hook in the already-merged upload handler (#135). Enables #255, and makes every other column below back-fillable. |
-| `015_add_namespace_column` | **#138** | Namespace filtering | `ADD COLUMN namespace LowCardinality(String) DEFAULT ''` on core tables (same pattern as `cluster`; **no** `ORDER BY` change — not possible on MergeTree without rebuild) | Ingestion path convention (`{bucket}/{cluster}/{namespace}/…`) + upload field. `?namespace=` on list endpoints is an additive query param, but the ingestion contract should be fixed before 1.0. |
+| `015_add_namespace_project_columns` ✅ | **#138** | Namespace filtering | `ADD COLUMN namespace LowCardinality(String) DEFAULT ''` on core tables (same pattern as `cluster`; **no** `ORDER BY` change — not possible on MergeTree without rebuild) | Ingestion path convention (`{bucket}/{cluster}/{namespace}/…`) + upload field. `?namespace=` on list endpoints is an additive query param, but the ingestion contract should be fixed before 1.0. |
 | `016_add_source_columns` | **#332** | `source_repo` / `source_ref` as first-class SBOM attribute | `ADD COLUMN source_repo String, source_ref String` on `sboms` | Cheap `ADD COLUMN`; populated at parse time from SPDX `downloadLocation`/`ExternalRef` and CycloneDX `externalReferences[vcs]`/`pedigree.commits`. Overridable via `X-Source-Repo`/`X-Source-Ref` upload headers and `PATCH /api/v1/sboms/{id}`. Correctness blocker for the VEXViper sidecar (#338). |
 | `017_add_vex_provenance` | **#334** (columns only) | VEX statement provenance | `ADD COLUMN author, role, tooling, status_notes` on `vex_statements` | OpenVEX already carries these; capturing them at ingest is forward-only-ish (VEX docs are small and re-uploadable, but automated producers won't re-send). UI badge + `?vex_source=` filter → Phase 3. |
 | *(bundled with 015)* | **#57** (column only) | `project` column | `ADD COLUMN project LowCardinality(String) DEFAULT ''` on core tables | Roadmap already asked to batch this with the `ADD COLUMN` wave. **Only the column** lands now; per-project policies / exception scopes are additive → Phase 3. |
@@ -69,7 +69,8 @@ Migration `013` is taken by `013_create_registry_license_cache` (shipped in v0.6
 | # | Issue | Notes |
 |---|-------|-------|
 | **#145** | Versioned documentation | Docsy `params.versions`, `release/vX.Y` branch → `docs.bomhort.dev/vX.Y/`. Must ship **with** the 1.0 tag, prepared beforehand. |
-| — | Data-migration Job covers all tables | ✅ `registry_license_cache` added (#341). Add `document_store` when #256 lands. |
+| — | Data-migration Job covers all tables | ✅ `registry_license_cache` (#341) and `document_store` (#256) both covered. |
+| — | Helm chart ships every migration | ✅ Fixed while landing `015`: `013` and `014` had never been copied into `deploy/helm/bomhort/migrations/`, so Helm deployments never applied them. `make check-migrations` now guards the whole directory. |
 | — | Migration guide + `values.yaml` stability review | Required by our major-version policy (see `AGENTS.md`). |
 
 ### 🎯 v1.0.0 Milestone
@@ -90,11 +91,11 @@ Migration `013` is taken by `013_create_registry_license_cache` (shipped in v0.6
 - [x] ~~Upload endpoint stable~~ (#135)
 - [x] ~~CycloneDX parsing~~ (#55)
 - [x] ~~Health probes~~ (#137)
-- [ ] Tier-2 fidelity capture — `document_store` + blob store (#256)
-- [ ] Namespace column + ingestion convention (#138)
+- [x] ~~Tier-2 fidelity capture — `document_store` + blob store (#256)~~
+- [x] ~~Namespace column + ingestion convention (#138)~~ — migration `015`, `INGEST_PATH_LAYOUT`, `?namespace=` on upload
 - [ ] `source_repo`/`source_ref` columns (#332)
 - [ ] VEX provenance columns (#334, columns only)
-- [ ] `project` column (#57, column only)
+- [x] ~~`project` column (#57, column only)~~ — migration `015`, `?project=` on upload
 - [ ] One row per `(vuln_id, purl)` — latest VEX wins (#335)
 - [ ] `cluster` in `SBOMListItem` (#177)
 - [ ] Versioned docs (#145)
@@ -174,7 +175,7 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | `012_add_cluster_column` | #131 | `ADD COLUMN cluster` on core tables | ✅ shipped |
 | `013_create_registry_license_cache` | #330 | New table | ✅ shipped |
 | `014_create_document_store` | #256 | New table (reference + hash; blob store external) | **pre** |
-| `015_add_namespace_column` | #138, #57 | `ADD COLUMN namespace`, `ADD COLUMN project` on core tables | **pre** |
+| `015_add_namespace_project_columns` | #138, #57 | `ADD COLUMN namespace`, `ADD COLUMN project` on core tables (+ `document_store`) | ✅ shipped (**pre**) |
 | `016_add_source_columns` | #332 | `ADD COLUMN source_repo, source_ref` on `sboms` | **pre** |
 | `017_add_vex_provenance` | #334 | `ADD COLUMN author, role, tooling, status_notes` on `vex_statements` | **pre** |
 | — (query only) | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | **pre** (API contract) |

@@ -100,24 +100,31 @@ s3:
 
 BOMHort supports tagging data by **cluster** for multi-cluster visibility from a single instance. This is fully optional — omit all cluster config for single-instance mode.
 
+{{% alert title="Changed in v0.7.0" color="warning" %}}
+Earlier versions of this page showed `ingestionWatcher.env.CLUSTER_NAME`. That
+key was **never read by the chart** — the watcher template has no `env`
+passthrough, so the setting silently did nothing and all data stayed untagged.
+Use the `ownership` block below, which is wired into the ConfigMap that every
+workload consumes. If you were relying on the old snippet, re-ingest after
+switching so existing rows pick up the label.
+{{% /alert %}}
+
 **Option 1: Global cluster name (one instance per cluster)**
 
 ```yaml
 # values-prod-eu.yaml
-ingestionWatcher:
-  env:
-    CLUSTER_NAME: "prod-eu"
+ownership:
+  cluster: "prod-eu"
 ```
 
-Deploy one BOMHort instance per cluster, each with its own `CLUSTER_NAME`.
+Deploy one BOMHort instance per cluster, each with its own `cluster` value.
 
 **Option 2: Per-bucket cluster assignment (one instance, multiple clusters)**
 
 ```yaml
 # values.yaml — single watcher, multiple clusters
-ingestionWatcher:
-  env:
-    CLUSTER_NAME: "default"   # fallback for buckets without explicit cluster
+ownership:
+  cluster: "default"   # fallback for buckets without explicit cluster
 
 s3:
   buckets: |
@@ -133,9 +140,13 @@ In this example:
 - `prod-eu-sboms` → all SBOMs tagged as `prod-eu`
 - `prod-us-sboms` → tagged as `prod-us`
 - `staging-sboms` → tagged as `staging`
-- `shared-sboms` → inherits `CLUSTER_NAME` = `default`
+- `shared-sboms` → inherits `ownership.cluster` = `default`
 
-**Priority:** per-bucket `cluster` > global `CLUSTER_NAME` > empty (untagged)
+**Priority:** per-bucket `cluster` > global `ownership.cluster` > empty (untagged)
+
+Cluster is only one of three ownership dimensions — see
+[Ownership](#2-ownership--labelling-sboms-by-cluster-namespace-and-project)
+for `namespace`, `project` and deriving all three from the ingestion path.
 
 ### Option B: Seed Job
 
@@ -267,7 +278,157 @@ The download endpoint advertises a served original with `X-BOMHort-Original: tru
 
 ---
 
-## 2. License Exceptions
+## 2. Ownership – Labelling SBOMs by Cluster, Namespace and Project
+
+Every ingested row carries three orthogonal ownership labels. All default to
+`""` (unassigned), so an existing deployment that sets none of them keeps
+behaving exactly as before.
+
+| Label | Question it answers | Example | Typical cardinality | Owned by |
+|-------|---------------------|---------|---------------------|----------|
+| `cluster` | Where is it deployed? | `prod-eu` | 1–50 | Platform |
+| `namespace` | Which tenant/team boundary inside the cluster? | `payments` | 10–500 | Platform / team |
+| `project` | What is it / who owns it? | `payment-service` | 50–5000 | Dev teams |
+
+Stored as `LowCardinality(String)` columns on every core table (`sboms`,
+`sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`,
+`vex_statements`, `document_store`) by migrations `012` (cluster) and `015`
+(namespace, project).
+
+### Static values
+
+The simplest setup — one BOMHort instance per cluster, everything labelled the
+same:
+
+```yaml
+ownership:
+  cluster: prod-eu
+  namespace: ""
+  project: ""
+```
+
+Per bucket, for the bucket-per-team case:
+
+```yaml
+s3:
+  buckets:
+    - name: team-payments-sboms
+      region: eu-central-1
+      cluster: prod-eu
+      namespace: payments
+    - name: team-search-sboms
+      region: eu-central-1
+      cluster: prod-eu
+      namespace: search
+```
+
+### Deriving labels from the ingestion path
+
+If your buckets are already organised by cluster/team/service, declare that
+layout instead of repeating it per bucket:
+
+```yaml
+ownership:
+  pathLayout: "cluster/namespace/project"
+```
+
+```
+prod-eu/payments/payment-service/app.spdx.json
+  → cluster=prod-eu  namespace=payments  project=payment-service
+```
+
+Segments map **positionally** onto the leading path segments, relative to the
+ingestion root — `SBOM_DIR` for local files, or a bucket's configured `prefix`
+for S3 (the prefix is stripped first, so a bucket with `prefix: k3s-io/` does
+not end up with `cluster=k3s-io`). The filename itself is never consumed.
+
+| Segment | Meaning |
+|---------|---------|
+| `cluster` / `namespace` / `project` | Assign this path level to that dimension |
+| `_` | Skip this level (it carries no meaning) |
+
+```yaml
+pathLayout: "cluster/namespace/project"   # prod-eu/payments/svc/f.json
+pathLayout: "namespace/project"           # payments/svc/f.json
+pathLayout: "cluster/_/project"           # prod-eu/ignored/svc/f.json
+pathLayout: "project/cluster"             # reordering is fine, it is positional
+```
+
+Per-bucket override, for fleets where one bucket is nested and another flat:
+
+```yaml
+s3:
+  buckets:
+    - name: nested-sboms
+      pathLayout: "cluster/namespace/project"
+    - name: flat-sboms
+      namespace: legacy          # no layout: label it statically instead
+```
+
+{{% alert title="Explicit configuration always wins" color="info" %}}
+Derivation only fills dimensions that are still empty after upload params,
+per-bucket config and the instance defaults have been applied. If you set
+`cluster: prod-eu` and the path also yields a cluster segment, the configured
+value is kept — an operator who names a dimension means it, and silently
+overriding that from directory structure would be impossible to debug.
+{{% /alert %}}
+
+**Tolerant on data, strict on config.** A path shallower than the layout fills
+what it can and leaves the rest empty; a deeper one is matched from the left.
+One oddly-placed file therefore cannot fail an ingestion run. A *malformed
+layout* is the opposite — it is rejected at startup, because accepting it would
+ingest the whole fleet unlabelled, and `DEFAULT ''` makes that mistake
+indistinguishable from "genuinely unassigned". Only a full re-ingest would fix
+it.
+
+### Push-model uploads
+
+The server cannot infer ownership from an uploaded body, so a pushing CI job
+states it per request:
+
+```bash
+curl -X POST "https://bomhort.example.com/api/v1/sboms/upload?cluster=prod-eu&namespace=payments&project=payment-service" \
+  -H "X-API-Key: $BOMHORT_API_KEY" \
+  -H "X-Filename: payment-service.spdx.json" \
+  --data-binary @payment-service.spdx.json
+```
+
+Any parameter you omit falls back to the instance default. A blank parameter
+(`?namespace=`) is treated as omitted, so a client cannot accidentally blank
+out a configured value.
+
+### Applying the change
+
+These are ingestion-time labels, not query-time ones: they are written when an
+SBOM is parsed. Changing them affects **new** ingests only.
+
+Run migration `015` before deploying the new images — the columns must exist
+before any writer references them. The `migrate` Job does this automatically on
+`helm upgrade`.
+
+```bash
+helm upgrade bomhort ./deploy/helm/bomhort -f my-values.yaml
+
+# Re-label existing data by re-ingesting it:
+kubectl create job --from=cronjob/bomhort-ingestion-watcher reingest-$(date +%s)
+```
+
+{{% alert title="Rolling upgrades" color="warning" %}}
+`ingestion_queue` is append-only — a status change is a new row, not an update
+— so during a rolling upgrade an **old** parsing worker can claim a job that a
+**new** ingestion watcher enqueued, and write the status row back without the
+`namespace`/`project` columns it doesn't know about. Those rows land with `''`,
+exactly as if the labels had never been set.
+
+This is transient and harmless (the data is merely unlabelled, never wrong),
+but if you care about complete labelling from the first ingest, let the worker
+rollout finish before the next watcher run — or simply re-ingest afterwards.
+The same applied to `cluster` when #131 shipped.
+{{% /alert %}}
+
+---
+
+## 3. License Exceptions
 
 License exceptions suppress specific license violations. They are stored in a **ConfigMap** that is mounted read-only into the API Gateway and Workers.
 
@@ -391,7 +552,7 @@ source of truth for the exceptions and their review history.
 
 ---
 
-## 3. License Policy
+## 4. License Policy
 
 The license policy defines which SPDX IDs are classified as **permissive**, **copyleft**, or **unknown**.
 
@@ -402,7 +563,7 @@ kubectl rollout restart deployment bomhort-api-gateway bomhort-parsing-worker
 
 ---
 
-## 4. Custom Theme
+## 5. Custom Theme
 
 ```yaml
 ui:
@@ -419,7 +580,7 @@ kubectl rollout restart deployment bomhort-ui
 
 ---
 
-## 5. Site Configuration
+## 6. Site Configuration
 
 ```yaml
 ui:
@@ -435,7 +596,7 @@ ui:
 
 ---
 
-## 6. API Authentication (Optional)
+## 7. API Authentication (Optional)
 
 API authentication is **fully optional and disabled by default**. When you expose the API Gateway externally (e.g. via Ingress), enable it to prevent unauthenticated access.
 
@@ -550,7 +711,7 @@ Even when authentication is enabled, the following endpoints are always reachabl
 
 ---
 
-## 7. GitHub Token (License Resolution)
+## 8. GitHub Token (License Resolution)
 
 BOMHort resolves unknown package licenses (`NOASSERTION`) by querying the GitHub API. Without a token, you are limited to **60 requests per hour**. With a token, the limit increases to **5,000 req/h**.
 
@@ -585,7 +746,7 @@ See [Architecture: License Resolution](/docs/architecture/#license-resolution) f
 
 ---
 
-## 8. Full Deployment Example
+## 9. Full Deployment Example
 
 ### S3-based (recommended)
 
@@ -601,7 +762,7 @@ helm install bomhort ./deploy/helm/bomhort \
 
 ---
 
-## 9. Headless Mode (API-Only)
+## 10. Headless Mode (API-Only)
 
 For CI/CD integrations, custom dashboards, or environments where the Angular UI is not needed, BOMHort can be deployed in **headless mode**. This skips all UI-related resources (Deployment, Service, nginx ConfigMap) and reduces the cluster's resource footprint.
 
@@ -630,7 +791,7 @@ This is ideal for:
 
 ---
 
-## 10. Ingress – Exposing the API Externally
+## 11. Ingress – Exposing the API Externally
 
 BOMHort includes an optional Ingress resource to expose the API Gateway (and optionally the UI) outside the cluster. The template is controller-agnostic — it works with any Ingress controller that implements the Kubernetes Ingress spec (Envoy Gateway, Contour, AWS ALB, etc.).
 
@@ -732,7 +893,7 @@ When exposing the API externally, ensure `apiGateway.auth.enabled: true` is set.
 
 ---
 
-## 11. Upgrading from v0.5.0 or Earlier (SeeBOM → BOMHort)
+## 12. Upgrading from v0.5.0 or Earlier (SeeBOM → BOMHort)
 
 Starting with v0.6.0, the project was renamed from **SeeBOM** to **BOMHort**. This affects the Helm chart name, namespace, ClickHouse database name, and container image paths. Existing deployments running v0.5.0 or earlier need a one-time data migration.
 
@@ -889,7 +1050,7 @@ After confirming data integrity, set `dataMigration.enabled: false` and remove t
 
 ---
 
-## 12. Verifying the Deployment
+## 13. Verifying the Deployment
 
 ```bash
 kubectl get pods -l app.kubernetes.io/name=bomhort

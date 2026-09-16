@@ -84,6 +84,9 @@ cp .env.example .env
 | `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution for `pkg:npm/*` packages with `NOASSERTION`/empty licenses. |
 | `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution for `pkg:nuget/*` packages with `NOASSERTION`/empty licenses. Legacy packages without `licenseExpression` fall back to their GitHub repository license. |
 | `CLUSTER_NAME` | *(empty)* | Cluster identifier for multi-cluster deployments. All ingested data is tagged with this value. Empty = single-instance mode. |
+| `NAMESPACE` | *(empty)* | Default deployment-namespace label (#138) stamped onto all ingested data. Overridable per bucket and per upload (`?namespace=`). |
+| `PROJECT` | *(empty)* | Default project label (#57) stamped onto all ingested data. Overridable per bucket and per upload (`?project=`). |
+| `INGEST_PATH_LAYOUT` | *(empty)* | Opt-in: derive `cluster`/`namespace`/`project` from an SBOM's position in the source, e.g. `cluster/namespace/project` for keys like `prod-eu/payments/payment-service/app.spdx.json`. `_` skips a level. A malformed layout fails at startup. Explicit config always outranks derivation. |
 | `AUTH_ENABLED` | `false` | Enable API authentication middleware. When `false` (default), all API endpoints are unauthenticated. |
 | `SERVICE_TOKEN` | *(empty)* | Shared secret for upstream proxy/gateway integrations. Accepted via `Authorization: Bearer <token>` or `X-Service-Token: <token>`. |
 | `API_KEYS` | *(empty)* | Comma-separated list of API keys for direct API consumers (CI/CD, scripts). Accepted via `X-API-Key: <key>`. |
@@ -260,6 +263,8 @@ S3_BUCKETS='[
 ```
 
 Buckets without a `cluster` field inherit the global `CLUSTER_NAME`. If neither is set, data is untagged (single-instance mode).
+
+Cluster is one of three ownership dimensions — `namespace` (#138) and `project` (#57) work the same way (`NAMESPACE`/`PROJECT` defaults, per-bucket fields, `?namespace=`/`?project=` on upload), and `INGEST_PATH_LAYOUT` can derive all three from the ingestion path. See the [deployment guide](docs/DEPLOYMENT_GUIDE.md) for details.
 
 **How it works:**
 - The Ingestion Watcher streams `ListObjects` from each bucket (paginated, no full listing in memory)

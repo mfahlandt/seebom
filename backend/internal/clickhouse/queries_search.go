@@ -20,8 +20,14 @@ import (
 // duplicate vulnerability rows that FINAL cannot merge (differing non-key
 // columns after a re-scan).
 //
+// The argMax aliases are deliberately prefixed (vex_status, winning_timestamp,
+// …) rather than reusing the source column names: ClickHouse resolves an alias
+// that shadows a column inside the same aggregate expression recursively and
+// rejects the query with "aggregate function ... is found inside another
+// aggregate function".
+//
 // Scope semantics (#350): only statements scoped to this SBOM (sbom_id = ?)
-// or global legacy statements (sbom_id = '') apply — a statement about
+// or global legacy statements (sbom_id = ”) apply — a statement about
 // another product must never suppress findings here. A scoped statement
 // beats a global one regardless of timestamps: argMax orders by the tuple
 // (scoped, vex_timestamp).
@@ -30,23 +36,23 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
-			ifNull(vx.status, '') AS vex_status,
-			ifNull(vx.justification, '') AS vex_justification,
-			ifNull(vx.vex_timestamp, toDateTime(0)) AS vex_timestamp,
+			ifNull(vx.vex_status, '') AS vex_status,
+			ifNull(vx.vex_justification, '') AS vex_justification,
+			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
 			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
-			ifNull(vx.author, '') AS vex_author,
-			ifNull(vx.tooling, '') AS vex_tooling,
+			ifNull(vx.vex_author, '') AS vex_author,
+			ifNull(vx.vex_tooling, '') AS vex_tooling,
 			ifNull(vx.vex_scoped, false) AS vex_scoped
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
 		LEFT JOIN (
 			SELECT
 				vuln_id, product_purl,
-				argMax(status, (sbom_id != '', vex_timestamp)) AS status,
-				argMax(justification, (sbom_id != '', vex_timestamp)) AS justification,
+				argMax(status, (sbom_id != '', vex_timestamp)) AS vex_status,
+				argMax(justification, (sbom_id != '', vex_timestamp)) AS vex_justification,
 				argMax(toString(vex_id), (sbom_id != '', vex_timestamp)) AS vex_statement_id,
-				argMax(author, (sbom_id != '', vex_timestamp)) AS author,
-				argMax(tooling, (sbom_id != '', vex_timestamp)) AS tooling,
-				argMax(vex_timestamp, (sbom_id != '', vex_timestamp)) AS vex_timestamp,
+				argMax(author, (sbom_id != '', vex_timestamp)) AS vex_author,
+				argMax(tooling, (sbom_id != '', vex_timestamp)) AS vex_tooling,
+				argMax(vex_timestamp, (sbom_id != '', vex_timestamp)) AS winning_timestamp,
 				argMax(sbom_id != '', (sbom_id != '', vex_timestamp)) AS vex_scoped
 			FROM vex_statements FINAL
 			WHERE sbom_id = ? OR sbom_id = ''
@@ -198,6 +204,7 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 	err := c.Conn.QueryRow(ctx, `
 		SELECT
 			s.sbom_id, s.source_file, s.spdx_version, s.document_name, s.ingested_at,
+			s.source_repo, s.source_ref,
 			ifNull(p.pkg_count, 0) AS package_count
 		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (

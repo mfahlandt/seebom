@@ -160,7 +160,7 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 			s.cluster,
 			s.namespace,
 			s.project
-		FROM sboms FINAL AS s
+		FROM (SELECT * FROM sboms FINAL) AS s
 		LEFT JOIN (
 			SELECT sbom_id, sum(length(package_names)) AS pkg_count
 			FROM sbom_packages FINAL

@@ -20,6 +20,7 @@ type OpenVEXDocument struct {
 	ID         string         `json:"@id"`
 	Author     string         `json:"author"`
 	Role       string         `json:"role"`
+	Tooling    string         `json:"tooling"`
 	Timestamp  string         `json:"timestamp"`
 	Version    int            `json:"version"`
 	Statements []VEXStatement `json:"statements"`
@@ -30,6 +31,7 @@ type VEXStatement struct {
 	Vulnerability   VEXVulnerability `json:"vulnerability"`
 	Products        []VEXProduct     `json:"products"`
 	Status          string           `json:"status"`
+	StatusNotes     string           `json:"status_notes,omitempty"`
 	Justification   string           `json:"justification,omitempty"`
 	ImpactStatement string           `json:"impact_statement,omitempty"`
 	ActionStatement string           `json:"action_statement,omitempty"`
@@ -148,6 +150,12 @@ func Parse(r io.Reader, sourceFile string) (out *ParseResult, err error) {
 				ImpactStatement: stmt.ImpactStatement,
 				ActionStatement: stmt.ActionStatement,
 				VEXTimestamp:    stmtTime,
+				// Provenance (#334): author/role/tooling live on the
+				// document in OpenVEX; status_notes on the statement.
+				Author:      doc.Author,
+				Role:        doc.Role,
+				Tooling:     doc.Tooling,
+				StatusNotes: stmt.StatusNotes,
 			})
 		}
 	}

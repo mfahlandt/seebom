@@ -446,7 +446,8 @@ func (c *Client) QueryVEXStatements(ctx context.Context, page, pageSize uint64) 
 	rows, err := c.Conn.Query(ctx, `
 		SELECT vex_id, document_id, source_file, product_purl,
 			   vuln_id, status, justification, impact_statement,
-			   action_statement, vex_timestamp, ingested_at
+			   action_statement, vex_timestamp, ingested_at,
+			   author, role, tooling, status_notes
 		FROM vex_statements FINAL
 		ORDER BY vex_timestamp DESC
 		LIMIT ? OFFSET ?
@@ -464,6 +465,7 @@ func (c *Client) QueryVEXStatements(ctx context.Context, page, pageSize uint64) 
 			&item.VEXID, &item.DocumentID, &item.SourceFile, &item.ProductPURL,
 			&item.VulnID, &item.Status, &item.Justification, &item.ImpactStatement,
 			&item.ActionStatement, &vexTimestamp, &ingestedAt,
+			&item.Author, &item.Role, &item.Tooling, &item.StatusNotes,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vex row: %w", err)
 		}

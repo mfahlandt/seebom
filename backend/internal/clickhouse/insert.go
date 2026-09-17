@@ -173,6 +173,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 			ingested_at, vex_id, document_id, source_file,
 			product_purl, vuln_id, status, justification,
 			impact_statement, action_statement, vex_timestamp,
+			author, role, tooling, status_notes,
 			cluster, namespace, project
 		)`)
 	if err != nil {
@@ -192,6 +193,10 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 			s.ImpactStatement,
 			s.ActionStatement,
 			s.VEXTimestamp,
+			s.Author,
+			s.Role,
+			s.Tooling,
+			s.StatusNotes,
 			s.Cluster,
 			s.Namespace,
 			s.Project,

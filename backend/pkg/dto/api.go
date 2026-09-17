@@ -83,18 +83,23 @@ type LicenseAffectedSBOM struct {
 
 // VEXStatementItem is the response DTO for listing VEX statements.
 type VEXStatementItem struct {
-	VEXID           string            `json:"vex_id"`
-	DocumentID      string            `json:"document_id"`
-	SourceFile      string            `json:"source_file"`
-	ProductPURL     string            `json:"product_purl"`
-	VulnID          string            `json:"vuln_id"`
-	Status          string            `json:"status"`
-	Justification   string            `json:"justification"`
-	ImpactStatement string            `json:"impact_statement,omitempty"`
-	ActionStatement string            `json:"action_statement,omitempty"`
-	VEXTimestamp    string            `json:"vex_timestamp"`
-	IngestedAt      string            `json:"ingested_at"`
-	AffectedSBOMs   []VEXAffectedSBOM `json:"affected_sboms,omitempty"`
+	VEXID           string `json:"vex_id"`
+	DocumentID      string `json:"document_id"`
+	SourceFile      string `json:"source_file"`
+	ProductPURL     string `json:"product_purl"`
+	VulnID          string `json:"vuln_id"`
+	Status          string `json:"status"`
+	Justification   string `json:"justification"`
+	ImpactStatement string `json:"impact_statement,omitempty"`
+	ActionStatement string `json:"action_statement,omitempty"`
+	VEXTimestamp    string `json:"vex_timestamp"`
+	IngestedAt      string `json:"ingested_at"`
+	// Provenance (#334); omitted when the source document has none.
+	Author        string            `json:"author,omitempty"`
+	Role          string            `json:"role,omitempty"`
+	Tooling       string            `json:"tooling,omitempty"`
+	StatusNotes   string            `json:"status_notes,omitempty"`
+	AffectedSBOMs []VEXAffectedSBOM `json:"affected_sboms,omitempty"`
 }
 
 // VEXAffectedSBOM links a VEX statement to an SBOM that uses the affected PURL.
@@ -171,12 +176,12 @@ type DependencyStatsResponse struct {
 
 // VersionSkewItem represents a package with inconsistent versions across projects.
 type VersionSkewItem struct {
-	PackageName     string                `json:"package_name"`
-	PURL            string                `json:"purl"`
-	VersionCount    uint64                `json:"version_count"`
-	ProjectCount    uint64                `json:"project_count"`
-	IsDirectInCount uint64                `json:"is_direct_in_count"`
-	Versions        []VersionSkewDetail   `json:"versions"`
+	PackageName     string              `json:"package_name"`
+	PURL            string              `json:"purl"`
+	VersionCount    uint64              `json:"version_count"`
+	ProjectCount    uint64              `json:"project_count"`
+	IsDirectInCount uint64              `json:"is_direct_in_count"`
+	Versions        []VersionSkewDetail `json:"versions"`
 }
 
 // VersionSkewDetail shows per-version breakdown for a skewed package.
@@ -282,16 +287,16 @@ type ClusterListItem struct {
 
 // ClusterStats is the response DTO for per-cluster statistics.
 type ClusterStats struct {
-	Cluster                  string            `json:"cluster"`
-	TotalSBOMs               uint64            `json:"total_sboms"`
-	TotalPackages            uint64            `json:"total_packages"`
-	TotalVulnerabilities     uint64            `json:"total_vulnerabilities"`
-	CriticalVulns            uint64            `json:"critical_vulns"`
-	HighVulns                uint64            `json:"high_vulns"`
-	MediumVulns              uint64            `json:"medium_vulns"`
-	LowVulns                 uint64            `json:"low_vulns"`
-	LicenseBreakdown         map[string]uint64 `json:"license_breakdown"`
-	LastIngested             string            `json:"last_ingested,omitempty"`
+	Cluster              string            `json:"cluster"`
+	TotalSBOMs           uint64            `json:"total_sboms"`
+	TotalPackages        uint64            `json:"total_packages"`
+	TotalVulnerabilities uint64            `json:"total_vulnerabilities"`
+	CriticalVulns        uint64            `json:"critical_vulns"`
+	HighVulns            uint64            `json:"high_vulns"`
+	MediumVulns          uint64            `json:"medium_vulns"`
+	LowVulns             uint64            `json:"low_vulns"`
+	LicenseBreakdown     map[string]uint64 `json:"license_breakdown"`
+	LastIngested         string            `json:"last_ingested,omitempty"`
 }
 
 // ProjectListItem is the response DTO for the project list view.

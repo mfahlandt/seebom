@@ -8,7 +8,7 @@ description: >
 ---
 
 {{% alert title="Last Updated" color="info" %}}
-2026-09-15 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1) · [v1.0.0 Milestone →](https://github.com/seebom-labs/BOMHort/milestone/1)
+2026-09-16 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1) · [v1.0.0 Milestone →](https://github.com/seebom-labs/BOMHort/milestone/1)
 {{% /alert %}}
 
 ## Vision
@@ -58,8 +58,8 @@ Migration `013` is taken by `013_create_registry_license_cache` (v0.6.x). Issues
 
 | Status | Migration | Issue | Change | Why pre-1.0 |
 |:------:|-----------|-------|--------|-------------|
-| 🔲 | `014_create_document_store` | [#256 — Tier-2 fidelity capture](https://github.com/seebom-labs/BOMHort/issues/256) | New table (reference + `sha256`); original bytes in a configurable blob store (S3/MinIO prefix or PVC), **not** ClickHouse | **The real 1.0 driver.** Forward-only — SBOMs ingested before this permanently lose round-trip fidelity. Needs a follow-up hook in the upload handler (#135). Enables #255. |
-| 🔲 | `015_add_namespace_column` | [#138 — Namespace filtering](https://github.com/seebom-labs/BOMHort/issues/138) + [#57 (column)](https://github.com/seebom-labs/BOMHort/issues/57) | `ADD COLUMN namespace`, `ADD COLUMN project` (`LowCardinality(String) DEFAULT ''`) on core tables; no `ORDER BY` change | Fixes the ingestion contract (`{bucket}/{cluster}/{namespace}/…`, upload fields) before producers depend on it. |
+| ✅ | `014_create_document_store` | [#256 — Tier-2 fidelity capture](https://github.com/seebom-labs/BOMHort/issues/256) | New table (reference + `sha256`); original bytes in a configurable blob store (S3/MinIO prefix or PVC), **not** ClickHouse | **The real 1.0 driver.** Forward-only — SBOMs ingested before this permanently lose round-trip fidelity. Needs a follow-up hook in the upload handler (#135). Enables #255. |
+| ✅ | `015_add_namespace_project_columns` | [#138 — Namespace filtering](https://github.com/seebom-labs/BOMHort/issues/138) + [#57 (column)](https://github.com/seebom-labs/BOMHort/issues/57) | `ADD COLUMN namespace`, `ADD COLUMN project` (`LowCardinality(String) DEFAULT ''`) on core tables and `document_store`; no `ORDER BY` change | Ingestion contract frozen: opt-in `INGEST_PATH_LAYOUT` (e.g. `cluster/namespace/project`), per-bucket `namespace`/`project`/`pathLayout`, and `?namespace=`/`?project=` on upload. |
 | 🔲 | `016_add_source_columns` | [#332 — source_repo / source_ref](https://github.com/seebom-labs/BOMHort/issues/332) | `ADD COLUMN source_repo, source_ref` on `sboms`; populated from SPDX/CycloneDX VCS refs; `X-Source-Repo` upload header; `PATCH /api/v1/sboms/{id}` | Correctness blocker for automated VEX (#338). |
 | 🔲 | `017_add_vex_provenance` | [#334 — VEX provenance (columns)](https://github.com/seebom-labs/BOMHort/issues/334) | `ADD COLUMN author, role, tooling, status_notes` on `vex_statements` | OpenVEX already carries these; automated producers won't re-send. UI → Phase 3. |
 
@@ -75,7 +75,8 @@ Migration `013` is taken by `013_create_registry_license_cache` (v0.6.x). Issues
 | Status | Issue | Notes |
 |:------:|-------|-------|
 | 🔲 | [#145 — Versioned documentation](https://github.com/seebom-labs/BOMHort/issues/145) | Docsy `params.versions`, `release/vX.Y` branches. Ships **with** the 1.0 tag. |
-| ✅ | Data-migration Job covers `registry_license_cache` | [#341](https://github.com/seebom-labs/BOMHort/pull/341). Add `document_store` with #256. |
+| ✅ | Data-migration Job covers `registry_license_cache` | [#341](https://github.com/seebom-labs/BOMHort/pull/341); `document_store` covered with #256. |
+| ✅ | Helm chart ships every migration | Fixed while landing `015`: `013` and `014` had never been copied into `deploy/helm/bomhort/migrations/`, so Helm deployments never applied them. `make check-migrations` now guards the whole directory. |
 | 🔲 | Migration guide + `values.yaml` stability review | Required by the major-version policy. |
 
 ---
@@ -97,8 +98,8 @@ From this point forward, the [Support Policy](/docs/release/#support-policy) (cu
 | CycloneDX parsing | ✅ | [#55](https://github.com/seebom-labs/BOMHort/issues/55) |
 | Enhanced health probes | ✅ | [#137](https://github.com/seebom-labs/BOMHort/issues/137) |
 | Version Skew Detection | ✅ | [#37](https://github.com/seebom-labs/BOMHort/issues/37) |
-| Tier-2 fidelity capture (`document_store` + blob store) | 🔲 | [#256](https://github.com/seebom-labs/BOMHort/issues/256) |
-| Namespace + project columns, ingestion convention | 🔲 | [#138](https://github.com/seebom-labs/BOMHort/issues/138), [#57](https://github.com/seebom-labs/BOMHort/issues/57) |
+| Tier-2 fidelity capture (`document_store` + blob store) | ✅ | [#256](https://github.com/seebom-labs/BOMHort/issues/256) |
+| Namespace + project columns, ingestion convention | ✅ | [#138](https://github.com/seebom-labs/BOMHort/issues/138), [#57](https://github.com/seebom-labs/BOMHort/issues/57) |
 | `source_repo` / `source_ref` columns | 🔲 | [#332](https://github.com/seebom-labs/BOMHort/issues/332) |
 | VEX provenance columns | 🔲 | [#334](https://github.com/seebom-labs/BOMHort/issues/334) |
 | One row per `(vuln_id, purl)` | 🔲 | [#335](https://github.com/seebom-labs/BOMHort/issues/335) |
@@ -140,7 +141,7 @@ All v0.x releases are development milestones. They may contain breaking changes 
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| 🔲 | [#138 — Namespace filtering (API + UI)](https://github.com/seebom-labs/BOMHort/issues/138) | `?namespace=` on list endpoints, namespace chips. Column from `015`. |
+| 🔲 | [#138 — Namespace filtering (API + UI)](https://github.com/seebom-labs/BOMHort/issues/138) | `?namespace=` on list endpoints, namespace chips. Column and ingestion contract shipped in `015`; this is the additive read side. |
 | 🔲 | [#267](https://github.com/seebom-labs/BOMHort/issues/267) → [#176 — Cluster Picker](https://github.com/seebom-labs/BOMHort/issues/176) | Query-param filter first (help wanted), then `/clusters` route + navbar dropdown. |
 | 🔲 | [#140 — Workload vulnerability summary](https://github.com/seebom-labs/BOMHort/issues/140) | Image → posture cross-reference. Powers #141. |
 | 🔲 | [#57 — Per-project policies](https://github.com/seebom-labs/BOMHort/issues/57) | License policies, severity thresholds, exception scopes per project. |
@@ -189,8 +190,8 @@ Everything that touches `db/migrations/` or a frozen response shape. After 1.0, 
 |-----------|-------|--------|:------------:|
 | `012_add_cluster_column` | #131 | `ADD COLUMN cluster` | ✅ shipped |
 | `013_create_registry_license_cache` | #330 | New table | ✅ shipped |
-| `014_create_document_store` | #256 | New table | **pre** |
-| `015_add_namespace_column` | #138, #57 | `ADD COLUMN namespace, project` | **pre** |
+| `014_create_document_store` | #256 | New table | ✅ shipped (**pre**) |
+| `015_add_namespace_project_columns` | #138, #57 | `ADD COLUMN namespace, project` (core tables + `document_store`) | ✅ shipped (**pre**) |
 | `016_add_source_columns` | #332 | `ADD COLUMN source_repo, source_ref` | **pre** |
 | `017_add_vex_provenance` | #334 | `ADD COLUMN author, role, tooling, status_notes` | **pre** |
 | — | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | **pre** (API) |

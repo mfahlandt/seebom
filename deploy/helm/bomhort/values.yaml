@@ -11,6 +11,45 @@ image:
 github:
   token: ""
 
+# Ownership dimensions (#131 cluster, #138 namespace, #57 project)
+#
+# Three orthogonal, low-cardinality labels stamped onto every ingested row.
+# All default to "" (= unassigned), which is also what every pre-existing row
+# carries, so leaving them unset changes nothing.
+#
+#   cluster   - where is it deployed?        e.g. prod-eu          (1-50)
+#   namespace - which tenant/team boundary?  e.g. payments         (10-500)
+#   project   - what is it / who owns it?    e.g. payment-service  (50-5000)
+#
+# Precedence, highest first:
+#   1. per-object: ?cluster=/?namespace=/?project= on POST /api/v1/sboms/upload
+#   2. per-bucket: "cluster"/"namespace"/"project" inside an s3.buckets entry
+#   3. these instance-wide defaults
+#   4. pathLayout derivation (fills only what the above left empty)
+ownership:
+  cluster: ""
+  namespace: ""
+  project: ""
+
+  # Derive the dimensions from where an SBOM sits in its source, instead of
+  # (or on top of) the static values above. Empty = disabled, nothing is
+  # derived. The layout maps positionally onto the leading path segments,
+  # relative to the ingestion root (SBOM_DIR, or a bucket's configured
+  # prefix); the filename itself is never consumed.
+  #
+  #   pathLayout: "cluster/namespace/project"
+  #   prod-eu/payments/payment-service/app.spdx.json
+  #     -> cluster=prod-eu namespace=payments project=payment-service
+  #
+  # Valid segments: cluster, namespace, project, and "_" to skip a directory
+  # level that carries no meaning. A malformed layout fails at startup rather
+  # than silently ingesting everything unlabelled.
+  #
+  # Explicit configuration always wins: derivation only fills dimensions that
+  # are still empty. Override per bucket with "pathLayout" in an s3.buckets
+  # entry.
+  pathLayout: ""
+
 # S3 bucket ingestion (default, recommended)
 # Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS).
 # No PVC, git-sync, or seed job required. Streams object listings with pagination.

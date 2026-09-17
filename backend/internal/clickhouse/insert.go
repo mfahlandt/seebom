@@ -14,7 +14,7 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 		`INSERT INTO sboms (
 			ingested_at, sbom_id, source_file, spdx_version,
 			document_name, document_namespace, sha256_hash,
-			creation_date, creator_tools, cluster
+			creation_date, creator_tools, cluster, namespace, project
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare sbom batch: %w", err)
@@ -31,6 +31,8 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 		sbom.CreationDate,
 		sbom.CreatorTools,
 		sbom.Cluster,
+		sbom.Namespace,
+		sbom.Project,
 	); err != nil {
 		return fmt.Errorf("failed to append sbom: %w", err)
 	}
@@ -45,7 +47,8 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 			ingested_at, sbom_id, source_file,
 			package_spdx_ids, package_names, package_versions,
 			package_purls, package_licenses,
-			rel_source_indices, rel_target_indices, rel_types, cluster
+			rel_source_indices, rel_target_indices, rel_types,
+			cluster, namespace, project
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare sbom_packages batch: %w", err)
@@ -64,6 +67,8 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 		pkg.RelTargetIndices,
 		pkg.RelTypes,
 		pkg.Cluster,
+		pkg.Namespace,
+		pkg.Project,
 	); err != nil {
 		return fmt.Errorf("failed to append sbom_packages: %w", err)
 	}
@@ -80,7 +85,8 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 	batch, err := c.Conn.PrepareBatch(ctx,
 		`INSERT INTO vulnerabilities (
 			discovered_at, sbom_id, source_file, purl, vuln_id,
-			severity, summary, affected_versions, fixed_version, osv_json, cluster
+			severity, summary, affected_versions, fixed_version, osv_json,
+			cluster, namespace, project
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare vulnerabilities batch: %w", err)
@@ -99,6 +105,8 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			v.FixedVersion,
 			v.OSVJSON,
 			v.Cluster,
+			v.Namespace,
+			v.Project,
 		); err != nil {
 			return fmt.Errorf("failed to append vulnerability %s: %w", v.VulnID, err)
 		}
@@ -117,7 +125,8 @@ func (c *Client) InsertLicenseCompliance(ctx context.Context, items []models.Lic
 		`INSERT INTO license_compliance (
 			checked_at, sbom_id, source_file, license_id,
 			category, package_count, non_compliant_packages,
-			exempted_packages, exemption_reason, cluster
+			exempted_packages, exemption_reason,
+			cluster, namespace, project
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare license_compliance batch: %w", err)
@@ -140,6 +149,8 @@ func (c *Client) InsertLicenseCompliance(ctx context.Context, items []models.Lic
 			exempted,
 			item.ExemptionReason,
 			item.Cluster,
+			item.Namespace,
+			item.Project,
 		); err != nil {
 			return fmt.Errorf("failed to append license_compliance: %w", err)
 		}
@@ -158,7 +169,8 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 		`INSERT INTO vex_statements (
 			ingested_at, vex_id, document_id, source_file,
 			product_purl, vuln_id, status, justification,
-			impact_statement, action_statement, vex_timestamp, cluster
+			impact_statement, action_statement, vex_timestamp,
+			cluster, namespace, project
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare vex_statements batch: %w", err)
@@ -178,6 +190,8 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 			s.ActionStatement,
 			s.VEXTimestamp,
 			s.Cluster,
+			s.Namespace,
+			s.Project,
 		); err != nil {
 			return fmt.Errorf("failed to append vex_statement: %w", err)
 		}

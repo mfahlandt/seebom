@@ -49,6 +49,14 @@ services:
       CLICKHOUSE_PASSWORD: ""
       API_PORT: "8080"
       SBOM_DIR: /data/sboms
+      # Ownership dimensions (#131 cluster, #138 namespace, #57 project).
+      # All default to "" (unassigned). INGEST_PATH_LAYOUT opts into deriving
+      # them from an SBOM's position in the source, e.g.
+      # "cluster/namespace/project" for prod-eu/payments/svc/app.spdx.json.
+      CLUSTER_NAME: ${CLUSTER_NAME:-}
+      NAMESPACE: ${NAMESPACE:-}
+      PROJECT: ${PROJECT:-}
+      INGEST_PATH_LAYOUT: ${INGEST_PATH_LAYOUT:-}
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json
       # API Authentication (off by default; set AUTH_ENABLED=true in .env to enable)
@@ -94,6 +102,14 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       SBOM_DIR: /data/sboms
+      # Ownership dimensions (#131 cluster, #138 namespace, #57 project).
+      # All default to "" (unassigned). INGEST_PATH_LAYOUT opts into deriving
+      # them from an SBOM's position in the source, e.g.
+      # "cluster/namespace/project" for prod-eu/payments/svc/app.spdx.json.
+      CLUSTER_NAME: ${CLUSTER_NAME:-}
+      NAMESPACE: ${NAMESPACE:-}
+      PROJECT: ${PROJECT:-}
+      INGEST_PATH_LAYOUT: ${INGEST_PATH_LAYOUT:-}
       SBOM_LIMIT: ${SBOM_LIMIT:-0}
       # S3 bucket ingestion (optional – leave empty to use local files only)
       S3_BUCKETS: ${S3_BUCKETS:-}
@@ -126,6 +142,14 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
       SBOM_DIR: /data/sboms
+      # Ownership dimensions (#131 cluster, #138 namespace, #57 project).
+      # All default to "" (unassigned). INGEST_PATH_LAYOUT opts into deriving
+      # them from an SBOM's position in the source, e.g.
+      # "cluster/namespace/project" for prod-eu/payments/svc/app.spdx.json.
+      CLUSTER_NAME: ${CLUSTER_NAME:-}
+      NAMESPACE: ${NAMESPACE:-}
+      PROJECT: ${PROJECT:-}
+      INGEST_PATH_LAYOUT: ${INGEST_PATH_LAYOUT:-}
       WORKER_BATCH_SIZE: ${WORKER_BATCH_SIZE:-50}
       SKIP_OSV: ${SKIP_OSV:-false}
       SKIP_GITHUB_RESOLVE: ${SKIP_GITHUB_RESOLVE:-false}

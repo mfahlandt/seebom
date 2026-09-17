@@ -18,6 +18,12 @@ type SBOM struct {
 	CreationDate      time.Time `json:"creation_date"`
 	CreatorTools      []string  `json:"creator_tools"`
 	Cluster           string    `json:"cluster,omitempty"`
+	// Namespace (#138) and Project (#57) are the two ownership dimensions
+	// orthogonal to Cluster. Note that Namespace is the *deployment* namespace
+	// (Kubernetes tenant boundary) and has nothing to do with
+	// DocumentNamespace above, which is the SPDX document's URI identifier.
+	Namespace string `json:"namespace,omitempty"`
+	Project   string `json:"project,omitempty"`
 }
 
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.
@@ -35,6 +41,8 @@ type SBOMPackages struct {
 	RelTargetIndices []uint32  `json:"rel_target_indices"`
 	RelTypes         []string  `json:"rel_types"`
 	Cluster          string    `json:"cluster,omitempty"`
+	Namespace        string    `json:"namespace,omitempty"`
+	Project          string    `json:"project,omitempty"`
 	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
 	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
 	// but excluded from license compliance. Not persisted to ClickHouse.
@@ -54,6 +62,8 @@ type Vulnerability struct {
 	FixedVersion     string    `json:"fixed_version"`
 	OSVJSON          string    `json:"osv_json"`
 	Cluster          string    `json:"cluster,omitempty"`
+	Namespace        string    `json:"namespace,omitempty"`
+	Project          string    `json:"project,omitempty"`
 }
 
 // LicenseCompliance represents the compliance status for a license within an SBOM.
@@ -68,6 +78,8 @@ type LicenseCompliance struct {
 	ExemptedPackages     []string  `json:"exempted_packages"`
 	ExemptionReason      string    `json:"exemption_reason"`
 	Cluster              string    `json:"cluster,omitempty"`
+	Namespace            string    `json:"namespace,omitempty"`
+	Project              string    `json:"project,omitempty"`
 }
 
 // IngestionJob represents a job in the ClickHouse-based queue.
@@ -83,6 +95,8 @@ type IngestionJob struct {
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
 	ErrorMessage string     `json:"error_message,omitempty"`
 	Cluster      string     `json:"cluster,omitempty"`
+	Namespace    string     `json:"namespace,omitempty"`
+	Project      string     `json:"project,omitempty"`
 }
 
 // StoredDocument is a row in document_store (#256): the reference to the
@@ -92,6 +106,8 @@ type StoredDocument struct {
 	StoredAt        time.Time `json:"stored_at"`
 	SBOMID          uuid.UUID `json:"sbom_id"`
 	Cluster         string    `json:"cluster,omitempty"`
+	Namespace       string    `json:"namespace,omitempty"`
+	Project         string    `json:"project,omitempty"`
 	SourceFile      string    `json:"source_file"`
 	StorageBackend  string    `json:"storage_backend"` // s3 | fs
 	StorageRef      string    `json:"storage_ref"`     // s3://bucket/key or fs://relative/path
@@ -130,6 +146,8 @@ type VEXStatement struct {
 	ActionStatement string    `json:"action_statement"`
 	VEXTimestamp    time.Time `json:"vex_timestamp"`
 	Cluster         string    `json:"cluster,omitempty"`
+	Namespace       string    `json:"namespace,omitempty"`
+	Project         string    `json:"project,omitempty"`
 }
 
 // VEX status constants (OpenVEX spec).

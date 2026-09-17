@@ -94,7 +94,10 @@ backend/
 | Package | Tests | Subtests | What's Covered |
 |---------|-------|----------|---------------|
 | `cmd/api-gateway` | 23 | 7 | Auth middleware (Bearer/API-Key/disabled), input validation, public paths |
-| `internal/clickhouse` | 4 | 0 | Query method signatures, SanitizeClusterName |
+| `internal/clickhouse` | 13 | 9 | Query method signatures, SanitizeClusterName, **migration/schema drift (no DB required)**: migrations replayed into an in-memory schema, every `INSERT INTO` column asserted to exist, ownership columns required on all data tables, all 5 `ingestion_queue` writers asserted to share one column list, migration numbers unique + contiguous |
+| `internal/ingestpath` | 8 | 20 | Layout parsing (valid, empty, rejected), derivation (exact/deeper/shallower path, separators, dot segments, backslashes), `_` skip token, reordered layouts, precedence |
+| `cmd/ingestion-watcher` | 7 | 22 | Bucket-prefix stripping, per-object ownership resolution, explicit-config precedence |
+| `cmd/parsing-worker` | 12 | 10 | excludeIndices, registry resolvers, **ownership propagation** to every row type incl. all statements in a VEX document; SPDX `DocumentNamespace` never confused with the deployment `Namespace` |
 | `internal/config` | 17 | 0 | Defaults, env vars, S3 buckets JSON, shared credentials, shared settings inheritance, auth modes, IgnorePrefix |
 | `internal/cyclonedx` | 3 | 0 | CycloneDX parsing (minimal, full, rejection) |
 | `internal/github` | 35 | 22 | ExtractGitHubRepo (19 PURL patterns), RepoKey, Resolve, ResolveWithMetadata, cache, preload |
@@ -109,7 +112,7 @@ backend/
 | `internal/vex` | 13 | 8 | Parse, normalizeVulnID, URL patterns |
 | `pkg/dto` | 3 | 0 | JSON serialization, ProjectListItem, ClusterStats |
 | `pkg/models` | 6 | 0 | Cluster fields, omitempty, propagation |
-| **Total** | **247** | **119** | **366 test invocations** |
+| **Total** | **281** | **345** | **981 test invocations** |
 
 ## Test Patterns
 

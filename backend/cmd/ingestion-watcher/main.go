@@ -11,12 +11,63 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
 const enqueueBatchSize = 500
+
+// ownership carries the three orthogonal dimensions (#131 cluster, #138
+// namespace, #57 project) an ingestion source assigns to its objects,
+// together with everything needed to derive the per-object part of them.
+type ownership struct {
+	// cluster/namespace/project are the explicitly configured values
+	// (per-bucket, falling back to the instance-wide defaults). Empty
+	// fields are the ones the path layout is allowed to fill in.
+	cluster   string
+	namespace string
+	project   string
+	// prefix is the bucket's configured key prefix. The layout is defined
+	// relative to the ingestion root, so the prefix must be stripped from
+	// an object key before matching -- otherwise a bucket configured with
+	// prefix "k3s-io/" would read that as the cluster segment.
+	prefix string
+	layout ingestpath.Layout
+}
+
+// resolve returns the ownership for one object key, applying path
+// derivation on top of the configured values.
+func (o ownership) resolve(key string) (cluster, namespace, project string) {
+	cluster, namespace, project = o.cluster, o.namespace, o.project
+	if !o.layout.Enabled() {
+		return
+	}
+	ingestpath.Apply(o.layout.Derive(stripPrefix(key, o.prefix)), &cluster, &namespace, &project)
+	return
+}
+
+// stripPrefix removes a bucket's configured key prefix from an object key,
+// tolerating a prefix written with or without a trailing slash. A key that
+// does not start with the prefix is returned unchanged rather than mangled.
+func stripPrefix(key, prefix string) string {
+	prefix = strings.TrimSuffix(prefix, "/")
+	if prefix == "" {
+		return key
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(key, prefix), "/")
+}
+
+// firstNonEmpty returns the first non-empty argument, or "".
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
 
 func main() {
 	log.Println("BOMHort Ingestion Watcher starting...")
@@ -70,6 +121,11 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 		return 0, 0
 	}
 
+	layout := cfg.IngestLayout()
+	if layout.Enabled() {
+		log.Printf("Local: deriving ownership from path layout %q (relative to %s)", layout.String(), cfg.SBOMDir)
+	}
+
 	localSBOMs := 0
 	localVEX := 0
 	for _, f := range files {
@@ -109,6 +165,12 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 			jobType = models.JobTypeVEX
 		}
 
+		// Start from the instance-wide defaults, then let the path fill in
+		// whatever they left unset. RelPath is already relative to SBOM_DIR,
+		// which is exactly the root the layout is defined against.
+		cluster, namespace, project := cfg.ClusterName, cfg.Namespace, cfg.Project
+		ingestpath.Apply(layout.Derive(f.RelPath), &cluster, &namespace, &project)
+
 		batch = append(batch, models.IngestionJob{
 			CreatedAt:  time.Now(),
 			JobID:      uuid.New(),
@@ -116,7 +178,9 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 			SHA256Hash: f.SHA256Hash,
 			Status:     models.JobStatusPending,
 			JobType:    jobType,
-			Cluster:    cfg.ClusterName,
+			Cluster:    cluster,
+			Namespace:  namespace,
+			Project:    project,
 		})
 
 		// Flush batch when it reaches the threshold.
@@ -151,8 +215,10 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, sbomCount *int) int {
 	// Convert config bucket types to s3 package types.
 	bucketConfigs := make([]s3client.BucketConfig, len(cfg.S3Buckets))
-	// Build bucket→cluster mapping: per-bucket cluster overrides global ClusterName.
-	bucketCluster := make(map[string]string, len(cfg.S3Buckets))
+	// Build the bucket->ownership mapping: per-bucket values override the
+	// instance-wide defaults. Whatever is still empty afterwards is left
+	// for the path layout to fill in per object.
+	bucketOwner := make(map[string]ownership, len(cfg.S3Buckets))
 	for i, b := range cfg.S3Buckets {
 		bucketConfigs[i] = s3client.BucketConfig{
 			Name:         b.Name,
@@ -165,11 +231,18 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			UseSSL:       b.UseSSL,
 			SkipScan:     b.SkipScan,
 		}
-		if b.Cluster != "" {
-			bucketCluster[b.Name] = b.Cluster
-		} else {
-			bucketCluster[b.Name] = cfg.ClusterName
+
+		own := ownership{
+			cluster:   firstNonEmpty(b.Cluster, cfg.ClusterName),
+			namespace: firstNonEmpty(b.Namespace, cfg.Namespace),
+			project:   firstNonEmpty(b.Project, cfg.Project),
+			prefix:    b.Prefix,
+			layout:    cfg.BucketIngestLayout(b),
 		}
+		if own.layout.Enabled() {
+			log.Printf("S3: bucket %q derives ownership from path layout %q", b.Name, own.layout.String())
+		}
+		bucketOwner[b.Name] = own
 	}
 
 	s3c, err := s3client.NewClient(bucketConfigs)
@@ -219,6 +292,8 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			jobType = models.JobTypeVEX
 		}
 
+		cluster, namespace, project := bucketOwner[obj.Bucket].resolve(obj.Key)
+
 		// SourceFile stores the s3:// URI so the worker knows where to fetch.
 		batch = append(batch, models.IngestionJob{
 			CreatedAt:  time.Now(),
@@ -227,7 +302,9 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			SHA256Hash: obj.ETag, // Use ETag for dedup (no download needed during listing)
 			Status:     models.JobStatusPending,
 			JobType:    jobType,
-			Cluster:    bucketCluster[obj.Bucket],
+			Cluster:    cluster,
+			Namespace:  namespace,
+			Project:    project,
 		})
 
 		// Flush batch.

@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
 )
 
 // S3BucketConfig holds the configuration for a single S3 bucket source.
@@ -23,6 +25,16 @@ type S3BucketConfig struct {
 	UsePathStyle bool   `json:"usePathStyle"`
 	UseSSL       *bool  `json:"useSSL"`
 	Cluster      string `json:"cluster"` // Optional: override ClusterName for this bucket
+	// Namespace/Project (#138, #57) optionally pin every object in this
+	// bucket to one namespace/project, for the common case of a bucket per
+	// team. Being explicit configuration, they outrank both the global
+	// NAMESPACE/PROJECT defaults and anything derived from the object key.
+	Namespace string `json:"namespace,omitempty"`
+	Project   string `json:"project,omitempty"`
+	// PathLayout overrides INGEST_PATH_LAYOUT for this bucket, for fleets
+	// where buckets are organised differently (e.g. one laid out
+	// "cluster/namespace/project", another flat).
+	PathLayout string `json:"pathLayout,omitempty"`
 	// SkipScan designates this bucket as the push-model upload target (#135):
 	// excluded from the ingestion-watcher's ListObjects scan, but still used
 	// for GetObject/PutObject. See s3.BucketConfig.SkipScan for why this
@@ -66,6 +78,19 @@ type Config struct {
 
 	// Multi-cluster
 	ClusterName string // Cluster identifier for this instance (default "" = unassigned)
+
+	// Ownership dimensions orthogonal to cluster (#138 namespace, #57 project).
+	// Instance-wide defaults, used when nothing more specific (per-bucket
+	// config, path derivation, upload query param) supplies a value.
+	Namespace string // Default namespace (default "" = unassigned)
+	Project   string // Default project   (default "" = unassigned)
+
+	// IngestPathLayout opts into deriving cluster/namespace/project from an
+	// object's position in the source, e.g. "cluster/namespace/project" for
+	// keys like prod-eu/payments/payment-service/sbom.spdx.json. Empty (the
+	// default) disables derivation entirely. Validated at Load() time --
+	// see internal/ingestpath.
+	IngestPathLayout string
 
 	// API Authentication (opt-in, all empty by default)
 	AuthEnabled  bool     // Enable auth middleware (default false)
@@ -123,6 +148,9 @@ func Load() (*Config, error) {
 		LicensePolicyFile:  getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
 		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
 		ClusterName:        getEnv("CLUSTER_NAME", ""),
+		Namespace:          getEnv("NAMESPACE", ""),
+		Project:            getEnv("PROJECT", ""),
+		IngestPathLayout:   getEnv("INGEST_PATH_LAYOUT", ""),
 		AuthEnabled:        getEnvBool("AUTH_ENABLED", false),
 		ServiceToken:       getEnv("SERVICE_TOKEN", ""),
 		APIKeys:            parseAPIKeys(getEnv("API_KEYS", "")),
@@ -138,6 +166,13 @@ func Load() (*Config, error) {
 	case OriginalStoreAuto, OriginalStoreS3, OriginalStoreFS, OriginalStoreNone:
 	default:
 		return nil, fmt.Errorf("invalid ORIGINAL_STORE_BACKEND %q (want auto|s3|fs|none)", cfg.OriginalStoreBackend)
+	}
+
+	// Fail fast on a malformed layout rather than ingesting a whole fleet with
+	// empty namespace/project columns: the DEFAULT '' makes that mistake
+	// invisible, and fixing it afterwards requires a full re-ingest.
+	if _, err := ingestpath.ParseLayout(cfg.IngestPathLayout); err != nil {
+		return nil, fmt.Errorf("invalid INGEST_PATH_LAYOUT: %w", err)
 	}
 
 	if cfg.WorkerID == "" {
@@ -203,7 +238,39 @@ func Load() (*Config, error) {
 	// Deduplicate bucket names.
 	cfg.S3Buckets = deduplicateBuckets(cfg.S3Buckets)
 
+	// Per-bucket layouts are validated here for the same fail-fast reason.
+	for _, b := range cfg.S3Buckets {
+		if _, err := ingestpath.ParseLayout(b.PathLayout); err != nil {
+			return nil, fmt.Errorf("invalid pathLayout for bucket %q: %w", b.Name, err)
+		}
+	}
+
 	return cfg, nil
+}
+
+// IngestLayout returns the parsed instance-wide ingestion path layout.
+// Load() already rejects a malformed layout, so the parse cannot fail here;
+// a disabled layout is returned rather than propagating a second error to
+// every call site.
+func (c *Config) IngestLayout() ingestpath.Layout {
+	l, err := ingestpath.ParseLayout(c.IngestPathLayout)
+	if err != nil {
+		return ingestpath.Layout{}
+	}
+	return l
+}
+
+// BucketIngestLayout returns the layout for a bucket: its own pathLayout
+// when set, otherwise the instance-wide one.
+func (c *Config) BucketIngestLayout(b S3BucketConfig) ingestpath.Layout {
+	if strings.TrimSpace(b.PathLayout) == "" {
+		return c.IngestLayout()
+	}
+	l, err := ingestpath.ParseLayout(b.PathLayout)
+	if err != nil {
+		return ingestpath.Layout{}
+	}
+	return l
 }
 
 // HasS3Sources returns true if any S3 buckets are configured.

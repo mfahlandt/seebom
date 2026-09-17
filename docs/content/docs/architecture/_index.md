@@ -87,57 +87,86 @@ API Gateway (REST) → 24 Endpoints → Angular UI
 | `registry_license_cache` | ReplacingMergeTree | Resolved package-registry licenses cache (npm, NuGet), keyed by `(registry, package@version)` |
 | `document_store` | ReplacingMergeTree | Reference + `sha256` of the **original SBOM bytes** captured at ingest (#256). The bytes live in a blob store (S3 prefix or PVC), not in ClickHouse. |
 
-All core tables (`sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`, `vex_statements`) include a `cluster LowCardinality(String) DEFAULT ''` column for multi-cluster support.
+All core tables (`sboms`, `sbom_packages`, `vulnerabilities`, `license_compliance`, `ingestion_queue`, `vex_statements`, `document_store`) carry three orthogonal ownership columns, each `LowCardinality(String) DEFAULT ''`:
 
-## Multi-Cluster Data Model
+| Column | Migration | Question it answers | Example | Cardinality |
+|--------|-----------|---------------------|---------|-------------|
+| `cluster` | `012` (#131) | Where is it deployed? | `prod-eu` | 1–50 |
+| `namespace` | `015` (#138) | Which tenant/team boundary? | `payments` | 10–500 |
+| `project` | `015` (#57) | What is it / who owns it? | `payment-service` | 50–5000 |
 
-BOMHort supports tagging all ingested data with a **cluster identifier** for multi-cluster deployments. This is fully optional — single-instance deployments work without any configuration.
+None of them is part of `ORDER BY`: MergeTree cannot alter a sort key in place, and a full table rebuild is not worth it for filter dimensions at these cardinalities. Filtering is by `WHERE`.
+
+## Ownership Data Model
+
+BOMHort tags all ingested data with three orthogonal ownership dimensions — **cluster** (#131), **namespace** (#138) and **project** (#57). This is fully optional: every dimension defaults to `""`, and single-instance deployments work without any configuration.
 
 ### How it works
 
 ```
-┌────────────────────────────────────┐
-│  S3 Buckets with per-bucket cluster │
-│                                      │
-│  bucket: prod-eu-sboms               │
-│  cluster: "prod-eu"                  │
-│                                      │
-│  bucket: staging-sboms               │
-│  cluster: "staging"                  │
-│                                      │
-│  bucket: other-sboms                 │
-│  cluster: "" (inherits CLUSTER_NAME) │
-└────────────────┬─────────────────────┘
-                 │
-                 ▼
-    Ingestion Watcher
-    (resolves cluster per object)
-                 │
-                 ▼
-    ingestion_queue.cluster = "prod-eu" | "staging" | ""
-                 │
-                 ▼
-    Parsing Worker
-    (propagates job.Cluster → all inserts)
-                 │
-                 ▼
-    sboms.cluster / vulnerabilities.cluster / etc.
+┌──────────────────────────────────────────────┐
+│  Sources                                      │
+│                                               │
+│  bucket: prod-eu-sboms                        │
+│    cluster: "prod-eu", namespace: "payments"  │  ← static per-bucket
+│                                               │
+│  bucket: fleet-sboms                          │
+│    pathLayout: cluster/namespace/project      │  ← derived per object
+│    key: prod-eu/search/search-api/app.json    │
+│                                               │
+│  POST /sboms/upload?namespace=…&project=…     │  ← stated by the pusher
+└───────────────────────┬───────────────────────┘
+                        │
+                        ▼
+           Ingestion Watcher / Upload endpoint
+           (resolves all three per object)
+                        │
+                        ▼
+   ingestion_queue.{cluster, namespace, project}
+                        │
+                        ▼
+                 Parsing Worker
+        (copies them onto every row it writes)
+                        │
+                        ▼
+   sboms / sbom_packages / vulnerabilities /
+   license_compliance / vex_statements / document_store
 ```
 
 ### Configuration
 
 | Method | Use case |
 |--------|----------|
-| No config (default) | Single instance, no cluster differentiation |
-| `CLUSTER_NAME=prod-eu` | All data from this instance tagged as `prod-eu` |
-| Per-bucket `"cluster"` in `S3_BUCKETS` JSON | One watcher instance ingests from multiple clusters |
-| Mix: per-bucket + `CLUSTER_NAME` fallback | Buckets without explicit cluster inherit the global value |
+| No config (default) | Single instance, nothing differentiated |
+| `CLUSTER_NAME` / `NAMESPACE` / `PROJECT` | All data from this instance tagged the same |
+| Per-bucket `cluster`/`namespace`/`project` in `S3_BUCKETS` JSON | One watcher ingests for several teams or clusters |
+| `INGEST_PATH_LAYOUT` (or per-bucket `pathLayout`) | Buckets already organised hierarchically — derive per object |
+| `?cluster=`/`?namespace=`/`?project=` on upload | Push-model: the pushing CI job states where the artifact belongs |
 
 ### Priority
 
-1. Per-bucket `cluster` field in S3 config (highest)
-2. Global `CLUSTER_NAME` environment variable (fallback)
-3. Empty string `""` (no cluster, single-instance mode)
+1. Upload query parameter (highest — per object, explicitly stated)
+2. Per-bucket field in S3 config
+3. Global `CLUSTER_NAME` / `NAMESPACE` / `PROJECT`
+4. Path derivation — fills **only** what the levels above left empty
+5. Empty string `""` (unassigned)
+
+Explicit configuration always outranks derivation: an operator who names a dimension means it, and silently overriding that from directory structure would be impossible to debug.
+
+### Ingestion path layout (`internal/ingestpath`)
+
+Teams already organise buckets hierarchically. Rather than guessing that structure — which silently mislabels an entire fleet when the guess is wrong — the layout is declared explicitly and is **off by default**:
+
+```
+INGEST_PATH_LAYOUT="cluster/namespace/project"
+
+prod-eu/payments/payment-service/app.spdx.json
+  → cluster=prod-eu  namespace=payments  project=payment-service
+```
+
+Segments map positionally onto the leading path segments, relative to the ingestion root (`SBOM_DIR`, or a bucket's configured `prefix`, which is stripped first — otherwise a bucket with prefix `k3s-io/` would label everything `cluster=k3s-io`). The filename is never consumed. Use `_` to skip a level that carries no meaning (`cluster/_/project`).
+
+**Tolerant on data, strict on config.** A path shallower than the layout fills what it can and a deeper one matches from the left, so a single oddly-placed file cannot fail an ingestion run. A *malformed layout*, by contrast, is rejected at startup — accepting it would ingest the whole fleet unlabelled, which `DEFAULT ''` makes indistinguishable from "genuinely unassigned", and only a full re-ingest would fix it.
 
 ## API Endpoints
 

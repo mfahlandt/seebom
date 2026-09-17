@@ -184,6 +184,7 @@ Segments map positionally onto the leading path segments, relative to the ingest
 | GET | `/api/v1/sboms/{id}/vulnerabilities` | Vulnerabilities for an SBOM |
 | GET | `/api/v1/sboms/{id}/licenses` | License breakdown for an SBOM |
 | GET | `/api/v1/sboms/{id}/dependencies` | Dependency tree |
+| GET | `/api/v1/sboms/{id}/vex` | VEX statements affecting this SBOM (#350; scoped + global) |
 | GET | `/api/v1/vulnerabilities?page=&vex_filter=` | Paginated vulnerabilities |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | CVE impact across projects |
 | GET | `/api/v1/licenses/compliance` | Global license compliance |
@@ -210,6 +211,16 @@ Segments map positionally onto the leading path segments, relative to the ingest
 - **Statuses:** `not_affected`, `affected`, `fixed`, `under_investigation`
 - **URL Normalization:** VEX vulnerability `@id` URLs are reduced to plain IDs
 - **Dashboard:** `effective_vulnerabilities = total - suppressed_by_vex`
+
+### SBOM scoping (#350)
+
+A VEX statement asserts the status of a vulnerability **for a product** — the deliverable an SBOM describes — not for a component in general. Justifications like `vulnerable_code_not_in_execute_path` are reachability claims about *one* product: project A may never call the vulnerable function while project B, with the identical library version, is exploitable. BOMHort therefore scopes every statement to an SBOM (`vex_statements.sbom_id`, migration `018`):
+
+1. **Explicit:** `POST /api/v1/sboms/upload?sbom_id=<uuid>` scopes every statement in the uploaded VEX document to that SBOM.
+2. **Automatic:** the statement's OpenVEX product `@id` is resolved against `sboms` — by `sbom_id`, normalised `source_repo` URL (#332), `document_namespace` or `document_name`. `products[].subcomponents[]` are supported: the subcomponent purl matches `vulnerabilities.purl`, the product identifies the SBOM.
+3. **Fallback:** no match → the statement is stored **global** (`sbom_id = ''`), preserving pre-018 behaviour for component-style documents (Trivy et al.), with a worker warning — global statements suppress fleet-wide.
+
+Every suppression join is scope-aware: a statement applies iff `sbom_id` matches the finding's SBOM or is global, and an SBOM-scoped statement beats a global one before the latest-wins rule (#335). The UI surfaces statements as a **VEX tab** in the SBOM detail view with a `this SBOM` / `global` badge; there is no fleet-wide VEX page (the `/api/v1/vex/statements` endpoint remains for automation).
 
 ## CVE Refresher
 

@@ -1,0 +1,83 @@
+package main
+
+import (
+	"context"
+	"log"
+
+	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
+)
+
+// sbomResolver is the lookup surface scopeVEXStatements needs; satisfied by
+// *clickhouse.Client and mockable in tests.
+type sbomResolver interface {
+	ResolveSBOMByProductRef(ctx context.Context, ref string) (string, error)
+}
+
+// scopeVEXStatements assigns each parsed VEX statement to the SBOM whose
+// product it describes (#350).
+//
+// Precedence:
+//
+//  1. Explicit mapping: the upload carried ?sbom_id= (job.TargetSBOMID) —
+//     every statement in the document is scoped to that SBOM.
+//  2. Automatic: the statement's product @id is resolved against the sboms
+//     table (sbom_id, source_repo, document_namespace, document_name).
+//     Repo-URL product IRIs are normalised first so
+//     "git+https://…/repo.git@v1" matches the stored source_repo form.
+//  3. Fallback: no match — the statement stays global (sbom_id ''), which
+//     preserves pre-#350 behaviour for component-style VEX documents, and a
+//     warning is logged because global statements suppress fleet-wide.
+//
+// Resolution results are memoised per product ref: documents typically repeat
+// the same product across statements.
+func scopeVEXStatements(ctx context.Context, resolver sbomResolver, job models.IngestionJob, stmts []models.VEXStatement) {
+	if job.TargetSBOMID != "" {
+		for i := range stmts {
+			stmts[i].SBOMID = job.TargetSBOMID
+		}
+		return
+	}
+
+	cache := make(map[string]string)
+	unresolved := make(map[string]struct{})
+
+	for i := range stmts {
+		ref := stmts[i].ProductRef
+		if ref == "" {
+			continue
+		}
+		sbomID, seen := cache[ref]
+		if !seen {
+			var err error
+			sbomID, err = resolver.ResolveSBOMByProductRef(ctx, ref)
+			if err != nil {
+				log.Printf("  WARNING: VEX %s: failed to resolve product %q: %v", job.SourceFile, ref, err)
+				sbomID = ""
+			}
+			// Retry with the normalised repo-URL form: product IRIs like
+			// "git+https://host/org/repo.git@v1.2.3" should match the
+			// source_repo column, which stores the normalised URL (#332).
+			if sbomID == "" {
+				if norm, _ := sourcerepo.Normalize(ref); norm != "" && norm != ref {
+					sbomID, err = resolver.ResolveSBOMByProductRef(ctx, norm)
+					if err != nil {
+						log.Printf("  WARNING: VEX %s: failed to resolve product %q: %v", job.SourceFile, norm, err)
+						sbomID = ""
+					}
+				}
+			}
+			cache[ref] = sbomID
+		}
+		if sbomID == "" {
+			unresolved[ref] = struct{}{}
+			continue
+		}
+		stmts[i].SBOMID = sbomID
+	}
+
+	for ref := range unresolved {
+		log.Printf("  WARNING: VEX %s: product %q matches no SBOM — statements stored globally (suppress fleet-wide). Map explicitly with ?sbom_id= on upload.", job.SourceFile, ref)
+	}
+}
+

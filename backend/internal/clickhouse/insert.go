@@ -170,7 +170,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 
 	batch, err := c.Conn.PrepareBatch(ctx,
 		`INSERT INTO vex_statements (
-			ingested_at, vex_id, document_id, source_file,
+			ingested_at, vex_id, document_id, source_file, sbom_id,
 			product_purl, vuln_id, status, justification,
 			impact_statement, action_statement, vex_timestamp,
 			author, role, tooling, status_notes,
@@ -186,6 +186,7 @@ func (c *Client) InsertVEXStatements(ctx context.Context, stmts []models.VEXStat
 			s.VEXID,
 			s.DocumentID,
 			s.SourceFile,
+			s.SBOMID,
 			s.ProductPURL,
 			s.VulnID,
 			s.Status,

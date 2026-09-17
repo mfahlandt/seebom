@@ -46,8 +46,17 @@ type VEXVulnerability struct {
 	Aliases     []string `json:"aliases,omitempty"`
 }
 
-// VEXProduct identifies a product, typically by PURL.
+// VEXProduct identifies a product, typically by PURL or IRI. Per the OpenVEX
+// spec the product is the deliverable an SBOM describes; the vulnerable
+// library inside it is listed under subcomponents.
 type VEXProduct struct {
+	ID            string            `json:"@id"`
+	Identifiers   map[string]string `json:"identifiers,omitempty"`
+	Subcomponents []VEXSubcomponent `json:"subcomponents,omitempty"`
+}
+
+// VEXSubcomponent references the vulnerable component within a product.
+type VEXSubcomponent struct {
 	ID          string            `json:"@id"`
 	Identifiers map[string]string `json:"identifiers,omitempty"`
 }
@@ -128,35 +137,55 @@ func Parse(r io.Reader, sourceFile string) (out *ParseResult, err error) {
 			}
 		}
 
-		// Create a VEX statement for each product.
+		// Create VEX statements per product. Two shapes exist in the wild
+		// (#350):
+		//
+		//  1. Spec shape: product = the deliverable (what an SBOM
+		//     describes), subcomponents = the vulnerable libraries. The
+		//     subcomponent purl is what matches vulnerabilities.purl; the
+		//     product @id identifies the SBOM.
+		//  2. Component shape (Trivy et al.): product = the vulnerable
+		//     component purl directly, no subcomponents.
 		for _, product := range stmt.Products {
-			purl := extractPURL(product)
-			if purl == "" {
-				continue // Skip products without a PURL
+			productRef := extractPURL(product)
+			matchPURLs := []string{productRef}
+			if len(product.Subcomponents) > 0 {
+				matchPURLs = matchPURLs[:0]
+				for _, sub := range product.Subcomponents {
+					if p := extractSubcomponentPURL(sub); p != "" {
+						matchPURLs = append(matchPURLs, p)
+					}
+				}
 			}
+			for _, purl := range matchPURLs {
+				if purl == "" {
+					continue // Skip products without a PURL
+				}
 
-			// Generate a deterministic VEX ID from the document, vulnerability, and product.
-			vexID := uuid.NewSHA1(uuid.NameSpaceDNS, []byte(doc.ID+"|"+vulnID+"|"+purl))
+				// Generate a deterministic VEX ID from the document, vulnerability, and product.
+				vexID := uuid.NewSHA1(uuid.NameSpaceDNS, []byte(doc.ID+"|"+vulnID+"|"+purl))
 
-			result = append(result, models.VEXStatement{
-				IngestedAt:      now,
-				VEXID:           vexID,
-				DocumentID:      doc.ID,
-				SourceFile:      sourceFile,
-				ProductPURL:     purl,
-				VulnID:          vulnID,
-				Status:          stmt.Status,
-				Justification:   stmt.Justification,
-				ImpactStatement: stmt.ImpactStatement,
-				ActionStatement: stmt.ActionStatement,
-				VEXTimestamp:    stmtTime,
-				// Provenance (#334): author/role/tooling live on the
-				// document in OpenVEX; status_notes on the statement.
-				Author:      doc.Author,
-				Role:        doc.Role,
-				Tooling:     doc.Tooling,
-				StatusNotes: stmt.StatusNotes,
-			})
+				result = append(result, models.VEXStatement{
+					IngestedAt:      now,
+					VEXID:           vexID,
+					DocumentID:      doc.ID,
+					SourceFile:      sourceFile,
+					ProductRef:      productRef,
+					ProductPURL:     purl,
+					VulnID:          vulnID,
+					Status:          stmt.Status,
+					Justification:   stmt.Justification,
+					ImpactStatement: stmt.ImpactStatement,
+					ActionStatement: stmt.ActionStatement,
+					VEXTimestamp:    stmtTime,
+					// Provenance (#334): author/role/tooling live on the
+					// document in OpenVEX; status_notes on the statement.
+					Author:      doc.Author,
+					Role:        doc.Role,
+					Tooling:     doc.Tooling,
+					StatusNotes: stmt.StatusNotes,
+				})
+			}
 		}
 	}
 
@@ -178,6 +207,14 @@ func extractPURL(p VEXProduct) string {
 		return p.ID
 	}
 	return p.ID // Return @id as-is; may be a PURL or other identifier
+}
+
+// extractSubcomponentPURL extracts the PURL from a VEX subcomponent.
+func extractSubcomponentPURL(sc VEXSubcomponent) string {
+	if purl, ok := sc.Identifiers["purl"]; ok && purl != "" {
+		return purl
+	}
+	return sc.ID
 }
 
 // normalizeVulnID extracts a vulnerability ID from a URL or returns it as-is.

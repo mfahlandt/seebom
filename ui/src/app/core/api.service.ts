@@ -57,6 +57,11 @@ export class ApiService {
     return this.http.get<VulnerabilityListItem[]>(`${this.baseUrl}/sboms/${sbomId}/vulnerabilities`);
   }
 
+  /** VEX statements affecting one SBOM (#350): scoped first, then global. */
+  getSbomVex(sbomId: string): Observable<VEXStatementItem[]> {
+    return this.http.get<VEXStatementItem[]>(`${this.baseUrl}/sboms/${sbomId}/vex`);
+  }
+
   getSbomLicenses(sbomId: string): Observable<SBOMLicenseBreakdownItem[]> {
     return this.http.get<SBOMLicenseBreakdownItem[]>(`${this.baseUrl}/sboms/${sbomId}/licenses`);
   }

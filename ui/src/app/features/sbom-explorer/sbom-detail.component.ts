@@ -9,11 +9,12 @@ import {
   SBOMLicenseBreakdownItem,
   DependencyNode,
   ArchivedPackageInfo,
+  VEXStatementItem,
 } from '../../core/api.models';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
-type Tab = 'vulns' | 'licenses' | 'deps';
+type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 
 @Component({
   selector: 'app-sbom-detail',
@@ -57,6 +58,9 @@ type Tab = 'vulns' | 'licenses' | 'deps';
         </button>
         <button [class.active]="activeTab === 'deps'" (click)="activeTab = 'deps'">
           Dependencies
+        </button>
+        <button [class.active]="activeTab === 'vex'" (click)="activeTab = 'vex'">
+          VEX ({{ vexStatements.length | number }})
         </button>
       </div>
 
@@ -188,6 +192,42 @@ type Tab = 'vulns' | 'licenses' | 'deps';
             </span>
           </div>
         </cdk-virtual-scroll-viewport>
+      </div>
+
+      <!-- VEX Tab (#350): statements scoped to this SBOM, plus global legacy
+           statements marked as such. -->
+      <div *ngIf="activeTab === 'vex'" class="tab-content vex-content">
+        <p class="vex-empty" *ngIf="!vexStatements.length">
+          No VEX statements apply to this SBOM. Upload one with
+          <code>POST /api/v1/sboms/upload?sbom_id={{ detail.sbom_id }}</code>.
+        </p>
+        <div class="vex-list" *ngIf="vexStatements.length">
+          <div *ngFor="let stmt of vexStatements; trackBy: trackByVexStmt" class="vex-row">
+            <div class="vex-row-head">
+              <span class="vex-status-badge" [class]="'vexs-' + stmt.status">{{ stmt.status | titlecase }}</span>
+              <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: stmt.vuln_id}" class="vex-vuln-id">
+                {{ stmt.vuln_id }}
+              </a>
+              <span class="vex-scope-badge" [class.scope-global]="!stmt.sbom_id"
+                    [title]="stmt.sbom_id ? 'Scoped to this SBOM' : 'Legacy global statement — applies to every SBOM'">
+                {{ stmt.sbom_id ? 'this SBOM' : 'global' }}
+              </span>
+              <span class="vex-origin-badge" *ngIf="isAutomated(stmt)" title="Produced by tooling">automated</span>
+              <span class="vex-ts">{{ stmt.vex_timestamp | date: 'medium' }}</span>
+            </div>
+            <div class="vex-row-body">
+              <span class="vex-purl" [title]="stmt.product_purl">{{ stmt.product_purl }}</span>
+              <span class="vex-just" *ngIf="stmt.justification">{{ stmt.justification }}</span>
+            </div>
+            <div class="vex-row-notes" *ngIf="stmt.status_notes || stmt.impact_statement">
+              {{ stmt.status_notes || stmt.impact_statement }}
+            </div>
+            <div class="vex-row-meta" *ngIf="stmt.author || stmt.tooling">
+              <span *ngIf="stmt.author">{{ stmt.author }}</span>
+              <span *ngIf="stmt.tooling" class="vex-tooling">{{ stmt.tooling }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -391,12 +431,45 @@ type Tab = 'vulns' | 'licenses' | 'deps';
       font-size: 0.6rem; font-weight: 700; color: var(--status-success);
       background: var(--status-success-bg); padding: 0 3px; border-radius: 2px;
     }
+    .vex-content { overflow-y: auto; }
+    .vex-empty { font-size: 0.8rem; color: var(--text-muted); }
+    .vex-empty code { font-size: 0.72rem; background: var(--bg); padding: 1px 5px; border-radius: 2px; }
+    .vex-list { display: flex; flex-direction: column; gap: 6px; }
+    .vex-row { border: 1px solid var(--border); border-radius: 4px; padding: 10px 14px; background: var(--surface); }
+    .vex-row-head { display: flex; align-items: center; gap: 10px; }
+    .vex-status-badge {
+      padding: 2px 7px; border-radius: 2px; font-size: 0.65rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.03em; flex-shrink: 0;
+    }
+    .vexs-not_affected { background: var(--status-success-bg); color: var(--status-success); }
+    .vexs-fixed { background: var(--status-info-bg); color: var(--accent-hover); }
+    .vexs-affected { background: var(--severity-critical-bg); color: var(--severity-critical); }
+    .vexs-under_investigation { background: var(--bg); color: var(--status-warning); }
+    .vex-vuln-id { font-weight: 600; font-size: 0.8rem; color: var(--accent); text-decoration: none; }
+    .vex-vuln-id:hover { text-decoration: underline; }
+    .vex-scope-badge {
+      padding: 1px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
+      background: var(--status-info-bg); color: var(--accent-hover); cursor: help; flex-shrink: 0;
+    }
+    .vex-scope-badge.scope-global { background: var(--severity-high-bg); color: var(--severity-high); }
+    .vex-origin-badge {
+      padding: 1px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
+      background: var(--bg); color: var(--text-secondary); cursor: help; flex-shrink: 0;
+    }
+    .vex-ts { margin-left: auto; font-size: 0.7rem; color: var(--text-muted); white-space: nowrap; }
+    .vex-row-body { display: flex; gap: 12px; margin-top: 4px; overflow: hidden; }
+    .vex-purl { font-family: monospace; font-size: 0.72rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .vex-just { font-size: 0.72rem; color: var(--text); flex-shrink: 0; }
+    .vex-row-notes { margin-top: 6px; font-size: 0.75rem; color: var(--text); line-height: 1.4; }
+    .vex-row-meta { margin-top: 6px; display: flex; gap: 10px; font-size: 0.7rem; color: var(--text-muted); }
+    .vex-tooling { font-family: monospace; }
     .loading { padding: 24px; color: var(--text-muted); }
   `],
 })
 export class SbomDetailComponent implements OnInit {
   detail: SBOMDetail | null = null;
   vulns: VulnerabilityListItem[] = [];
+  vexStatements: VEXStatementItem[] = [];
   licenses: SBOMLicenseBreakdownItem[] = [];
   flatDeps: FlatDep[] = [];
   activeTab: Tab = 'vulns';
@@ -418,10 +491,12 @@ export class SbomDetailComponent implements OnInit {
       vulns: this.api.getSbomVulnerabilities(sbomId),
       licenses: this.api.getSbomLicenses(sbomId),
       deps: this.api.getSbomDependencies(sbomId),
+      vex: this.api.getSbomVex(sbomId).pipe(catchError(() => of([] as VEXStatementItem[]))),
       archived: this.api.getArchivedPackages().pipe(catchError(() => of([] as ArchivedPackageInfo[]))),
-    }).subscribe(({ detail, vulns, licenses, deps, archived }) => {
+    }).subscribe(({ detail, vulns, licenses, deps, vex, archived }) => {
       this.detail = detail;
       this.vulns = vulns;
+      this.vexStatements = vex;
       this.licenses = licenses;
       this.buildExemptedSet();
       this.buildArchivedSet(archived || []);
@@ -431,6 +506,12 @@ export class SbomDetailComponent implements OnInit {
   }
 
   trackByVuln(_i: number, v: VulnerabilityListItem): string { return v.vuln_id + v.purl; }
+  trackByVexStmt(_i: number, s: VEXStatementItem): string { return s.vex_id; }
+
+  /** Heuristic from #334: tooling set, or role mentions automation. */
+  isAutomated(s: VEXStatementItem): boolean {
+    return !!s.tooling || (s.role || '').toLowerCase().includes('automat');
+  }
   trackByDep(_i: number, d: FlatDep): number { return d.index; }
   trackByLicense(_i: number, lic: SBOMLicenseBreakdownItem): string { return lic.license_id; }
 

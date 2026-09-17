@@ -59,6 +59,9 @@ type VulnerabilityListItem struct {
 	VEXStatementID   string `json:"vex_statement_id,omitempty"`
 	VEXAuthor        string `json:"vex_author,omitempty"`
 	VEXTooling       string `json:"vex_tooling,omitempty"`
+	// VEXScope (#350): "sbom" when the winning statement is scoped to this
+	// SBOM, "global" for unscoped legacy statements. Omitted without VEX.
+	VEXScope string `json:"vex_scope,omitempty"`
 }
 
 // DependencyNode represents a single node in the dependency tree for the UI.
@@ -92,9 +95,11 @@ type LicenseAffectedSBOM struct {
 
 // VEXStatementItem is the response DTO for listing VEX statements.
 type VEXStatementItem struct {
-	VEXID           string `json:"vex_id"`
-	DocumentID      string `json:"document_id"`
-	SourceFile      string `json:"source_file"`
+	VEXID      string `json:"vex_id"`
+	DocumentID string `json:"document_id"`
+	SourceFile string `json:"source_file"`
+	// SBOMID scopes the statement to one SBOM (#350); empty = global.
+	SBOMID          string `json:"sbom_id,omitempty"`
 	ProductPURL     string `json:"product_purl"`
 	VulnID          string `json:"vuln_id"`
 	Status          string `json:"status"`

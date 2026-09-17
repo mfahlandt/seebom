@@ -244,6 +244,12 @@ func processVEXJob(ctx context.Context, chClient *clickhouse.Client, openFile fu
 	// was silently left empty on every VEX row before #138/#57.
 	ownershipOf(job).applyVEXStatements(result.Statements)
 
+	// Scope each statement to the SBOM whose product it describes (#350):
+	// explicit ?sbom_id= mapping first, then product-@id resolution, global
+	// fallback with a warning. A statement scoped to the wrong product would
+	// suppress real findings in unrelated projects.
+	scopeVEXStatements(ctx, chClient, job, result.Statements)
+
 	if len(result.Statements) > 0 {
 		if err := chClient.InsertVEXStatements(ctx, result.Statements); err != nil {
 			return err

@@ -67,6 +67,8 @@ export interface VulnerabilityListItem {
   vex_statement_id?: string;
   vex_author?: string;
   vex_tooling?: string;
+  /** "sbom" = statement scoped to this SBOM, "global" = legacy unscoped (#350). */
+  vex_scope?: 'sbom' | 'global';
 }
 
 export interface DependencyNode {
@@ -99,6 +101,8 @@ export interface VEXStatementItem {
   vex_id: string;
   document_id: string;
   source_file: string;
+  /** SBOM the statement is scoped to (#350); absent = global. */
+  sbom_id?: string;
   product_purl: string;
   vuln_id: string;
   status: string;

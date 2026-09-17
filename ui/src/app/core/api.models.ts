@@ -57,6 +57,16 @@ export interface VulnerabilityListItem {
   source_file: string;
   discovered_at: string;
   vex_status?: string;
+  /**
+   * Effective VEX statement detail (#335): the API returns exactly one row
+   * per (vuln_id, purl); the newest statement wins. Omitted when no VEX
+   * statement covers the pair.
+   */
+  vex_justification?: string;
+  vex_timestamp?: string;
+  vex_statement_id?: string;
+  vex_author?: string;
+  vex_tooling?: string;
 }
 
 export interface DependencyNode {

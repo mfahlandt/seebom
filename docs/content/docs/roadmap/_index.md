@@ -194,7 +194,7 @@ Everything that touches `db/migrations/` or a frozen response shape. After 1.0, 
 | `015_add_namespace_project_columns` | #138, #57 | `ADD COLUMN namespace, project` (core tables + `document_store`) | ✅ shipped (**pre**) |
 | `016_add_source_columns` | #332 | `ADD COLUMN source_repo, source_ref` (`sboms` + `ingestion_queue`) | ✅ shipped (**pre**) |
 | `017_add_vex_provenance` | #334 | `ADD COLUMN author, role, tooling, status_notes` | ✅ shipped (**pre**) |
-| — | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | **pre** (API) |
+| — | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | ✅ shipped (**pre**, API) |
 | — | #177 | `cluster` in `SBOMListItem` | **pre** (API) |
 | `018_create_upload_jobs` | #336 | New table | post |
 | `019_create_attestations` | #143 | New table | post |

@@ -9,20 +9,43 @@ import (
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
-// QuerySBOMVulnerabilities fetches vulnerabilities for a specific SBOM with VEX status.
+// QuerySBOMVulnerabilities fetches vulnerabilities for a specific SBOM with
+// the effective VEX statement per (vuln_id, purl).
+//
+// Row semantics (#335): exactly one row per (vuln_id, purl). When several
+// VEX statements exist for the pair (e.g. an automated under_investigation
+// draft followed by a human not_affected), the statement with the newest
+// vex_timestamp wins — the same OpenVEX conflict rule the dashboard scoring
+// applies. argMax collapses the statements; LIMIT 1 BY guards against
+// duplicate vulnerability rows that FINAL cannot merge (differing non-key
+// columns after a re-scan).
 func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([]dto.VulnerabilityListItem, error) {
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
-			ifNull(vx.status, '') AS vex_status
+			ifNull(vx.status, '') AS vex_status,
+			ifNull(vx.justification, '') AS vex_justification,
+			ifNull(vx.vex_timestamp, toDateTime(0)) AS vex_timestamp,
+			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
+			ifNull(vx.author, '') AS vex_author,
+			ifNull(vx.tooling, '') AS vex_tooling
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
 		LEFT JOIN (
-			SELECT vuln_id, product_purl, status
+			SELECT
+				vuln_id, product_purl,
+				argMax(status, vex_timestamp) AS status,
+				argMax(justification, vex_timestamp) AS justification,
+				argMax(toString(vex_id), vex_timestamp) AS vex_statement_id,
+				argMax(author, vex_timestamp) AS author,
+				argMax(tooling, vex_timestamp) AS tooling,
+				max(vex_timestamp) AS vex_timestamp
 			FROM vex_statements FINAL
+			GROUP BY vuln_id, product_purl
 		) AS vx ON vx.vuln_id = v.vuln_id AND vx.product_purl = v.purl
 		WHERE v.sbom_id = ?
 		ORDER BY v.severity ASC, v.discovered_at DESC
+		LIMIT 1 BY v.vuln_id, v.purl
 	`, sbomID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulns for sbom %s: %w", sbomID, err)
@@ -32,15 +55,22 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([
 	var items []dto.VulnerabilityListItem
 	for rows.Next() {
 		var item dto.VulnerabilityListItem
-		var discoveredAt time.Time
+		var discoveredAt, vexTimestamp time.Time
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
 			&discoveredAt, &item.VEXStatus,
+			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
+			&item.VEXAuthor, &item.VEXTooling,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)
 		}
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
+		// Zero time = no VEX statement for this pair (LEFT JOIN miss);
+		// leave the field empty so omitempty drops it from the JSON.
+		if !vexTimestamp.IsZero() && vexTimestamp.Unix() != 0 {
+			item.VEXTimestamp = vexTimestamp.Format(time.RFC3339)
+		}
 		items = append(items, item)
 	}
 	if items == nil {
@@ -611,7 +641,11 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 		LIMIT ? OFFSET ?
 	`, searchFilter)
 
-	var rows interface{ Next() bool; Scan(dest ...interface{}) error; Close() error }
+	var rows interface {
+		Next() bool
+		Scan(dest ...interface{}) error
+		Close() error
+	}
 	var err error
 	if search != "" {
 		rows2, err2 := c.Conn.Query(ctx, mainQuery, "%"+search+"%", pageSize, offset)

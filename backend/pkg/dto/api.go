@@ -50,6 +50,15 @@ type VulnerabilityListItem struct {
 	SourceFile   string `json:"source_file"`
 	DiscoveredAt string `json:"discovered_at"`
 	VEXStatus    string `json:"vex_status,omitempty"`
+	// Effective VEX statement detail (#335): exactly one row per
+	// (vuln_id, purl) is returned; the statement with the newest
+	// vex_timestamp wins (OpenVEX conflict rule). All fields are omitted
+	// when no VEX statement covers the pair.
+	VEXJustification string `json:"vex_justification,omitempty"`
+	VEXTimestamp     string `json:"vex_timestamp,omitempty"`
+	VEXStatementID   string `json:"vex_statement_id,omitempty"`
+	VEXAuthor        string `json:"vex_author,omitempty"`
+	VEXTooling       string `json:"vex_tooling,omitempty"`
 }
 
 // DependencyNode represents a single node in the dependency tree for the UI.

@@ -61,7 +61,7 @@ Migration `013` is taken by `013_create_registry_license_cache` (shipped in v0.6
 
 | # | Issue | Why pre-1.0 |
 |---|-------|-------------|
-| **#335** | One row per `(vuln_id, purl)` in `/sboms/{id}/vulnerabilities` — latest VEX statement wins, expose `vex_timestamp` | **Changes row semantics** of a frozen endpoint. `argMax()`/`LIMIT 1 BY` in the ClickHouse query + DTO fields (`vex_timestamp`, `vex_author`, `vex_tooling`). Small, but must be in the 1.0 contract. |
+| **#335** ✅ | One row per `(vuln_id, purl)` in `/sboms/{id}/vulnerabilities` — latest VEX statement wins, expose `vex_timestamp` | **Changes row semantics** of a frozen endpoint. `argMax()`/`LIMIT 1 BY` in the ClickHouse query + DTO fields (`vex_timestamp`, `vex_author`, `vex_tooling`). Small, but must be in the 1.0 contract. |
 | **#177** | `cluster` in `SBOMListItem` DTO + badge | Additive DTO field; trivial. Good first issue — do it before the freeze so the list contract is complete. |
 
 ### 2c. Release engineering
@@ -178,7 +178,7 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | `015_add_namespace_project_columns` | #138, #57 | `ADD COLUMN namespace`, `ADD COLUMN project` on core tables (+ `document_store`) | ✅ shipped (**pre**) |
 | `016_add_source_columns` ✅ | #332 | `ADD COLUMN source_repo, source_ref` on `sboms` + `ingestion_queue` | **pre** |
 | `017_add_vex_provenance` ✅ | #334 | `ADD COLUMN author, role, tooling, status_notes` on `vex_statements` | **pre** |
-| — (query only) | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | **pre** (API contract) |
+| — (query only) ✅ | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | **pre** (API contract) |
 | — (DTO only) | #177 | `cluster` in `SBOMListItem` | **pre** (API contract) |
 | `018_create_upload_jobs` | #336 | New table | post |
 | `019_create_attestations` | #143 | New table | post |

@@ -500,7 +500,9 @@ curl -O -J \
 
 ### `GET /api/v1/sboms/{id}/vulnerabilities`
 
-All vulnerabilities found in a specific SBOM, including VEX status.
+All vulnerabilities found in a specific SBOM, including the effective VEX statement.
+
+**Row semantics (#335):** exactly **one row per `(vuln_id, purl)`**. When several VEX statements have been ingested for the pair (e.g. an automated `under_investigation` draft followed by a human `not_affected`), the statement with the newest `vex_timestamp` wins — the same OpenVEX conflict rule BOMHort applies for dashboard scoring. Clients never need to dedupe or re-implement OpenVEX semantics.
 
 **Path Parameters:**
 
@@ -519,10 +521,18 @@ All vulnerabilities found in a specific SBOM, including VEX status.
     "fixed_version": "v0.23.0",
     "source_file": "containerd-v1.7.2.spdx.json",
     "discovered_at": "2026-05-18T09:00:00Z",
-    "vex_status": "not_affected"
+    "vex_status": "not_affected",
+    "vex_justification": "vulnerable_code_not_present",
+    "vex_timestamp": "2026-09-01T12:00:00Z",
+    "vex_statement_id": "b3f1c2d4-5678-90ab-cdef-1234567890ab",
+    "vex_author": "Example Org Security Team",
+    "vex_tooling": "VEXViper/0.1.0"
   }
 ]
 ```
+
+`vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`.
+
 
 ### `GET /api/v1/sboms/{id}/licenses`
 

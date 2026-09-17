@@ -30,6 +30,14 @@ type SBOMListItem struct {
 	IngestedAt   string `json:"ingested_at"`
 	SourceRepo   string `json:"source_repo,omitempty"`
 	SourceRef    string `json:"source_ref,omitempty"`
+	// Ownership dimensions (#177). Completes the list contract before the
+	// v1.0 freeze: the detail view and the cluster endpoints already expose
+	// these, so a client could not tell which cluster/namespace/project a
+	// listed SBOM belongs to without a second request per row. All three
+	// default to '' and are omitted when unset (single-instance deployments).
+	Cluster   string `json:"cluster,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Project   string `json:"project,omitempty"`
 }
 
 // PaginatedResponse wraps any list response with pagination metadata.

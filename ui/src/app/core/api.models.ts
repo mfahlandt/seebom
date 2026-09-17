@@ -46,6 +46,10 @@ export interface SBOMListItem {
   /** Source attribution (#332); omitted by the API when unknown. */
   source_repo?: string;
   source_ref?: string;
+  /** Ownership dimensions (#177); omitted when unset. */
+  cluster?: string;
+  namespace?: string;
+  project?: string;
 }
 
 export interface VulnerabilityListItem {

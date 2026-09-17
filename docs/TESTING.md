@@ -120,7 +120,7 @@ These packages contain only thin orchestration (`main()` functions) with no test
 | `internal/sbom` | 4 | 0 | Multi-format detection: detects SPDX, detects CycloneDX, detects in-toto envelope, protobom backend |
 | `internal/spdx` | 15 | 7 | Full parse, in-toto attestation envelope unwrapping, invalid JSON, empty packages, deterministic SBOM ID, license fallback, GoTempModuleName, CleanPackageName (8 patterns) |
 | `internal/vex` | 17 | 8 | Full parse, invalid JSON, empty doc, normalizeVulnID (9 URL patterns), URL-based vuln @id, provenance capture incl. absent fields (#334), `products[].subcomponents[]` expansion + component-shape compatibility (#350) |
-| `pkg/dto` | 3 | 0 | VersionSkew JSON serialization, ProjectListItem fields, ClusterStats DTO |
+| `pkg/dto` | 5 | 0 | VersionSkew JSON serialization, ProjectListItem fields, ClusterStats DTO, SBOMListItem ownership fields serialised + omitted when unset (#177) |
 | `pkg/models` | 6 | 0 | Cluster fields, SBOM ClusterOmitEmpty, VEXStatement cluster, LicenseCompliance cluster, IngestionJob cluster propagation, Vulnerability cluster |
 | **Total** | **281** | **345** | **981 test invocations** |
 

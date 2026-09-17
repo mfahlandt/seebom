@@ -82,5 +82,54 @@ describe('SbomDetailComponent', () => {
     const style = getComputedStyle(items[0]);
     expect(style.flexShrink).toBe('0');
   });
+
+  it('should render VEX statements with scope badges (#350)', () => {
+    const fixture = TestBed.createComponent(SbomDetailComponent);
+    const component = fixture.componentInstance;
+
+    component.detail = {
+      sbom_id: 'test-sbom-123',
+      source_file: 'test.spdx.json',
+      document_name: 'test',
+    } as any;
+    component.vexStatements = [
+      {
+        vex_id: 'v1', document_id: 'd', source_file: 'a.openvex.json',
+        sbom_id: 'test-sbom-123', product_purl: 'pkg:golang/x@1',
+        vuln_id: 'CVE-2026-1', status: 'not_affected',
+        justification: 'vulnerable_code_not_in_execute_path',
+        vex_timestamp: '2026-09-01T12:00:00Z', ingested_at: '2026-09-02T12:00:00Z',
+        tooling: 'VEXViper/0.1.0',
+      },
+      {
+        vex_id: 'v2', document_id: 'd', source_file: 'b.openvex.json',
+        product_purl: 'pkg:golang/y@2',
+        vuln_id: 'CVE-2026-2', status: 'affected',
+        justification: '',
+        vex_timestamp: '2026-09-01T12:00:00Z', ingested_at: '2026-09-02T12:00:00Z',
+      },
+    ];
+    component.activeTab = 'vex';
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    const rows = compiled.querySelectorAll('.vex-row');
+    expect(rows.length).toBe(2);
+
+    // Scoped statement: "this SBOM" badge + automated badge (tooling set).
+    expect(rows[0].querySelector('.vex-scope-badge')?.textContent?.trim()).toBe('this SBOM');
+    expect(rows[0].querySelector('.vex-origin-badge')?.textContent?.trim()).toBe('automated');
+    // Global legacy statement: marked as such, no automated badge.
+    expect(rows[1].querySelector('.vex-scope-badge')?.textContent?.trim()).toBe('global');
+    expect(rows[1].querySelector('.vex-origin-badge')).toBeNull();
+  });
+
+  it('should detect automated statements from role or tooling (#334)', () => {
+    const fixture = TestBed.createComponent(SbomDetailComponent);
+    const component = fixture.componentInstance;
+    expect(component.isAutomated({ tooling: 'VEXViper/0.1.0' } as any)).toBe(true);
+    expect(component.isAutomated({ role: 'Automated triage bot' } as any)).toBe(true);
+    expect(component.isAutomated({ author: 'Alice' } as any)).toBe(false);
+  });
 });
 

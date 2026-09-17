@@ -178,6 +178,7 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | `015_add_namespace_project_columns` | #138, #57 | `ADD COLUMN namespace`, `ADD COLUMN project` on core tables (+ `document_store`) | ✅ shipped (**pre**) |
 | `016_add_source_columns` ✅ | #332 | `ADD COLUMN source_repo, source_ref` on `sboms` + `ingestion_queue` | **pre** |
 | `017_add_vex_provenance` ✅ | #334 | `ADD COLUMN author, role, tooling, status_notes` on `vex_statements` | **pre** |
+| `018_add_vex_sbom_scope` ✅ | #350 | `ADD COLUMN sbom_id` on `vex_statements`, `ADD COLUMN target_sbom_id` on `ingestion_queue` — VEX statements scoped to the SBOM/product they describe | **pre** |
 | — (query only) ✅ | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | **pre** (API contract) |
 | — (DTO only) | #177 | `cluster` in `SBOMListItem` | **pre** (API contract) |
 | `018_create_upload_jobs` | #336 | New table | post |

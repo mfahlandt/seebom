@@ -13,7 +13,7 @@ import (
 // updates), so all five writers must agree on the column set exactly —
 // keeping it in one place is what stops a newly added dimension from being
 // silently dropped on claim/complete/fail and resurfacing as empty data.
-const queueColumns = "created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message, cluster, namespace, project, source_repo, source_ref"
+const queueColumns = "created_at, job_id, source_file, sha256_hash, status, job_type, claimed_by, claimed_at, finished_at, error_message, cluster, namespace, project, source_repo, source_ref, target_sbom_id"
 
 // EnqueueJobs inserts a batch of new ingestion jobs with status 'pending'.
 func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) error {
@@ -47,6 +47,7 @@ func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) er
 			job.Project,
 			job.SourceRepo,
 			job.SourceRef,
+			job.TargetSBOMID,
 		); err != nil {
 			return fmt.Errorf("failed to append queue job: %w", err)
 		}
@@ -64,7 +65,7 @@ func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) er
 // regardless of merge timing. This avoids phantom re-claims entirely.
 func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]models.IngestionJob, error) {
 	rows, err := c.Conn.Query(ctx, `
-		SELECT job_id, source_file, sha256_hash, min_created, job_type, cluster, namespace, project, source_repo, source_ref
+		SELECT job_id, source_file, sha256_hash, min_created, job_type, cluster, namespace, project, source_repo, source_ref, target_sbom_id
 		FROM (
 		    SELECT
 		        job_id,
@@ -77,7 +78,8 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 		        argMax(namespace, created_at)     AS namespace,
 		        argMax(project, created_at)       AS project,
 		        argMax(source_repo, created_at)   AS source_repo,
-		        argMax(source_ref, created_at)    AS source_ref
+		        argMax(source_ref, created_at)    AS source_ref,
+		        argMax(target_sbom_id, created_at) AS target_sbom_id
 		    FROM ingestion_queue
 		    GROUP BY job_id
 		) sub
@@ -92,7 +94,7 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 	var jobs []models.IngestionJob
 	for rows.Next() {
 		var job models.IngestionJob
-		if err := rows.Scan(&job.JobID, &job.SourceFile, &job.SHA256Hash, &job.CreatedAt, &job.JobType, &job.Cluster, &job.Namespace, &job.Project, &job.SourceRepo, &job.SourceRef); err != nil {
+		if err := rows.Scan(&job.JobID, &job.SourceFile, &job.SHA256Hash, &job.CreatedAt, &job.JobType, &job.Cluster, &job.Namespace, &job.Project, &job.SourceRepo, &job.SourceRef, &job.TargetSBOMID); err != nil {
 			return nil, fmt.Errorf("failed to scan job row: %w", err)
 		}
 		job.Status = models.JobStatusProcessing
@@ -129,6 +131,7 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 			job.Project,
 			job.SourceRepo,
 			job.SourceRef,
+			job.TargetSBOMID,
 		); err != nil {
 			return nil, fmt.Errorf("failed to append claim: %w", err)
 		}
@@ -146,8 +149,8 @@ func (c *Client) CompleteJob(ctx context.Context, job models.IngestionJob) error
 	now := time.Now()
 	return c.Conn.Exec(ctx,
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusDone, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, "", job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusDone, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, "", job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID)
 }
 
 // FailJob marks a job as failed with an error message.
@@ -155,6 +158,6 @@ func (c *Client) FailJob(ctx context.Context, job models.IngestionJob, errMsg st
 	now := time.Now()
 	return c.Conn.Exec(ctx,
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusFailed, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, errMsg, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusFailed, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, errMsg, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID)
 }

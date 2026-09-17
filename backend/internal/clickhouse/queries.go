@@ -87,6 +87,8 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 	_ = c.Conn.QueryRow(ctx,
 		"SELECT count() FROM vex_statements FINAL").Scan(&stats.TotalVEXStatements)
 
+	// Scope-aware (#350): a statement only suppresses a finding in the SBOM
+	// it is scoped to; global legacy statements ('') keep applying everywhere.
 	var suppressedByVEX uint64
 	_ = c.Conn.QueryRow(ctx, `
 		SELECT count(DISTINCT (vuln_id, purl))
@@ -95,6 +97,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 			SELECT 1 FROM (SELECT * FROM vex_statements FINAL) AS vx
 			WHERE vx.vuln_id = v.vuln_id
 			AND vx.product_purl = v.purl
+			AND (vx.sbom_id = '' OR vx.sbom_id = toString(v.sbom_id))
 			AND vx.status = 'not_affected'
 		)
 	`).Scan(&suppressedByVEX)
@@ -234,9 +237,10 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 				v.purl
 			FROM (SELECT * FROM vulnerabilities FINAL) AS v
 			LEFT JOIN (
-				SELECT vuln_id, product_purl, status
+				SELECT vuln_id, product_purl, sbom_id, status
 				FROM vex_statements FINAL
 			) AS vx ON vx.vuln_id = v.vuln_id AND vx.product_purl = v.purl
+				AND (vx.sbom_id = '' OR vx.sbom_id = toString(v.sbom_id))
 			%s
 		)
 	`, vexHaving)
@@ -251,9 +255,10 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 			ifNull(vx.status, '') AS vex_status
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
 		LEFT JOIN (
-			SELECT vuln_id, product_purl, status
+			SELECT vuln_id, product_purl, sbom_id, status
 			FROM vex_statements FINAL
 		) AS vx ON vx.vuln_id = v.vuln_id AND vx.product_purl = v.purl
+			AND (vx.sbom_id = '' OR vx.sbom_id = toString(v.sbom_id))
 		%s
 		ORDER BY v.severity ASC, v.discovered_at DESC
 		LIMIT ? OFFSET ?
@@ -444,7 +449,7 @@ func (c *Client) QueryVEXStatements(ctx context.Context, page, pageSize uint64) 
 	}
 
 	rows, err := c.Conn.Query(ctx, `
-		SELECT vex_id, document_id, source_file, product_purl,
+		SELECT vex_id, document_id, source_file, sbom_id, product_purl,
 			   vuln_id, status, justification, impact_statement,
 			   action_statement, vex_timestamp, ingested_at,
 			   author, role, tooling, status_notes
@@ -462,7 +467,7 @@ func (c *Client) QueryVEXStatements(ctx context.Context, page, pageSize uint64) 
 		var item dto.VEXStatementItem
 		var vexTimestamp, ingestedAt time.Time
 		if err := rows.Scan(
-			&item.VEXID, &item.DocumentID, &item.SourceFile, &item.ProductPURL,
+			&item.VEXID, &item.DocumentID, &item.SourceFile, &item.SBOMID, &item.ProductPURL,
 			&item.VulnID, &item.Status, &item.Justification, &item.ImpactStatement,
 			&item.ActionStatement, &vexTimestamp, &ingestedAt,
 			&item.Author, &item.Role, &item.Tooling, &item.StatusNotes,

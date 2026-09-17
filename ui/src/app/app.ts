@@ -24,7 +24,6 @@ import { GlobalSearchComponent } from './shared/global-search/global-search.comp
         <a routerLink="/dependencies" routerLinkActive="active">Dependencies</a>
         <a routerLink="/package-search" routerLinkActive="active">Pkg Search</a>
         <a routerLink="/version-skew" routerLinkActive="active">Version Skew</a>
-        <a routerLink="/vex" routerLinkActive="active">VEX</a>
       </div>
       <app-global-search></app-global-search>
       <button class="theme-toggle" (click)="toggleTheme()" [title]="dark ? 'Light mode' : 'Dark mode'">

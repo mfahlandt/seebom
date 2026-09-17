@@ -282,6 +282,7 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 | `cluster` | string | Overrides this instance's configured `CLUSTER_NAME` for the resulting ingestion job. |
 | `namespace` | string | Overrides the configured `NAMESPACE` (#138). The deployment namespace the artifact belongs to, e.g. `payments`. |
 | `project` | string | Overrides the configured `PROJECT` (#57), e.g. `payment-service`. |
+| `sbom_id` | — | **VEX uploads only** (#350): scopes every statement in the document to this SBOM. Must be a valid SBOM UUID; rejected with `400` on SBOM uploads or malformed values. Without it, the worker resolves the statement's OpenVEX product `@id` against `sboms` (`source_repo`, `document_namespace`, `document_name`) and falls back to a **global** statement. |
 
 All three are optional and independent. A parameter that is absent **or blank** inherits the instance default — `?namespace=` and omitting it entirely mean the same thing, so a client cannot accidentally blank out a configured value. Values are trimmed.
 
@@ -532,6 +533,21 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 ```
 
 `vex_justification`, `vex_timestamp`, `vex_statement_id`, `vex_author` and `vex_tooling` describe the **winning** statement and are omitted (like `vex_status`) when no VEX statement covers the pair. `vex_author`/`vex_tooling` carry the provenance captured by migration `017` (#334) and are empty for statements ingested before it. `vex_timestamp` enables re-triage policies such as "re-open `under_investigation` older than 30 days" without paging through `/api/v1/vex/statements`.
+
+
+### `GET /api/v1/sboms/{id}/vex`
+
+VEX statements affecting one SBOM (#350): statements **scoped to it** plus **global** legacy statements. Scoped statements sort first; a statement is global when `sbom_id` is absent from the row.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | SBOM identifier |
+
+**Response:** `200 OK` — array of `VEXStatementItem` (same shape as `/api/v1/vex/statements`, including provenance from #334). `sbom_id` on a row marks it as scoped to this SBOM.
+
+**Why scoping matters:** a VEX statement asserts a vulnerability status **for a product**. `vulnerable_code_not_in_execute_path` is a reachability claim about one product — another project with the identical library version may be exploitable. Scoped statements therefore only suppress findings in their own SBOM; global statements (pre-018 documents whose product matched no SBOM) keep applying everywhere and are marked in the UI.
 
 
 ### `GET /api/v1/sboms/{id}/licenses`

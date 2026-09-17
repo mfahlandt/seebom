@@ -242,6 +242,21 @@ func main() {
 	})
 
 	// Licenses for a specific SBOM.
+	mux.HandleFunc("GET /api/v1/sboms/{id}/vex", func(w http.ResponseWriter, r *http.Request) {
+		sbomID := r.PathValue("id")
+		if _, err := uuid.Parse(sbomID); err != nil {
+			writeError(w, http.StatusBadRequest, "Invalid SBOM ID")
+			return
+		}
+		stmts, err := chClient.QuerySBOMVEXStatements(r.Context(), sbomID)
+		if err != nil {
+			log.Printf("ERROR: sbom vex statements for %s: %v", sanitizeLogParam(sbomID), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch VEX statements")
+			return
+		}
+		writeJSON(w, http.StatusOK, stmts)
+	})
+
 	mux.HandleFunc("GET /api/v1/sboms/{id}/licenses", func(w http.ResponseWriter, r *http.Request) {
 		sbomID := r.PathValue("id")
 		if !isValidUUID(sbomID) {
@@ -1183,6 +1198,23 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		namespace := queryOverride(r, "namespace", cfg.Namespace)
 		project := queryOverride(r, "project", cfg.Project)
 
+		// VEX→SBOM mapping (#350): ?sbom_id= scopes every statement in the
+		// uploaded VEX document to one SBOM. Only meaningful for VEX uploads;
+		// rejected otherwise so a typo cannot silently do nothing. Validated
+		// as a UUID — an arbitrary string here would make the worker scope
+		// statements to a nonexistent SBOM, hiding them from every view.
+		targetSBOMID := strings.TrimSpace(r.URL.Query().Get("sbom_id"))
+		if targetSBOMID != "" {
+			if fileType != models.JobTypeVEX {
+				writeError(w, http.StatusBadRequest, "?sbom_id= is only valid for VEX uploads")
+				return
+			}
+			if _, err := uuid.Parse(targetSBOMID); err != nil {
+				writeError(w, http.StatusBadRequest, "?sbom_id= must be a valid SBOM UUID")
+				return
+			}
+		}
+
 		// Source attribution (#332): headers rather than query params, matching
 		// X-Filename — these describe the uploaded artifact itself, not where it
 		// belongs. Rejected (not silently dropped) when malformed: the caller is
@@ -1245,17 +1277,18 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		}
 
 		job := models.IngestionJob{
-			CreatedAt:  time.Now(),
-			JobID:      uuid.New(),
-			SourceFile: sourceFile,
-			SHA256Hash: hash,
-			Status:     models.JobStatusPending,
-			JobType:    fileType,
-			Cluster:    cluster,
-			Namespace:  namespace,
-			Project:    project,
-			SourceRepo: sourceRepoHdr,
-			SourceRef:  sourceRefHdr,
+			CreatedAt:    time.Now(),
+			JobID:        uuid.New(),
+			SourceFile:   sourceFile,
+			SHA256Hash:   hash,
+			Status:       models.JobStatusPending,
+			JobType:      fileType,
+			Cluster:      cluster,
+			Namespace:    namespace,
+			Project:      project,
+			SourceRepo:   sourceRepoHdr,
+			SourceRef:    sourceRefHdr,
+			TargetSBOMID: targetSBOMID,
 		}
 		// Single-row insert, deliberately: the API contract returns job_id
 		// synchronously, so the row has to be durable before we respond — there

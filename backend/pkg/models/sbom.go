@@ -110,6 +110,10 @@ type IngestionJob struct {
 	// document itself yields.
 	SourceRepo string `json:"source_repo,omitempty"`
 	SourceRef  string `json:"source_ref,omitempty"`
+	// TargetSBOMID (#350) carries an explicit ?sbom_id= VEX-upload mapping
+	// from the gateway to the parsing worker. Empty for SBOM jobs and for
+	// watcher-enqueued VEX jobs (the worker then auto-resolves per product).
+	TargetSBOMID string `json:"target_sbom_id,omitempty"`
 }
 
 // StoredDocument is a row in document_store (#256): the reference to the
@@ -147,10 +151,18 @@ const (
 
 // VEXStatement represents a single VEX statement linking a product to a vulnerability status.
 type VEXStatement struct {
-	IngestedAt      time.Time `json:"ingested_at"`
-	VEXID           uuid.UUID `json:"vex_id"`
-	DocumentID      string    `json:"document_id"`
-	SourceFile      string    `json:"source_file"`
+	IngestedAt time.Time `json:"ingested_at"`
+	VEXID      uuid.UUID `json:"vex_id"`
+	DocumentID string    `json:"document_id"`
+	SourceFile string    `json:"source_file"`
+	// SBOMID scopes the statement to one SBOM (#350). Empty = global/legacy:
+	// the statement matches every SBOM, but a scoped statement always beats
+	// a global one. Stored as String in ClickHouse so '' can mean "global".
+	SBOMID string `json:"sbom_id,omitempty"`
+	// ProductRef is the OpenVEX product @id (or purl identifier) this
+	// statement was made about. Not persisted — the parsing worker uses it
+	// to resolve SBOMID at ingest.
+	ProductRef      string    `json:"-"`
 	ProductPURL     string    `json:"product_purl"`
 	VulnID          string    `json:"vuln_id"`
 	Status          string    `json:"status"`        // not_affected, affected, fixed, under_investigation

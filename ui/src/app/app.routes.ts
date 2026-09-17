@@ -76,11 +76,6 @@ export const routes: Routes = [
       ),
   },
   {
-    path: 'vex',
-    loadComponent: () =>
-      import('./features/vex/vex-list.component').then((m) => m.VEXListComponent),
-  },
-  {
     path: 'archived-packages',
     loadComponent: () =>
       import('./features/archived-packages/archived-packages.component').then(

@@ -369,6 +369,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	// job's ownership dimensions (#131 cluster, #138 namespace, #57 project).
 	own := ownershipOf(job)
 	own.applySBOM(&result.SBOM)
+	applySourceOverride(&result.SBOM, job)
 	if err := chClient.InsertSBOM(ctx, &result.SBOM); err != nil {
 		return err
 	}

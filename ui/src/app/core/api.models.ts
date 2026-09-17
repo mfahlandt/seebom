@@ -43,6 +43,9 @@ export interface SBOMListItem {
   package_count: number;
   vuln_count: number;
   ingested_at: string;
+  /** Source attribution (#332); omitted by the API when unknown. */
+  source_repo?: string;
+  source_ref?: string;
 }
 
 export interface VulnerabilityListItem {
@@ -110,6 +113,9 @@ export interface SBOMDetail {
   package_count: number;
   vuln_count: number;
   ingested_at: string;
+  /** Source attribution (#332); omitted by the API when unknown. */
+  source_repo?: string;
+  source_ref?: string;
   critical_vulns: number;
   high_vulns: number;
   medium_vulns: number;

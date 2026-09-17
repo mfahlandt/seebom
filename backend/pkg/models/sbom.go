@@ -24,6 +24,13 @@ type SBOM struct {
 	// DocumentNamespace above, which is the SPDX document's URI identifier.
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	// SourceRepo/SourceRef (#332) name where the product's source lives:
+	// a normalised https repository URL and the commit/tag/branch the SBOM
+	// was generated from. Extracted from the document at parse time
+	// (internal/sourcerepo), overridable via X-Source-Repo/X-Source-Ref
+	// upload headers and PATCH /api/v1/sboms/{id}. '' = unknown.
+	SourceRepo string `json:"source_repo,omitempty"`
+	SourceRef  string `json:"source_ref,omitempty"`
 }
 
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.
@@ -97,6 +104,12 @@ type IngestionJob struct {
 	Cluster      string     `json:"cluster,omitempty"`
 	Namespace    string     `json:"namespace,omitempty"`
 	Project      string     `json:"project,omitempty"`
+	// SourceRepo/SourceRef (#332) carry an explicit X-Source-Repo /
+	// X-Source-Ref upload override from the gateway to the parsing worker.
+	// Empty for watcher-enqueued jobs — the worker then keeps whatever the
+	// document itself yields.
+	SourceRepo string `json:"source_repo,omitempty"`
+	SourceRef  string `json:"source_ref,omitempty"`
 }
 
 // StoredDocument is a row in document_store (#256): the reference to the

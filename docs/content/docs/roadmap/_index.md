@@ -60,7 +60,7 @@ Migration `013` is taken by `013_create_registry_license_cache` (v0.6.x). Issues
 |:------:|-----------|-------|--------|-------------|
 | ✅ | `014_create_document_store` | [#256 — Tier-2 fidelity capture](https://github.com/seebom-labs/BOMHort/issues/256) | New table (reference + `sha256`); original bytes in a configurable blob store (S3/MinIO prefix or PVC), **not** ClickHouse | **The real 1.0 driver.** Forward-only — SBOMs ingested before this permanently lose round-trip fidelity. Needs a follow-up hook in the upload handler (#135). Enables #255. |
 | ✅ | `015_add_namespace_project_columns` | [#138 — Namespace filtering](https://github.com/seebom-labs/BOMHort/issues/138) + [#57 (column)](https://github.com/seebom-labs/BOMHort/issues/57) | `ADD COLUMN namespace`, `ADD COLUMN project` (`LowCardinality(String) DEFAULT ''`) on core tables and `document_store`; no `ORDER BY` change | Ingestion contract frozen: opt-in `INGEST_PATH_LAYOUT` (e.g. `cluster/namespace/project`), per-bucket `namespace`/`project`/`pathLayout`, and `?namespace=`/`?project=` on upload. |
-| 🔲 | `016_add_source_columns` | [#332 — source_repo / source_ref](https://github.com/seebom-labs/BOMHort/issues/332) | `ADD COLUMN source_repo, source_ref` on `sboms`; populated from SPDX/CycloneDX VCS refs; `X-Source-Repo` upload header; `PATCH /api/v1/sboms/{id}` | Correctness blocker for automated VEX (#338). |
+| ✅ | `016_add_source_columns` | [#332 — source_repo / source_ref](https://github.com/seebom-labs/BOMHort/issues/332) | `ADD COLUMN source_repo, source_ref` on `sboms` + `ingestion_queue`; populated from SPDX/CycloneDX VCS refs; `X-Source-Repo`/`X-Source-Ref` upload headers; `PATCH /api/v1/sboms/{id}` | Correctness blocker for automated VEX (#338). |
 | 🔲 | `017_add_vex_provenance` | [#334 — VEX provenance (columns)](https://github.com/seebom-labs/BOMHort/issues/334) | `ADD COLUMN author, role, tooling, status_notes` on `vex_statements` | OpenVEX already carries these; automated producers won't re-send. UI → Phase 3. |
 
 ### API-contract changes (no migration)
@@ -192,7 +192,7 @@ Everything that touches `db/migrations/` or a frozen response shape. After 1.0, 
 | `013_create_registry_license_cache` | #330 | New table | ✅ shipped |
 | `014_create_document_store` | #256 | New table | ✅ shipped (**pre**) |
 | `015_add_namespace_project_columns` | #138, #57 | `ADD COLUMN namespace, project` (core tables + `document_store`) | ✅ shipped (**pre**) |
-| `016_add_source_columns` | #332 | `ADD COLUMN source_repo, source_ref` | **pre** |
+| `016_add_source_columns` | #332 | `ADD COLUMN source_repo, source_ref` (`sboms` + `ingestion_queue`) | ✅ shipped (**pre**) |
 | `017_add_vex_provenance` | #334 | `ADD COLUMN author, role, tooling, status_notes` | **pre** |
 | — | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | **pre** (API) |
 | — | #177 | `cluster` in `SBOMListItem` | **pre** (API) |

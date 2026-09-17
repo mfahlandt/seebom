@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
+	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -52,6 +53,8 @@ type SPDXPackage struct {
 	SPDXID           string            `json:"SPDXID"`
 	Name             string            `json:"name"`
 	VersionInfo      string            `json:"versionInfo"`
+	DownloadLocation string            `json:"downloadLocation"`
+	SourceInfo       string            `json:"sourceInfo"`
 	ExternalRefs     []SPDXExternalRef `json:"externalRefs"`
 	LicenseConcluded string            `json:"licenseConcluded"`
 	LicenseDeclared  string            `json:"licenseDeclared"`
@@ -283,6 +286,7 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 		CreationDate:      creationDate,
 		CreatorTools:      tools,
 	}
+	sbom.SourceRepo, sbom.SourceRef = extractSourceRepo(&doc)
 
 	// SPDX IDs that participate in at least one relationship. Used by the
 	// file-artifact heuristic: real components are usually wired into the
@@ -366,4 +370,47 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 		SBOM:     sbom,
 		Packages: packages,
 	}, nil
+}
+
+// extractSourceRepo derives (source_repo, source_ref) for #332 from the
+// document's described root package(s). Only the roots are consulted: a
+// dependency's downloadLocation names *that dependency's* repo, and storing it
+// as the product's source would send triage tooling (VEXViper: clone, run
+// govulncheck) to analyse the wrong codebase — worse than storing nothing.
+//
+// Priority within a root:
+//  1. downloadLocation — the SPDX-native "where does this come from" field
+//     (git+https://…@ref carries the ref inline).
+//  2. an ExternalRef whose locator normalises to a repo URL, category
+//     PACKAGE-MANAGER or OTHER (some generators stash vcs URLs there).
+//
+// Multiple roots (rare, e.g. multi-product documents): the first root that
+// yields a repo wins — deterministic because packages are scanned in document
+// order. Ambiguity is resolvable via the upload headers or PATCH.
+func extractSourceRepo(doc *SPDXDocument) (repo, ref string) {
+	roots := describedRoots(doc)
+	if len(roots) == 0 {
+		return "", ""
+	}
+	for i := range doc.Packages {
+		pkg := &doc.Packages[i]
+		if !roots[pkg.SPDXID] {
+			continue
+		}
+		if r, rf := sourcerepo.Normalize(pkg.DownloadLocation); r != "" {
+			return r, rf
+		}
+		for _, er := range pkg.ExternalRefs {
+			switch er.ReferenceCategory {
+			case "PACKAGE-MANAGER", "PACKAGE_MANAGER", "OTHER":
+				// purls are handled by Normalize returning "" (a purl is a
+				// package identity, not a clonable repo), so only genuine
+				// vcs-style locators survive this.
+				if r, rf := sourcerepo.Normalize(er.ReferenceLocator); r != "" {
+					return r, rf
+				}
+			}
+		}
+	}
+	return "", ""
 }

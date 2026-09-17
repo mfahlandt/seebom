@@ -158,6 +158,8 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search s
 			s.spdx_version,
 			s.document_name,
 			s.ingested_at,
+			s.source_repo,
+			s.source_ref,
 			ifNull(p.pkg_count, 0) AS package_count,
 			ifNull(v.vuln_count, 0) AS vuln_count
 		FROM (SELECT * FROM sboms FINAL) AS s
@@ -188,7 +190,8 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search s
 		var ingestedAt time.Time
 		if err := rows.Scan(
 			&item.SBOMID, &item.SourceFile, &item.SPDXVersion,
-			&item.DocumentName, &ingestedAt, &item.PackageCount, &item.VulnCount,
+			&item.DocumentName, &ingestedAt,
+			&item.SourceRepo, &item.SourceRef, &item.PackageCount, &item.VulnCount,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan sbom row: %w", err)
 		}

@@ -161,7 +161,8 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		LIMIT 1
 	`, sbomID).Scan(
 		&detail.SBOMID, &detail.SourceFile, &detail.SPDXVersion,
-		&detail.DocumentName, &ingestedAt, &detail.PackageCount,
+		&detail.DocumentName, &ingestedAt,
+		&detail.SourceRepo, &detail.SourceRef, &detail.PackageCount,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sbom detail for %s: %w", sbomID, err)

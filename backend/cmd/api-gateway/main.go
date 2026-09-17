@@ -27,6 +27,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
+	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	"github.com/seebom-labs/bomhort/backend/internal/vex"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
@@ -553,6 +554,10 @@ func main() {
 		useS3Push:     hasPushBucket,
 		localWritable: localUploadWritable,
 	}))
+
+	// Manual source attribution override (#332): the escape hatch for SBOMs
+	// whose extraction yielded nothing (Syft dir: scans, pkg:generic roots).
+	mux.HandleFunc("PATCH /api/v1/sboms/{id}", patchSBOMSourceHandler(cfg, chClient, chClient))
 
 	// CORS + security middleware for Angular dev server.
 	// Order (outermost first): security headers → rate limit → CORS → auth → mux.
@@ -1178,6 +1183,32 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		namespace := queryOverride(r, "namespace", cfg.Namespace)
 		project := queryOverride(r, "project", cfg.Project)
 
+		// Source attribution (#332): headers rather than query params, matching
+		// X-Filename — these describe the uploaded artifact itself, not where it
+		// belongs. Rejected (not silently dropped) when malformed: the caller is
+		// authenticated and can be told "no", and a bad value stored here sends
+		// triage tooling to clone the wrong code fleet-wide.
+		sourceRepoHdr := strings.TrimSpace(r.Header.Get("X-Source-Repo"))
+		sourceRefHdr := strings.TrimSpace(r.Header.Get("X-Source-Ref"))
+		if sourceRepoHdr != "" && !sourcerepo.IsValidRepoURL(sourceRepoHdr) {
+			writeError(w, http.StatusBadRequest, "X-Source-Repo must be an http(s) repository URL without credentials")
+			return
+		}
+		if sourceRefHdr != "" && !sourcerepo.IsValidRef(sourceRefHdr) {
+			writeError(w, http.StatusBadRequest, "X-Source-Ref must be a git ref without whitespace (max 256 chars)")
+			return
+		}
+		// Normalise the accepted value so the stored form is identical whether it
+		// arrived via header or was extracted from a document.
+		if sourceRepoHdr != "" {
+			if norm, normRef := sourcerepo.Normalize(sourceRepoHdr); norm != "" {
+				sourceRepoHdr = norm
+				if sourceRefHdr == "" {
+					sourceRefHdr = normRef
+				}
+			}
+		}
+
 		// Persist to whichever backend is active. Both paths only commit the
 		// content to its final, discoverable location after hashing and
 		// content validation succeed — the S3 PutObject / local os.Rename
@@ -1223,6 +1254,8 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			Cluster:    cluster,
 			Namespace:  namespace,
 			Project:    project,
+			SourceRepo: sourceRepoHdr,
+			SourceRef:  sourceRefHdr,
 		}
 		// Single-row insert, deliberately: the API contract returns job_id
 		// synchronously, so the row has to be durable before we respond — there

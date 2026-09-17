@@ -97,6 +97,11 @@ export interface VEXStatementItem {
   action_statement?: string;
   vex_timestamp: string;
   ingested_at: string;
+  /** Provenance (#334); omitted by the API when the document has none. */
+  author?: string;
+  role?: string;
+  tooling?: string;
+  status_notes?: string;
   affected_sboms?: VEXAffectedSBOM[];
 }
 

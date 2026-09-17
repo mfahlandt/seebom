@@ -825,6 +825,10 @@ Paginated list of all ingested VEX statements with affected SBOM cross-reference
       "action_statement": "",
       "vex_timestamp": "2024-12-01T00:00:00Z",
       "ingested_at": "2026-05-20T14:30:00Z",
+      "author": "Example Org Security Team",
+      "role": "automated vulnerability triage",
+      "tooling": "VEXViper/0.1.0",
+      "status_notes": "confidence=0.94; vulnerable symbol not reachable",
       "affected_sboms": [
         {
           "sbom_id": "a1b2c3d4-...",
@@ -838,6 +842,8 @@ Paginated list of all ingested VEX statements with affected SBOM cross-reference
   "page_size": 50
 }
 ```
+
+`author`, `role`, `tooling` and `status_notes` (#334) carry the statement's provenance, taken from the OpenVEX document (`author`/`role`/`tooling`) and statement (`status_notes`) at ingest. All four are omitted when the source document does not set them — including every statement ingested before migration `017`. Automated producers (VEXViper, #338) set `tooling` and write confidence + reasoning into `status_notes`; a `role`/`tooling`-based automated-vs-human badge and a `?vex_source=` filter follow in Phase 3.
 
 ---
 

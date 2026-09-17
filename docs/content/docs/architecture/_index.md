@@ -80,7 +80,7 @@ API Gateway (REST) → 24 Endpoints → Angular UI
 | `license_compliance` | SummingMergeTree | License compliance per SBOM |
 | `ingestion_queue` | ReplacingMergeTree | Job queue (job_type: sbom/vex) |
 | `dashboard_stats_mv` | SummingMergeTree (MV) | Pre-aggregated daily stats |
-| `vex_statements` | ReplacingMergeTree | OpenVEX statements |
+| `vex_statements` | ReplacingMergeTree | OpenVEX statements incl. provenance (`author`, `role`, `tooling`, `status_notes`; #334, migration `017`) |
 | `cve_refresh_log` | MergeTree | CVE refresh run history |
 | `github_license_cache` | ReplacingMergeTree | Resolved GitHub licenses cache |
 | `github_repo_metadata` | ReplacingMergeTree | GitHub repo metadata (archived, fork, stars) |

@@ -158,9 +158,16 @@ type VEXStatement struct {
 	ImpactStatement string    `json:"impact_statement"`
 	ActionStatement string    `json:"action_statement"`
 	VEXTimestamp    time.Time `json:"vex_timestamp"`
-	Cluster         string    `json:"cluster,omitempty"`
-	Namespace       string    `json:"namespace,omitempty"`
-	Project         string    `json:"project,omitempty"`
+	// Provenance (#334): who (or what) issued the statement. Author, Role
+	// and Tooling come from the OpenVEX document; StatusNotes from the
+	// statement (automated producers write confidence + reasoning there).
+	Author      string `json:"author,omitempty"`
+	Role        string `json:"role,omitempty"`
+	Tooling     string `json:"tooling,omitempty"`
+	StatusNotes string `json:"status_notes,omitempty"`
+	Cluster     string `json:"cluster,omitempty"`
+	Namespace   string `json:"namespace,omitempty"`
+	Project     string `json:"project,omitempty"`
 }
 
 // VEX status constants (OpenVEX spec).

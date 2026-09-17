@@ -107,3 +107,11 @@ enableGitInfo = false
   section = ["HTML", "RSS"]
   page = ["HTML"]
 
+# Hugo ≥0.158 runs Node tooling (PostCSS) under Node's permission model with
+# read access limited to the project dir. Docsy's postcss.config.js lives in
+# the Hugo module cache (outside the project), so `hugo --minify` fails with
+# "Access to this API has been restricted". Grant unrestricted *read* access
+# (pre-0.158 behaviour); writes, addons, child processes and workers stay
+# restricted.
+[security.node.permissions]
+  allowread = ['*']

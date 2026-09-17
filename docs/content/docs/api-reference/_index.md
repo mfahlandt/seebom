@@ -269,6 +269,8 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 | Header | Required | Description |
 |--------|----------|-------------|
 | `X-Filename` | ✅ | Original filename. Must end in `.spdx.json`, `.cdx.json`, `.openvex.json`, `.vex.json`, or a generic `.json` (format auto-detected downstream, same as local scans). Only the base name is used — any directory components are stripped before the file is stored. |
+| `X-Source-Repo` | — | Source repository URL for the product this SBOM describes (#332), e.g. `https://github.com/example-org/example-app`. Must be a plain `http(s)` URL without credentials — rejected with `400` otherwise. Overrides whatever the parser would extract from the document. Normalised before storage (`.git` suffix stripped, inline `@ref` split off). |
+| `X-Source-Ref` | — | Commit SHA, tag or branch the SBOM was generated from. No whitespace, max 256 chars. An explicit value outranks a ref embedded in `X-Source-Repo`. |
 | `Authorization` / `X-Service-Token` / `X-API-Key` | ✅ | Same credential options as the rest of the API — see [Authentication](#authentication). |
 
 **Body:** Raw SBOM or VEX JSON content (not multipart form data). Max size is `MAX_UPLOAD_SIZE_MB` (Helm: `apiGateway.maxUploadSizeMB`, default 50 MB); larger bodies are rejected with `413`.
@@ -308,7 +310,7 @@ Unlike the bucket/directory ingestion path, the server cannot infer these from a
 ```
 
 **Errors:**
-- `400` — Missing `X-Filename` header, unsupported file extension, empty body, or content that fails validation (SBOM uploads must be a single well-formed JSON object; VEX uploads must be a valid OpenVEX document — see below)
+- `400` — Missing `X-Filename` header, unsupported file extension, empty body, malformed `X-Source-Repo`/`X-Source-Ref` header, or content that fails validation (SBOM uploads must be a single well-formed JSON object; VEX uploads must be a valid OpenVEX document — see below)
 - `403` — `AUTH_ENABLED` is not `true` on this instance
 - `413` — Body exceeds `MAX_UPLOAD_SIZE_MB`
 - `500` — Storage (S3 or local) or ingestion-queue failure
@@ -331,6 +333,16 @@ Tagging the upload with all three ownership dimensions:
 curl -X POST "http://localhost:8080/api/v1/sboms/upload?cluster=prod-eu&namespace=payments&project=payment-service" \
   -H "X-API-Key: <api-key>" \
   -H "X-Filename: my-service.spdx.json" \
+  --data-binary @my-service.spdx.json
+```
+
+Stating the source attribution from CI, where the pipeline knows the exact repo and commit (#332):
+```bash
+curl -X POST http://localhost:8080/api/v1/sboms/upload \
+  -H "X-API-Key: <api-key>" \
+  -H "X-Filename: my-service.spdx.json" \
+  -H "X-Source-Repo: https://github.com/example-org/example-app" \
+  -H "X-Source-Ref: ${GIT_COMMIT}" \
   --data-binary @my-service.spdx.json
 ```
 
@@ -369,7 +381,9 @@ names until re-processed. Project-scoped license exceptions match the exact reso
       "document_name": "containerd-v1.7.2",
       "package_count": 245,
       "vuln_count": 12,
-      "ingested_at": "2026-05-20T14:30:00Z"
+      "ingested_at": "2026-05-20T14:30:00Z",
+      "source_repo": "https://github.com/containerd/containerd",
+      "source_ref": "v1.7.2"
     }
   ],
   "total": 142,
@@ -377,6 +391,8 @@ names until re-processed. Project-scoped license exceptions match the exact reso
   "page_size": 50
 }
 ```
+
+`source_repo` / `source_ref` (#332) identify where the product's source lives — extracted from the document at ingest (SPDX root `downloadLocation` / vcs `ExternalRef`; CycloneDX `metadata.component.externalReferences[type=vcs]` and `pedigree.commits[0].uid`), overridable via the upload headers or `PATCH /api/v1/sboms/{id}`. Both are omitted from the JSON when unknown.
 
 ### `GET /api/v1/sboms/{id}/detail`
 
@@ -398,6 +414,8 @@ Detailed SBOM information including vulnerability severity breakdown.
   "package_count": 245,
   "vuln_count": 12,
   "ingested_at": "2026-05-20T14:30:00Z",
+  "source_repo": "https://github.com/containerd/containerd",
+  "source_ref": "v1.7.2",
   "critical_vulns": 1,
   "high_vulns": 3,
   "medium_vulns": 6,
@@ -407,6 +425,50 @@ Detailed SBOM information including vulnerability severity breakdown.
 
 **Errors:**
 - `400` — Invalid UUID format
+
+
+### `PATCH /api/v1/sboms/{id}`
+
+Sets or clears `source_repo` / `source_ref` on an existing SBOM (#332) — the manual escape hatch for documents whose automatic extraction yielded nothing (Syft `dir:` scans, `pkg:generic` roots, monorepos). Requires `AUTH_ENABLED=true`, like the upload endpoint: an unauthenticated PATCH would let anyone redirect triage tooling to arbitrary repositories.
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | UUID | SBOM identifier |
+
+**Body:** JSON with one or both fields. This is a true PATCH — an **absent** field keeps its current value, an explicit `""` clears it:
+
+```json
+{
+  "source_repo": "https://github.com/example-org/example-app",
+  "source_ref": "v1.2.3"
+}
+```
+
+`source_repo` must be a plain `http(s)` URL without credentials; `source_ref` a git ref without whitespace (max 256 chars). Values are normalised before storage exactly like extracted ones (`.git` suffix stripped, inline `@ref` split off), so the stored form is identical regardless of how it arrived.
+
+**Response:** `200 OK` with the resulting attribution:
+```json
+{
+  "sbom_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "source_repo": "https://github.com/example-org/example-app",
+  "source_ref": "v1.2.3"
+}
+```
+
+**Errors:**
+- `400` — Invalid UUID, invalid JSON, empty body object, or a value that fails validation
+- `403` — `AUTH_ENABLED` is not `true` on this instance
+- `404` — No SBOM with this ID
+
+**Example** — pin the repo for an SBOM whose extraction failed, keeping whatever ref is already stored:
+```bash
+curl -X PATCH http://localhost:8080/api/v1/sboms/a1b2c3d4-e5f6-7890-abcd-ef1234567890 \
+  -H "X-API-Key: <api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"source_repo": "https://github.com/example-org/example-app"}'
+```
 
 ### `GET /api/v1/sboms/{id}/download`
 

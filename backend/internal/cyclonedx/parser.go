@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
+	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -48,12 +49,32 @@ type CDXTool struct {
 
 // CDXComponent represents a single component in the BOM.
 type CDXComponent struct {
-	Type     string       `json:"type"`
-	BomRef   string       `json:"bom-ref"`
-	Name     string       `json:"name"`
-	Version  string       `json:"version"`
-	PURL     string       `json:"purl"`
-	Licenses []CDXLicense `json:"licenses"`
+	Type               string                 `json:"type"`
+	BomRef             string                 `json:"bom-ref"`
+	Name               string                 `json:"name"`
+	Version            string                 `json:"version"`
+	PURL               string                 `json:"purl"`
+	Licenses           []CDXLicense           `json:"licenses"`
+	ExternalReferences []CDXExternalReference `json:"externalReferences"`
+	Pedigree           *CDXPedigree           `json:"pedigree"`
+}
+
+// CDXExternalReference is a typed link attached to a component; type "vcs"
+// names the source repository (#332).
+type CDXExternalReference struct {
+	Type string `json:"type"`
+	URL  string `json:"url"`
+}
+
+// CDXPedigree captures component ancestry; commits[0].uid is the commit the
+// component was built from (#332).
+type CDXPedigree struct {
+	Commits []CDXCommit `json:"commits"`
+}
+
+// CDXCommit is a single commit reference inside a pedigree.
+type CDXCommit struct {
+	UID string `json:"uid"`
 }
 
 // CDXLicense represents a license entry (can be expression or structured).
@@ -132,6 +153,7 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 		CreationDate:      creationDate,
 		CreatorTools:      tools,
 	}
+	sbom.SourceRepo, sbom.SourceRef = extractSourceRepo(&doc)
 
 	// Build parallel arrays from components.
 	bomRefToIndex := make(map[string]uint32, len(doc.Components))
@@ -226,4 +248,40 @@ func extractLicense(lics []CDXLicense) string {
 		return "NOASSERTION"
 	}
 	return strings.Join(parts, " AND ")
+}
+
+// extractSourceRepo derives (source_repo, source_ref) for #332 from the BOM's
+// metadata.component — the product the BOM is about. Component-level entries
+// in the components list are dependencies; their vcs references name *their*
+// repos and must not be attributed to the product.
+//
+//  1. metadata.component.externalReferences[type=vcs].url — the CycloneDX
+//     way to say "the source lives here".
+//  2. pedigree.commits[0].uid as the ref if the vcs URL carried none:
+//     generators that fill pedigree list the build commit first.
+func extractSourceRepo(doc *CDXDocument) (repo, ref string) {
+	root := doc.Metadata.Component
+	if root == nil {
+		return "", ""
+	}
+
+	for _, er := range root.ExternalReferences {
+		if er.Type != "vcs" {
+			continue
+		}
+		if r, rf := sourcerepo.Normalize(er.URL); r != "" {
+			repo, ref = r, rf
+			break
+		}
+	}
+
+	if repo == "" {
+		return "", ""
+	}
+
+	if ref == "" && root.Pedigree != nil && len(root.Pedigree.Commits) > 0 {
+		ref = strings.TrimSpace(root.Pedigree.Commits[0].UID)
+	}
+
+	return repo, ref
 }

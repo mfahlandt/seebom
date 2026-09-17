@@ -96,6 +96,7 @@ All core tables (`sboms`, `sbom_packages`, `vulnerabilities`, `license_complianc
 | `project` | `015` (#57) | What is it / who owns it? | `payment-service` | 50–5000 |
 
 None of them is part of `ORDER BY`: MergeTree cannot alter a sort key in place, and a full table rebuild is not worth it for filter dimensions at these cardinalities. Filtering is by `WHERE`.
+`sboms` and `ingestion_queue` additionally carry `source_repo` / `source_ref` (`String DEFAULT ''`, migration `016`, #332): the repository URL and ref (tag, branch or commit) of the product the SBOM describes. They are extracted at parse time (SPDX root `downloadLocation` / vcs `ExternalRef`; CycloneDX `metadata.component.externalReferences[type=vcs]` / `pedigree.commits`), overridable via the `X-Source-Repo` / `X-Source-Ref` upload headers or `PATCH /api/v1/sboms/{id}`.
 
 ## Ownership Data Model
 
@@ -197,6 +198,10 @@ Segments map positionally onto the leading path segments, relative to the ingest
 | GET | `/api/v1/clusters` | List all clusters with summary stats |
 | GET | `/api/v1/clusters/{name}/stats` | Per-cluster dashboard statistics |
 | GET | `/api/v1/clusters/{name}/sboms?page=&page_size=` | SBOMs for a specific cluster |
+| GET | `/api/v1/search?q=` | Global search (SBOMs, packages, CVEs) |
+| GET | `/api/v1/sboms/{id}/download` | Download the original SBOM document |
+| POST | `/api/v1/sboms/upload` | Push-model SBOM upload (requires `AUTH_ENABLED=true`) |
+| PATCH | `/api/v1/sboms/{id}` | Set/clear `source_repo` / `source_ref` (#332; requires `AUTH_ENABLED=true`) |
 
 ## VEX Architecture
 

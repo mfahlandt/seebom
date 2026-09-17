@@ -29,6 +29,16 @@ type Tab = 'vulns' | 'licenses' | 'deps';
         <button class="download-btn" title="Download original SBOM" (click)="downloadSbom()">⬇ Download</button>
       </div>
 
+      <div class="source-row" *ngIf="detail.source_repo || detail.source_ref">
+        <span class="source-label">Source:</span>
+        <a *ngIf="detail.source_repo && isUrl(detail.source_repo)"
+           [href]="detail.source_repo" target="_blank" rel="noopener" class="source-link">
+          {{ detail.source_repo }} <span class="link-icon">↗</span>
+        </a>
+        <span *ngIf="detail.source_repo && !isUrl(detail.source_repo)" class="source-value">{{ detail.source_repo }}</span>
+        <span *ngIf="detail.source_ref" class="source-ref" title="Source ref (branch, tag or commit)">@ {{ detail.source_ref }}</span>
+      </div>
+
       <div class="stats-row">
         <div class="stat"><strong>{{ detail.package_count | number }}</strong> packages</div>
         <div class="stat"><strong>{{ detail.vuln_count | number }}</strong> vulnerabilities</div>
@@ -195,6 +205,23 @@ type Tab = 'vulns' | 'licenses' | 'deps';
       font-family: inherit; font-weight: 500; transition: all 0.15s;
     }
     .download-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .source-row {
+      display: flex; align-items: center; gap: 8px; margin: -8px 0 12px;
+      font-size: 0.75rem; overflow: hidden;
+    }
+    .source-label { color: var(--text-secondary); font-weight: 500; flex-shrink: 0; }
+    .source-link {
+      color: var(--accent); text-decoration: none; font-family: monospace; font-size: 0.72rem;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .source-link:hover { text-decoration: underline; }
+    .source-value { font-family: monospace; font-size: 0.72rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .source-ref {
+      font-family: monospace; font-size: 0.7rem; color: var(--text-secondary);
+      background: var(--bg); border: 1px solid var(--border); border-radius: 2px;
+      padding: 1px 6px; flex-shrink: 0; cursor: help;
+    }
     .stats-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
     .stat { background: var(--surface-alt); padding: 6px 14px; border-radius: 2px; font-size: 0.8rem; border: 1px solid var(--border); }
     .critical { color: var(--severity-critical); }

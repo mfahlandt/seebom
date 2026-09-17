@@ -28,6 +28,8 @@ type SBOMListItem struct {
 	PackageCount uint64 `json:"package_count"`
 	VulnCount    uint64 `json:"vuln_count"`
 	IngestedAt   string `json:"ingested_at"`
+	SourceRepo   string `json:"source_repo,omitempty"`
+	SourceRef    string `json:"source_ref,omitempty"`
 }
 
 // PaginatedResponse wraps any list response with pagination metadata.
@@ -110,6 +112,8 @@ type SBOMDetail struct {
 	PackageCount  uint64 `json:"package_count"`
 	VulnCount     uint64 `json:"vuln_count"`
 	IngestedAt    string `json:"ingested_at"`
+	SourceRepo    string `json:"source_repo,omitempty"`
+	SourceRef     string `json:"source_ref,omitempty"`
 	CriticalVulns uint64 `json:"critical_vulns"`
 	HighVulns     uint64 `json:"high_vulns"`
 	MediumVulns   uint64 `json:"medium_vulns"`

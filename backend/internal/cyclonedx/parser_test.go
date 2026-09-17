@@ -116,4 +116,3 @@ func TestParse_NotCycloneDX(t *testing.T) {
 		t.Error("expected error for non-CycloneDX document")
 	}
 }
-

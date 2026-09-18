@@ -66,11 +66,16 @@ type Vulnerability struct {
 	Severity         string    `json:"severity"`
 	Summary          string    `json:"summary"`
 	AffectedVersions []string  `json:"affected_versions"`
-	FixedVersion     string    `json:"fixed_version"`
-	OSVJSON          string    `json:"osv_json"`
-	Cluster          string    `json:"cluster,omitempty"`
-	Namespace        string    `json:"namespace,omitempty"`
-	Project          string    `json:"project,omitempty"`
+	// Aliases are the other identifiers OSV lists for the same flaw
+	// (GHSA-… ↔ CVE-… ↔ GO-…). VEX matching accepts any of them: a
+	// statement written about the CVE must hit the finding stored under
+	// its GHSA id.
+	Aliases      []string `json:"aliases,omitempty"`
+	FixedVersion string   `json:"fixed_version"`
+	OSVJSON      string   `json:"osv_json"`
+	Cluster      string   `json:"cluster,omitempty"`
+	Namespace    string   `json:"namespace,omitempty"`
+	Project      string   `json:"project,omitempty"`
 }
 
 // LicenseCompliance represents the compliance status for a license within an SBOM.
@@ -173,9 +178,10 @@ type VEXStatement struct {
 	// a global one. Stored as String in ClickHouse so '' can mean "global".
 	SBOMID string `json:"sbom_id,omitempty"`
 	// ProductRef is the OpenVEX product @id (or purl identifier) this
-	// statement was made about. Not persisted — the parsing worker uses it
-	// to resolve SBOMID at ingest.
-	ProductRef string `json:"-"`
+	// statement was made about. Persisted (migration 020) so statements
+	// whose product SBOM had not been ingested yet can be re-resolved
+	// later — without the ref an unscoped statement was inert forever.
+	ProductRef string `json:"product_ref,omitempty"`
 	// ProductWide reports that the document named a product with no
 	// subcomponents, i.e. the status covers every component of the product.
 	// Not persisted: once ProductRef resolves to an SBOM the parsing worker

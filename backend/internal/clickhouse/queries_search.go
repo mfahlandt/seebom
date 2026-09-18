@@ -52,9 +52,13 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([
 				argMax(s.author, s.vex_timestamp) AS vex_author,
 				argMax(s.tooling, s.vex_timestamp) AS vex_tooling,
 				max(s.vex_timestamp) AS winning_timestamp
-			FROM (SELECT DISTINCT vuln_id, purl FROM vulnerabilities FINAL WHERE sbom_id = ?) AS f
+			FROM (
+				SELECT DISTINCT vuln_id, purl,
+					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
+				FROM vulnerabilities FINAL WHERE sbom_id = ?
+			) AS f
 			INNER JOIN (SELECT * FROM vex_statements FINAL WHERE sbom_id = ?) AS s
-				ON s.vuln_id = f.vuln_id
+				ON s.vuln_id = f.match_id
 			WHERE s.product_purl = f.purl OR s.product_purl = '*'
 			GROUP BY f.vuln_id, f.purl
 		) AS vx ON vx.vuln_id = v.vuln_id AND vx.purl = v.purl
@@ -374,6 +378,23 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 // This checks both direct and transitive dependencies by looking up the PURL in
 // the sbom_packages arrays.
 func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) ([]dto.AffectedProject, error) {
+	// The requested id plus every alias OSV lists for it (GHSA <-> CVE <->
+	// GO-...). VEX documents routinely use a different identifier for the
+	// same flaw than the one the finding is stored under; matching on the
+	// exact string alone made those statements silently miss.
+	matchIDs := []string{vulnID}
+	if err := c.Conn.QueryRow(ctx, `
+		SELECT groupUniqArray(alias)
+		FROM (
+			SELECT arrayJoin(aliases) AS alias
+			FROM vulnerabilities FINAL
+			WHERE vuln_id = ?
+		)
+	`, vulnID).Scan(&matchIDs); err != nil && !isNoRows(err) {
+		log.Printf("WARNING: alias lookup for %s: %v", vulnID, err)
+	}
+	matchIDs = append(matchIDs, vulnID)
+
 	// First find all PURLs affected by this CVE.
 	purlRows, err := c.Conn.Query(ctx,
 		"SELECT DISTINCT purl, severity FROM vulnerabilities FINAL WHERE vuln_id = ?", vulnID)
@@ -476,10 +497,10 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 			if err := c.Conn.QueryRow(ctx, `
 				SELECT argMax(status, vex_timestamp)
 				FROM vex_statements FINAL
-				WHERE vuln_id = ?
+				WHERE vuln_id IN (?)
 					AND sbom_id = ?
 					AND (product_purl = ? OR product_purl = '*')
-			`, vulnID, sbomID, ps.purl).Scan(&vexStatus); err != nil && !isNoRows(err) {
+			`, matchIDs, sbomID, ps.purl).Scan(&vexStatus); err != nil && !isNoRows(err) {
 				log.Printf("WARNING: vex status for %s/%s in sbom %s: %v", vulnID, ps.purl, sbomID, err)
 			}
 

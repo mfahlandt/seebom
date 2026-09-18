@@ -116,12 +116,16 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 			SELECT
 				v.sbom_id AS sbom_id, v.vuln_id AS vuln_id, v.purl AS purl,
 				argMax(vx.status, vx.vex_timestamp) AS winning_status
-			FROM (SELECT * FROM vulnerabilities FINAL) AS v
+			FROM (
+				SELECT sbom_id, vuln_id, purl,
+					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
+				FROM vulnerabilities FINAL
+			) AS v
 			INNER JOIN (
 				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
 				FROM vex_statements FINAL
 				WHERE sbom_id != ''
-			) AS vx ON vx.vuln_id = v.vuln_id
+			) AS vx ON vx.vuln_id = v.match_id
 				AND vx.sbom_id = toString(v.sbom_id)
 			WHERE vx.product_purl = v.purl OR vx.product_purl = '*'
 			GROUP BY v.sbom_id, v.vuln_id, v.purl
@@ -282,12 +286,16 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 			SELECT
 				toString(f.sbom_id) AS sbom_id, f.vuln_id AS vuln_id, f.purl AS purl,
 				argMax(s.status, s.vex_timestamp) AS vex_status
-			FROM (SELECT DISTINCT sbom_id, vuln_id, purl FROM vulnerabilities FINAL) AS f
+			FROM (
+				SELECT DISTINCT sbom_id, vuln_id, purl,
+					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
+				FROM vulnerabilities FINAL
+			) AS f
 			INNER JOIN (
 				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
 				FROM vex_statements FINAL
 				WHERE sbom_id != ''
-			) AS s ON s.vuln_id = f.vuln_id AND s.sbom_id = toString(f.sbom_id)
+			) AS s ON s.vuln_id = f.match_id AND s.sbom_id = toString(f.sbom_id)
 			WHERE s.product_purl = f.purl OR s.product_purl = '*'
 			GROUP BY f.sbom_id, f.vuln_id, f.purl
 		) AS vx ON vx.vuln_id = v.vuln_id

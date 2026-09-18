@@ -40,6 +40,15 @@ import { SBOMListItem } from '../../core/api.models';
           <a [routerLink]="['/sboms', sbom.sbom_id]" class="sbom-link">
             <span class="name">{{ sbom.document_name || sbom.source_file }}</span>
             <span class="version badge">{{ sbom.spdx_version }}</span>
+            <span class="owner-badge cluster-badge" *ngIf="sbom.cluster" [title]="'Cluster: ' + sbom.cluster">
+              {{ sbom.cluster }}
+            </span>
+            <span class="owner-badge" *ngIf="sbom.namespace" [title]="'Namespace: ' + sbom.namespace">
+              {{ sbom.namespace }}
+            </span>
+            <span class="owner-badge" *ngIf="sbom.project" [title]="'Project: ' + sbom.project">
+              {{ sbom.project }}
+            </span>
             <span class="packages">{{ sbom.package_count | number }} packages</span>
             <span class="vulns" [class.has-vulns]="sbom.vuln_count > 0">
               {{ sbom.vuln_count | number }} vulns
@@ -104,6 +113,13 @@ import { SBOMListItem } from '../../core/api.models';
     .download-btn:hover { border-color: var(--accent); color: var(--accent); }
     .name { flex: 1; font-weight: 500; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .badge { background: var(--bg); color: var(--text-secondary); padding: 2px 6px; border-radius: 2px; font-size: 0.7rem; font-weight: 500; }
+    .owner-badge {
+      background: var(--surface-alt); color: var(--text-secondary);
+      border: 1px solid var(--border); padding: 1px 6px; border-radius: 2px;
+      font-size: 0.65rem; font-weight: 500; white-space: nowrap; flex-shrink: 0;
+      max-width: 140px; overflow: hidden; text-overflow: ellipsis; cursor: help;
+    }
+    .owner-badge.cluster-badge { background: var(--status-info-bg); color: var(--accent-hover); border-color: transparent; }
     .packages { color: var(--text-secondary); font-size: 0.8rem; width: 110px; }
     .vulns { font-size: 0.8rem; width: 80px; color: var(--text-secondary); }
     .has-vulns { color: var(--severity-critical); font-weight: 600; }

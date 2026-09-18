@@ -384,7 +384,10 @@ names until re-processed. Project-scoped license exceptions match the exact reso
       "vuln_count": 12,
       "ingested_at": "2026-05-20T14:30:00Z",
       "source_repo": "https://github.com/containerd/containerd",
-      "source_ref": "v1.7.2"
+      "source_ref": "v1.7.2",
+      "cluster": "prod-eu",
+      "namespace": "payments",
+      "project": "payment-service"
     }
   ],
   "total": 142,
@@ -394,6 +397,8 @@ names until re-processed. Project-scoped license exceptions match the exact reso
 ```
 
 `source_repo` / `source_ref` (#332) identify where the product's source lives — extracted from the document at ingest (SPDX root `downloadLocation` / vcs `ExternalRef`; CycloneDX `metadata.component.externalReferences[type=vcs]` and `pedigree.commits[0].uid`), overridable via the upload headers or `PATCH /api/v1/sboms/{id}`. Both are omitted from the JSON when unknown.
+
+`cluster` / `namespace` / `project` (#177) are the three ownership dimensions the SBOM was tagged with at ingest (see [Ownership Data Model]({{< relref "/docs/architecture" >}}#ownership-data-model)). Each is omitted when unset, so single-instance deployments see the same payload as before. The same fields are returned by `GET /api/v1/clusters/{name}/sboms`.
 
 ### `GET /api/v1/sboms/{id}/detail`
 

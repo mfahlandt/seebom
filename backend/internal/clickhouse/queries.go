@@ -88,7 +88,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 		"SELECT count() FROM vex_statements FINAL").Scan(&stats.TotalVEXStatements)
 
 	// Scope-aware (#350): a statement only suppresses a finding in the SBOM
-	// it is scoped to; global legacy statements ('') keep applying everywhere.
+	// it is scoped to; there is no global/fleet-wide VEX scope.
 	var suppressedByVEX uint64
 	_ = c.Conn.QueryRow(ctx, `
 		SELECT count(DISTINCT (vuln_id, purl))
@@ -97,7 +97,7 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 			SELECT 1 FROM (SELECT * FROM vex_statements FINAL) AS vx
 			WHERE vx.vuln_id = v.vuln_id
 			AND vx.product_purl = v.purl
-			AND (vx.sbom_id = '' OR vx.sbom_id = toString(v.sbom_id))
+			AND vx.sbom_id = toString(v.sbom_id)
 			AND vx.status = 'not_affected'
 		)
 	`).Scan(&suppressedByVEX)
@@ -245,7 +245,7 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 				SELECT vuln_id, product_purl, sbom_id, status
 				FROM vex_statements FINAL
 			) AS vx ON vx.vuln_id = v.vuln_id AND vx.product_purl = v.purl
-				AND (vx.sbom_id = '' OR vx.sbom_id = toString(v.sbom_id))
+				AND vx.sbom_id = toString(v.sbom_id)
 			%s
 		)
 	`, vexHaving)
@@ -263,7 +263,7 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 			SELECT vuln_id, product_purl, sbom_id, status
 			FROM vex_statements FINAL
 		) AS vx ON vx.vuln_id = v.vuln_id AND vx.product_purl = v.purl
-			AND (vx.sbom_id = '' OR vx.sbom_id = toString(v.sbom_id))
+			AND vx.sbom_id = toString(v.sbom_id)
 		%s
 		ORDER BY v.severity ASC, v.discovered_at DESC
 		LIMIT ? OFFSET ?

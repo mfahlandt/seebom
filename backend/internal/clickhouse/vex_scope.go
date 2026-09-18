@@ -50,9 +50,9 @@ func (c *Client) ResolveSBOMByProductRef(ctx context.Context, ref string) (strin
 	return sbomID, nil
 }
 
-// QuerySBOMVEXStatements lists the VEX statements affecting one SBOM (#350):
-// statements scoped to it plus global legacy statements (” — marked by the
-// empty sbom_id in the response). Scoped statements sort first.
+// QuerySBOMVEXStatements lists the VEX statements scoped to one SBOM (#350).
+// Unscoped ("global") statements are not returned: a statement without a
+// resolved product scope says nothing about this SBOM.
 func (c *Client) QuerySBOMVEXStatements(ctx context.Context, sbomID string) ([]dto.VEXStatementItem, error) {
 	rows, err := c.Conn.Query(ctx, `
 		SELECT vex_id, document_id, source_file, sbom_id, product_purl,
@@ -60,9 +60,9 @@ func (c *Client) QuerySBOMVEXStatements(ctx context.Context, sbomID string) ([]d
 			   action_statement, vex_timestamp, ingested_at,
 			   author, role, tooling, status_notes
 		FROM vex_statements FINAL
-		WHERE sbom_id = ? OR sbom_id = ''
-		ORDER BY sbom_id != ? ASC, vex_timestamp DESC
-	`, sbomID, sbomID)
+		WHERE sbom_id = ?
+		ORDER BY vex_timestamp DESC
+	`, sbomID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vex statements for sbom %s: %w", sbomID, err)
 	}

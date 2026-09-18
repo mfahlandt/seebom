@@ -218,9 +218,9 @@ A VEX statement asserts the status of a vulnerability **for a product** — the 
 
 1. **Explicit:** `POST /api/v1/sboms/upload?sbom_id=<uuid>` scopes every statement in the uploaded VEX document to that SBOM.
 2. **Automatic:** the statement's OpenVEX product `@id` is resolved against `sboms` — by `sbom_id`, normalised `source_repo` URL (#332), `document_namespace` or `document_name`. `products[].subcomponents[]` are supported: the subcomponent purl matches `vulnerabilities.purl`, the product identifies the SBOM.
-3. **Fallback:** no match → the statement is stored **global** (`sbom_id = ''`), preserving pre-018 behaviour for component-style documents (Trivy et al.), with a worker warning — global statements suppress fleet-wide.
+3. **Fallback:** no match → the statement is stored unscoped (`sbom_id = ''`) with a worker warning. Unscoped statements suppress **nothing**: without a resolved product they make no verifiable claim about any SBOM — there is no fleet-wide VEX scope.
 
-Every suppression join is scope-aware: a statement applies iff `sbom_id` matches the finding's SBOM or is global, and an SBOM-scoped statement beats a global one before the latest-wins rule (#335). The UI surfaces statements as a **VEX tab** in the SBOM detail view with a `this SBOM` / `global` badge; there is no fleet-wide VEX page (the `/api/v1/vex/statements` endpoint remains for automation).
+Every suppression join is scope-aware: a statement applies iff its `sbom_id` matches the finding's SBOM; among the matching statements the latest-wins rule applies (#335). The UI surfaces statements as a **VEX tab** in the SBOM detail view; there is no fleet-wide VEX page (the `/api/v1/vex/statements` endpoint remains for automation).
 
 ## CVE Refresher
 

@@ -199,4 +199,3 @@ func (c *Client) enrichProjectStats(ctx context.Context, items []dto.ProjectList
 		items[i].VulnCount = vulnMap[items[i].ProjectName]
 	}
 }
-

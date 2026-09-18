@@ -282,7 +282,7 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 | `cluster` | string | Overrides this instance's configured `CLUSTER_NAME` for the resulting ingestion job. |
 | `namespace` | string | Overrides the configured `NAMESPACE` (#138). The deployment namespace the artifact belongs to, e.g. `payments`. |
 | `project` | string | Overrides the configured `PROJECT` (#57), e.g. `payment-service`. |
-| `sbom_id` | — | **VEX uploads only** (#350): scopes every statement in the document to this SBOM. Must be a valid SBOM UUID; rejected with `400` on SBOM uploads or malformed values. Without it, the worker resolves the statement's OpenVEX product `@id` against `sboms` (`source_repo`, `document_namespace`, `document_name`) and falls back to a **global** statement. |
+| `sbom_id` | — | **VEX uploads only** (#350): scopes every statement in the document to this SBOM. Must be a valid SBOM UUID; rejected with `400` on SBOM uploads or malformed values. Without it, the worker resolves the statement's OpenVEX product `@id` against `sboms` (`source_repo`, `document_namespace`, `document_name`); if nothing matches the statement is stored **unscoped** and suppresses nothing. |
 
 All three are optional and independent. A parameter that is absent **or blank** inherits the instance default — `?namespace=` and omitting it entirely mean the same thing, so a client cannot accidentally blank out a configured value. Values are trimmed.
 
@@ -542,7 +542,7 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 
 ### `GET /api/v1/sboms/{id}/vex`
 
-VEX statements affecting one SBOM (#350): statements **scoped to it** plus **global** legacy statements. Scoped statements sort first; a statement is global when `sbom_id` is absent from the row.
+VEX statements affecting one SBOM (#350): every statement **scoped to it**, newest first. Unscoped statements (`sbom_id = ''`, product unresolvable at ingest) are not returned — they apply to no SBOM.
 
 **Path Parameters:**
 
@@ -550,9 +550,9 @@ VEX statements affecting one SBOM (#350): statements **scoped to it** plus **glo
 |-----------|------|-------------|
 | `id` | UUID | SBOM identifier |
 
-**Response:** `200 OK` — array of `VEXStatementItem` (same shape as `/api/v1/vex/statements`, including provenance from #334). `sbom_id` on a row marks it as scoped to this SBOM.
+**Response:** `200 OK` — array of `VEXStatementItem` (same shape as `/api/v1/vex/statements`, including provenance from #334). Every row carries this SBOM's `sbom_id`.
 
-**Why scoping matters:** a VEX statement asserts a vulnerability status **for a product**. `vulnerable_code_not_in_execute_path` is a reachability claim about one product — another project with the identical library version may be exploitable. Scoped statements therefore only suppress findings in their own SBOM; global statements (pre-018 documents whose product matched no SBOM) keep applying everywhere and are marked in the UI.
+**Why scoping matters:** a VEX statement asserts a vulnerability status **for a product**. `vulnerable_code_not_in_execute_path` is a reachability claim about one product — another project with the identical library version may be exploitable. A statement therefore only suppresses findings in its own SBOM; a statement whose product could not be resolved suppresses nothing at all — there is no global/fleet-wide VEX scope.
 
 
 ### `GET /api/v1/sboms/{id}/licenses`
@@ -875,7 +875,7 @@ Paginated list of all ingested VEX statements with affected SBOM cross-reference
 }
 ```
 
-`sbom_id` (#350) marks the SBOM the statement is scoped to; it is omitted for **global** legacy statements, which apply to every SBOM. `author`, `role`, `tooling` and `status_notes` (#334) carry the statement's provenance, taken from the OpenVEX document (`author`/`role`/`tooling`) and statement (`status_notes`) at ingest. All four are omitted when the source document does not set them — including every statement ingested before migration `017`. Automated producers (VEXViper, #338) set `tooling` and write confidence + reasoning into `status_notes`; a `role`/`tooling`-based automated-vs-human badge and a `?vex_source=` filter follow in Phase 3.
+`sbom_id` (#350) marks the SBOM the statement is scoped to; it is omitted for **unscoped** statements, whose product could not be resolved at ingest — those suppress findings in no SBOM. `author`, `role`, `tooling` and `status_notes` (#334) carry the statement's provenance, taken from the OpenVEX document (`author`/`role`/`tooling`) and statement (`status_notes`) at ingest. All four are omitted when the source document does not set them — including every statement ingested before migration `017`. Automated producers (VEXViper, #338) set `tooling` and write confidence + reasoning into `status_notes`; a `role`/`tooling`-based automated-vs-human badge and a `?vex_source=` filter follow in Phase 3.
 
 ---
 

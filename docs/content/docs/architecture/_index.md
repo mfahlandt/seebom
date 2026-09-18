@@ -222,6 +222,20 @@ A VEX statement asserts the status of a vulnerability **for a product** — the 
 
 Every suppression join is scope-aware: a statement applies iff its `sbom_id` matches the finding's SBOM; among the matching statements the latest-wins rule applies (#335). The UI surfaces statements as a **VEX tab** in the SBOM detail view; there is no fleet-wide VEX page (the `/api/v1/vex/statements` endpoint remains for automation).
 
+#### Which component a statement covers
+
+OpenVEX documents come in three shapes, and the one a statement uses decides what `vex_statements.product_purl` holds:
+
+| Document shape | `product_purl` | Matches |
+|----------------|----------------|---------|
+| `products[]` + `subcomponents[]` | the subcomponent purl | that one component in the scoped SBOM |
+| `products[]`, no `subcomponents[]` | `*` | **every** component of the scoped SBOM |
+| product `@id` *is* a package purl (Trivy et al.) | that purl | that one component |
+
+The middle row is the plain reading of the spec: a statement naming only a product asserts the status for the product as a whole — "this application is not affected by CVE-X", whichever library carries the vulnerable code. Such a statement has no component purl to match against `vulnerabilities.purl`, so the parsing worker stores the sentinel `*` once the product `@id` resolves to an SBOM. Resolution is what tells this shape apart from the third one: only the `sboms` lookup can say whether a ref names a product or a component.
+
+Latest-wins is applied *after* the component match, so a product-wide `not_affected` and a later component-scoped `affected` for the same finding resolve by timestamp like any other pair.
+
 ## CVE Refresher
 
 Lightweight daily CronJob that queries all unique PURLs (~20k) against the OSV API in 1000-PURL batch chunks, deduplicates against existing vulnerabilities, and inserts new findings — without re-scanning all SBOMs.

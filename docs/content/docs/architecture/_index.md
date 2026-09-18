@@ -76,11 +76,11 @@ API Gateway (REST) → 24 Endpoints → Angular UI
 |-------|--------|---------|
 | `sboms` | ReplacingMergeTree | SBOM metadata |
 | `sbom_packages` | MergeTree | Parallel arrays (names, PURLs, licenses, relationships) |
-| `vulnerabilities` | MergeTree | OSV results |
+| `vulnerabilities` | MergeTree | OSV results incl. `aliases` (migration `019`): every other identifier OSV lists for the entry (GHSA ↔ CVE); VEX matching accepts a statement whose `vuln_id` equals the finding's id **or** any alias |
 | `license_compliance` | SummingMergeTree | License compliance per SBOM |
 | `ingestion_queue` | ReplacingMergeTree | Job queue (job_type: sbom/vex) |
 | `dashboard_stats_mv` | SummingMergeTree (MV) | Pre-aggregated daily stats |
-| `vex_statements` | ReplacingMergeTree | OpenVEX statements incl. provenance (`author`, `role`, `tooling`, `status_notes`; #334, migration `017`) |
+| `vex_statements` | ReplacingMergeTree | OpenVEX statements incl. provenance (`author`, `role`, `tooling`, `status_notes`; #334, migration `017`) and the persisted product `@id` (`product_ref`, migration `020`) that powers the post-ingest VEX rescue pass |
 | `cve_refresh_log` | MergeTree | CVE refresh run history |
 | `github_license_cache` | ReplacingMergeTree | Resolved GitHub licenses cache |
 | `github_repo_metadata` | ReplacingMergeTree | GitHub repo metadata (archived, fork, stars) |
@@ -219,6 +219,9 @@ A VEX statement asserts the status of a vulnerability **for a product** — the 
 1. **Explicit:** `POST /api/v1/sboms/upload?sbom_id=<uuid>` scopes every statement in the uploaded VEX document to that SBOM.
 2. **Automatic:** the statement's OpenVEX product `@id` is resolved against `sboms` — by `sbom_id`, normalised `source_repo` URL (#332), `document_namespace` or `document_name`. `products[].subcomponents[]` are supported: the subcomponent purl matches `vulnerabilities.purl`, the product identifies the SBOM.
 3. **Fallback:** no match → the statement is stored unscoped (`sbom_id = ''`) with a worker warning. Unscoped statements suppress **nothing**: without a resolved product they make no verifiable claim about any SBOM — there is no fleet-wide VEX scope.
+
+**VEX rescue (migration `020`):** VEX and SBOM files land in arbitrary order. A statement whose product SBOM had not been ingested yet fails resolution and is stored unscoped — but its OpenVEX product `@id` is persisted (`vex_statements.product_ref`). After every successful SBOM ingest the parsing worker re-resolves all unscoped statements and scopes those whose product now exists, turning the ordering problem into a short delay. A statement naming a product with **no subcomponents** covers the whole product: it is stored product-wide (`product_purl = '*'`) and matches every component of its SBOM; a subcomponent-pinned statement keeps its component purl.
+**Alias matching (migration `019`):** the same flaw carries several identifiers (OSV reports `GHSA-…` with alias `CVE-…`). Findings store the OSV alias list (`vulnerabilities.aliases`), and every suppression join matches a statement when its `vuln_id` equals the finding's `vuln_id` **or** appears in its aliases — a statement written about the CVE suppresses the finding stored under its GHSA id.
 
 Every suppression join is scope-aware: a statement applies iff its `sbom_id` matches the finding's SBOM; among the matching statements the latest-wins rule applies (#335). The UI surfaces statements as a **VEX tab** in the SBOM detail view; there is no fleet-wide VEX page (the `/api/v1/vex/statements` endpoint remains for automation).
 

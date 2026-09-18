@@ -89,18 +89,37 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 
 	// Scope-aware (#350): a statement only suppresses a finding in the SBOM
 	// it is scoped to; there is no global/fleet-wide VEX scope.
+	//
+	// Deliberately a JOIN rather than WHERE EXISTS (...v.vuln_id...): ClickHouse
+	// rejects a correlated subquery referencing an outer column ("Resolve
+	// identifier from parent scope only supported for constants and CTE",
+	// UNSUPPORTED_METHOD), so the EXISTS form errored on every single call - and
+	// with the error discarded the dashboard reported 0 suppressed findings
+	// forever. The error is returned now instead of silently yielding a wrong 0.
+	//
+	// Counted per (sbom_id, vuln_id, purl), not per (vuln_id, purl):
+	// total_vulnerabilities counts one row per SBOM, so a statement scoped to one
+	// SBOM must subtract exactly that SBOM's finding, or effective_vulnerabilities
+	// drifts. Latest-wins (#335) is applied before the not_affected test: a newer
+	// "affected" statement un-suppresses the finding.
 	var suppressedByVEX uint64
-	_ = c.Conn.QueryRow(ctx, `
-		SELECT count(DISTINCT (vuln_id, purl))
+	if err := c.Conn.QueryRow(ctx, `
+		SELECT count(DISTINCT (v.sbom_id, v.vuln_id, v.purl))
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
-		WHERE EXISTS (
-			SELECT 1 FROM (SELECT * FROM vex_statements FINAL) AS vx
-			WHERE vx.vuln_id = v.vuln_id
+		INNER JOIN (
+			SELECT
+				sbom_id, vuln_id, product_purl,
+				argMax(status, vex_timestamp) AS winning_status
+			FROM vex_statements FINAL
+			WHERE sbom_id != ''
+			GROUP BY sbom_id, vuln_id, product_purl
+		) AS vx ON vx.vuln_id = v.vuln_id
 			AND vx.product_purl = v.purl
 			AND vx.sbom_id = toString(v.sbom_id)
-			AND vx.status = 'not_affected'
-		)
-	`).Scan(&suppressedByVEX)
+		WHERE vx.winning_status = 'not_affected'
+	`).Scan(&suppressedByVEX); err != nil {
+		return nil, fmt.Errorf("failed to count vex-suppressed vulnerabilities: %w", err)
+	}
 
 	stats.SuppressedByVEX = suppressedByVEX
 	if stats.TotalVulnerabilities >= suppressedByVEX {

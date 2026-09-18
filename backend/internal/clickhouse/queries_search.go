@@ -211,6 +211,12 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 		&detail.SourceRepo, &detail.SourceRef, &detail.PackageCount,
 	)
 	if err != nil {
+		// An unknown sbom_id is a missing resource, not a server fault: report
+		// it as such so the gateway can answer 404 instead of 500 and the
+		// error log stays free of routine client mistakes.
+		if isNoRows(err) {
+			return nil, ErrSBOMNotFound
+		}
 		return nil, fmt.Errorf("failed to query sbom detail for %s: %w", sbomID, err)
 	}
 	detail.IngestedAt = ingestedAt.Format(time.RFC3339)

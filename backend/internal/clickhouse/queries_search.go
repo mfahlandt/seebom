@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/internal/license"
@@ -44,21 +45,23 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
 		LEFT JOIN (
 			SELECT
-				vuln_id, product_purl,
-				argMax(status, vex_timestamp) AS vex_status,
-				argMax(justification, vex_timestamp) AS vex_justification,
-				argMax(toString(vex_id), vex_timestamp) AS vex_statement_id,
-				argMax(author, vex_timestamp) AS vex_author,
-				argMax(tooling, vex_timestamp) AS vex_tooling,
-				max(vex_timestamp) AS winning_timestamp
-			FROM vex_statements FINAL
-			WHERE sbom_id = ?
-			GROUP BY vuln_id, product_purl
-		) AS vx ON vx.vuln_id = v.vuln_id AND vx.product_purl = v.purl
+				f.vuln_id AS vuln_id, f.purl AS purl,
+				argMax(s.status, s.vex_timestamp) AS vex_status,
+				argMax(s.justification, s.vex_timestamp) AS vex_justification,
+				argMax(toString(s.vex_id), s.vex_timestamp) AS vex_statement_id,
+				argMax(s.author, s.vex_timestamp) AS vex_author,
+				argMax(s.tooling, s.vex_timestamp) AS vex_tooling,
+				max(s.vex_timestamp) AS winning_timestamp
+			FROM (SELECT DISTINCT vuln_id, purl FROM vulnerabilities FINAL WHERE sbom_id = ?) AS f
+			INNER JOIN (SELECT * FROM vex_statements FINAL WHERE sbom_id = ?) AS s
+				ON s.vuln_id = f.vuln_id
+			WHERE s.product_purl = f.purl OR s.product_purl = '*'
+			GROUP BY f.vuln_id, f.purl
+		) AS vx ON vx.vuln_id = v.vuln_id AND vx.purl = v.purl
 		WHERE v.sbom_id = ?
 		ORDER BY v.severity ASC, v.discovered_at DESC
 		LIMIT 1 BY v.vuln_id, v.purl
-	`, sbomID, sbomID)
+	`, sbomID, sbomID, sbomID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulns for sbom %s: %w", sbomID, err)
 	}
@@ -460,11 +463,25 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 				}
 			}
 
-			// Check VEX status.
+			// Check VEX status for this finding, in this SBOM.
+			//
+			// Scoped to sbom_id (#350): without it a statement issued for one
+			// product coloured the rows of every other project carrying the same
+			// library. Ordered by vex_timestamp (#335) so the newest statement
+			// wins instead of whichever row came back first, and '*' matches the
+			// product-wide shape. A failure leaves the status empty rather than
+			// failing the whole listing, but it is logged - discarding it is how
+			// the dashboard reported a wrong 0 for months (#356).
 			var vexStatus string
-			_ = c.Conn.QueryRow(ctx,
-				"SELECT status FROM vex_statements FINAL WHERE vuln_id = ? AND product_purl = ? LIMIT 1",
-				vulnID, ps.purl).Scan(&vexStatus)
+			if err := c.Conn.QueryRow(ctx, `
+				SELECT argMax(status, vex_timestamp)
+				FROM vex_statements FINAL
+				WHERE vuln_id = ?
+					AND sbom_id = ?
+					AND (product_purl = ? OR product_purl = '*')
+			`, vulnID, sbomID, ps.purl).Scan(&vexStatus); err != nil && !isNoRows(err) {
+				log.Printf("WARNING: vex status for %s/%s in sbom %s: %v", vulnID, ps.purl, sbomID, err)
+			}
 
 			items = append(items, dto.AffectedProject{
 				SBOMID:       sbomID,

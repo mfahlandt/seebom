@@ -149,6 +149,19 @@ const (
 	JobTypeVEX  = "vex"
 )
 
+// VEXProductWide is the sentinel stored in vex_statements.product_purl for a
+// statement that applies to the product as a whole rather than to one of its
+// components.
+//
+// OpenVEX allows a statement to name only products[] with no subcomponents[],
+// which asserts the status for the entire product — "this application is not
+// affected by CVE-X", regardless of which library carries the vulnerable code.
+// Such a statement has no component purl to match against
+// vulnerabilities.purl, so suppression joins test for this sentinel in
+// addition to an exact purl match. '*' can never collide with a real purl,
+// which always starts with "pkg:".
+const VEXProductWide = "*"
+
 // VEXStatement represents a single VEX statement linking a product to a vulnerability status.
 type VEXStatement struct {
 	IngestedAt time.Time `json:"ingested_at"`
@@ -162,7 +175,13 @@ type VEXStatement struct {
 	// ProductRef is the OpenVEX product @id (or purl identifier) this
 	// statement was made about. Not persisted — the parsing worker uses it
 	// to resolve SBOMID at ingest.
-	ProductRef      string    `json:"-"`
+	ProductRef string `json:"-"`
+	// ProductWide reports that the document named a product with no
+	// subcomponents, i.e. the status covers every component of the product.
+	// Not persisted: once ProductRef resolves to an SBOM the parsing worker
+	// rewrites ProductPURL to VEXProductWide, which is what the suppression
+	// joins read.
+	ProductWide     bool      `json:"-"`
 	ProductPURL     string    `json:"product_purl"`
 	VulnID          string    `json:"vuln_id"`
 	Status          string    `json:"status"`        // not_affected, affected, fixed, under_investigation

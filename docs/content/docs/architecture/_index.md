@@ -236,6 +236,14 @@ The middle row is the plain reading of the spec: a statement naming only a produ
 
 Latest-wins is applied *after* the component match, so a product-wide `not_affected` and a later component-scoped `affected` for the same finding resolve by timestamp like any other pair.
 
+#### Identifier aliases (migration 019)
+The same flaw carries several identifiers — OSV reports `GHSA-p6mc-m468-83gw` with `aliases: ["CVE-2020-8203"]`, and a human writing a VEX document reaches for the CVE. Matching `vuln_id` as an exact string made those statements miss silently. The OSV alias list is stored on every finding (`vulnerabilities.aliases`), and every suppression query matches a statement when its `vuln_id` equals the finding's id **or** appears in its aliases. Findings ingested before migration `019` have an empty list and keep exact-match behaviour until the next re-scan.
+#### Arrival order (migration 020)
+VEX and SBOM files land in arbitrary order. A statement whose product SBOM has not been ingested yet fails resolution and is stored unscoped — and used to stay that way forever, because the product `@id` was discarded and the idempotency guard skipped the document on every later encounter. Two mechanisms fix this:
+- the product `@id` is persisted (`vex_statements.product_ref`), and after each successful SBOM ingest the worker re-resolves all unscoped statements, scoping those whose product now exists ("rescue pass");
+- the idempotency guard only skips a document whose statements are all scoped; one with unscoped statements is re-processed.
+Rescue is best-effort by design: the SBOM ingest that triggers it has already succeeded, so a VEX bookkeeping failure logs a warning instead of failing the job.
+
 ## CVE Refresher
 
 Lightweight daily CronJob that queries all unique PURLs (~20k) against the OSV API in 1000-PURL batch chunks, deduplicates against existing vulnerabilities, and inserts new findings — without re-scanning all SBOMs.

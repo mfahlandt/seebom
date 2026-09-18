@@ -28,7 +28,7 @@ func TestClusterDTOs(t *testing.T) {
 func TestClusterStatsDTO(t *testing.T) {
 	stats := dto.ClusterStats{
 		Cluster:              "staging",
-		TotalSBOMs:          10,
+		TotalSBOMs:           10,
 		TotalPackages:        500,
 		TotalVulnerabilities: 25,
 		CriticalVulns:        2,

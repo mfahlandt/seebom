@@ -194,8 +194,8 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
         </cdk-virtual-scroll-viewport>
       </div>
 
-      <!-- VEX Tab (#350): statements scoped to this SBOM, plus global legacy
-           statements marked as such. -->
+      <!-- VEX Tab (#350): every statement scoped to this SBOM; unscoped
+           statements apply to no SBOM and are not listed here. -->
       <div *ngIf="activeTab === 'vex'" class="tab-content vex-content">
         <p class="vex-empty" *ngIf="!vexStatements.length">
           No VEX statements apply to this SBOM. Upload one with
@@ -208,10 +208,6 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
               <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: stmt.vuln_id}" class="vex-vuln-id">
                 {{ stmt.vuln_id }}
               </a>
-              <span class="vex-scope-badge" [class.scope-global]="!stmt.sbom_id"
-                    [title]="stmt.sbom_id ? 'Scoped to this SBOM' : 'Legacy global statement — applies to every SBOM'">
-                {{ stmt.sbom_id ? 'this SBOM' : 'global' }}
-              </span>
               <span class="vex-origin-badge" *ngIf="isAutomated(stmt)" title="Produced by tooling">automated</span>
               <span class="vex-ts">{{ stmt.vex_timestamp | date: 'medium' }}</span>
             </div>
@@ -447,11 +443,6 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .vexs-under_investigation { background: var(--bg); color: var(--status-warning); }
     .vex-vuln-id { font-weight: 600; font-size: 0.8rem; color: var(--accent); text-decoration: none; }
     .vex-vuln-id:hover { text-decoration: underline; }
-    .vex-scope-badge {
-      padding: 1px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
-      background: var(--status-info-bg); color: var(--accent-hover); cursor: help; flex-shrink: 0;
-    }
-    .vex-scope-badge.scope-global { background: var(--severity-high-bg); color: var(--severity-high); }
     .vex-origin-badge {
       padding: 1px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
       background: var(--bg); color: var(--text-secondary); cursor: help; flex-shrink: 0;

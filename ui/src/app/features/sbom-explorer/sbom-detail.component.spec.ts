@@ -83,7 +83,7 @@ describe('SbomDetailComponent', () => {
     expect(style.flexShrink).toBe('0');
   });
 
-  it('should render VEX statements with scope badges (#350)', () => {
+  it('should render the VEX statements scoped to this SBOM (#350)', () => {
     const fixture = TestBed.createComponent(SbomDetailComponent);
     const component = fixture.componentInstance;
 
@@ -103,7 +103,7 @@ describe('SbomDetailComponent', () => {
       },
       {
         vex_id: 'v2', document_id: 'd', source_file: 'b.openvex.json',
-        product_purl: 'pkg:golang/y@2',
+        sbom_id: 'test-sbom-123', product_purl: 'pkg:golang/y@2',
         vuln_id: 'CVE-2026-2', status: 'affected',
         justification: '',
         vex_timestamp: '2026-09-01T12:00:00Z', ingested_at: '2026-09-02T12:00:00Z',
@@ -116,11 +116,10 @@ describe('SbomDetailComponent', () => {
     const rows = compiled.querySelectorAll('.vex-row');
     expect(rows.length).toBe(2);
 
-    // Scoped statement: "this SBOM" badge + automated badge (tooling set).
-    expect(rows[0].querySelector('.vex-scope-badge')?.textContent?.trim()).toBe('this SBOM');
+    // Tooling set -> automated badge; no scope badge, every listed
+    // statement is scoped to this SBOM (#350).
     expect(rows[0].querySelector('.vex-origin-badge')?.textContent?.trim()).toBe('automated');
-    // Global legacy statement: marked as such, no automated badge.
-    expect(rows[1].querySelector('.vex-scope-badge')?.textContent?.trim()).toBe('global');
+    expect(rows[0].querySelector('.vex-scope-badge')).toBeNull();
     expect(rows[1].querySelector('.vex-origin-badge')).toBeNull();
   });
 

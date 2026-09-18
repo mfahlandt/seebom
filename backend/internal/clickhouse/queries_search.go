@@ -27,10 +27,9 @@ import (
 // aggregate function".
 //
 // Scope semantics (#350): only statements scoped to this SBOM (sbom_id = ?)
-// or global legacy statements (sbom_id = ”) apply — a statement about
-// another product must never suppress findings here. A scoped statement
-// beats a global one regardless of timestamps: argMax orders by the tuple
-// (scoped, vex_timestamp).
+// apply — a statement about another product must never suppress findings
+// here. Unscoped ("global") statements are ignored: there is no fleet-wide
+// VEX scope.
 func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([]dto.VulnerabilityListItem, error) {
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
@@ -41,21 +40,19 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
 			ifNull(vx.vex_statement_id, '') AS vex_statement_id,
 			ifNull(vx.vex_author, '') AS vex_author,
-			ifNull(vx.vex_tooling, '') AS vex_tooling,
-			ifNull(vx.vex_scoped, false) AS vex_scoped
+			ifNull(vx.vex_tooling, '') AS vex_tooling
 		FROM (SELECT * FROM vulnerabilities FINAL) AS v
 		LEFT JOIN (
 			SELECT
 				vuln_id, product_purl,
-				argMax(status, (sbom_id != '', vex_timestamp)) AS vex_status,
-				argMax(justification, (sbom_id != '', vex_timestamp)) AS vex_justification,
-				argMax(toString(vex_id), (sbom_id != '', vex_timestamp)) AS vex_statement_id,
-				argMax(author, (sbom_id != '', vex_timestamp)) AS vex_author,
-				argMax(tooling, (sbom_id != '', vex_timestamp)) AS vex_tooling,
-				argMax(vex_timestamp, (sbom_id != '', vex_timestamp)) AS winning_timestamp,
-				argMax(sbom_id != '', (sbom_id != '', vex_timestamp)) AS vex_scoped
+				argMax(status, vex_timestamp) AS vex_status,
+				argMax(justification, vex_timestamp) AS vex_justification,
+				argMax(toString(vex_id), vex_timestamp) AS vex_statement_id,
+				argMax(author, vex_timestamp) AS vex_author,
+				argMax(tooling, vex_timestamp) AS vex_tooling,
+				max(vex_timestamp) AS winning_timestamp
 			FROM vex_statements FINAL
-			WHERE sbom_id = ? OR sbom_id = ''
+			WHERE sbom_id = ?
 			GROUP BY vuln_id, product_purl
 		) AS vx ON vx.vuln_id = v.vuln_id AND vx.product_purl = v.purl
 		WHERE v.sbom_id = ?
@@ -71,23 +68,18 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([
 	for rows.Next() {
 		var item dto.VulnerabilityListItem
 		var discoveredAt, vexTimestamp time.Time
-		var vexScoped bool
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
 			&discoveredAt, &item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
-			&item.VEXAuthor, &item.VEXTooling, &vexScoped,
+			&item.VEXAuthor, &item.VEXTooling,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)
 		}
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 		if item.VEXStatus != "" {
-			if vexScoped {
-				item.VEXScope = "sbom"
-			} else {
-				item.VEXScope = "global"
-			}
+			item.VEXScope = "sbom"
 		}
 		// Zero time = no VEX statement for this pair (LEFT JOIN miss);
 		// leave the field empty so omitempty drops it from the JSON.

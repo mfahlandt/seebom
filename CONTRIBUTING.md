@@ -121,6 +121,41 @@ Release-notes categories in [`.github/release.yml`](.github/release.yml) rely on
 (`enhancement`, `feature`, `bug`, `fix`, `docs`, `test`, `chore`, `dependencies`, `ci`,
 `security`), so apply one of them with `/label` before a PR merges.
 
+### Path-based labels (`OWNERS` instead of `labeler.yml`)
+
+Component labels come from the `labels:` list in `OWNERS` files, not from glob rules:
+
+- For every changed file the closest `OWNERS` file up the directory tree is used, and the
+  `labels:` of **all** `OWNERS` files on the way to the repository root are applied. A change to
+  `backend/internal/osv/client.go` therefore gets `security` (from `backend/internal/osv/OWNERS`)
+  and `backend` (from `backend/OWNERS`).
+- Matching is per directory. There are no `**/*.md`-style patterns; to label a subtree, add an
+  `OWNERS` file with `labels:` to it (approvers/reviewers are inherited when omitted).
+- Labels are only ever added, never removed. If a later push drops all changes to a component,
+  its label stays until someone runs `/remove-label <name>`.
+- Every label used in `OWNERS` must be listed under `labels.labels` in `.github/prow.yaml` so
+  that label-sync creates it with color and description.
+
+### Interplay with branch protection on `main`
+
+`main` is protected (required status checks `Backend (Go)`, `Frontend (Angular)`, `Helm Lint`
+with "require branches to be up to date", one approving review from a code owner, stale reviews
+dismissed on push). Prow does not weaken any of this:
+
+- The merge is a regular GitHub merge API call with the workflow's `GITHUB_TOKEN`. GitHub rejects
+  it until the PR is mergeable, so `lgtm` + `approved` alone never merge anything. Prow retries
+  on every PR/review/check event and hourly.
+- `/approve` and `/lgtm` only set labels; they are **not** GitHub reviews. The CODEOWNERS
+  requirement is satisfied only by a GitHub approving review from someone listed in
+  [`.github/CODEOWNERS`](.github/CODEOWNERS). Such a review also counts as `/approve`, so the
+  normal flow is: reviewer submits an approving review, then (or in the same comment) `/lgtm`.
+  Keep `CODEOWNERS` and the `approvers:` in `OWNERS` in sync.
+- "Require branches to be up to date": Prow does not rebase or update branches. If `main` moved,
+  update the branch (button in the PR or `git rebase`); this drops `lgtm` (bound to the commit)
+  and dismisses the stale GitHub review, both must be given again.
+- The `Prow` workflow itself must not be a required status check (it runs on
+  `pull_request_target` and would gate itself).
+
 ## What to Contribute
 
 - **Bug fixes** — Check [open issues](https://github.com/seebom-labs/bomhort/issues?q=is%3Aissue+is%3Aopen+label%3Abug)

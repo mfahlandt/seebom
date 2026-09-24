@@ -1,3 +1,12 @@
+# https://github.com/cncf/prow-github-actions/blob/main/docs/commands.md#owners
+# Mirrors the catch-all rule in .github/CODEOWNERS. Per-component OWNERS files below add
+# path labels (owners-label) and narrower reviewer sets; approvers inherit from here.
+#
+# approvers: /approve (and /lgtm)
 approvers:
-- mfahlandt
-- koksay
+  - mfahlandt
+  - koksay
+# reviewers: /lgtm and blunderbuss review requests
+reviewers:
+  - mfahlandt
+  - koksay

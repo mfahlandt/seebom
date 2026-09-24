@@ -110,8 +110,7 @@ helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
 | **CI** | `.github/workflows/ci.yml` | Push/PR to `main` | Go build + test + vet, Angular build, Helm lint |
 | **Release** | `.github/workflows/release.yml` | Git tag `v*` | Build + push 5 images (multi-arch), Helm chart, GitHub Release |
 | **Pre-Release** | `.github/workflows/pre-release.yml` | Manual (`workflow_dispatch`) | Build images from any branch, create pre-release |
-| **Sync Labels** | `.github/workflows/sync-labels.yml` | Push to `main` (labels.yml changed) or manual | Sync `.github/labels.yml` to GitHub repo labels |
-| **Auto-Label** | `.github/workflows/labeler.yml` | PR opened/updated | Auto-assigns labels based on changed files (`.github/labeler.yml`) |
+| **Prow** | `.github/workflows/prow.yml` | Issues, comments, PRs, hourly | Chat-ops (`/lgtm`, `/approve`, `/hold`, `/label`, ...), OWNERS-based path labels + review requests, auto-merge, label sync from `.github/prow.yaml` ([cncf/prow-github-actions](https://github.com/cncf/prow-github-actions)) |
 
 ---
 

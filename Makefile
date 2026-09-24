@@ -6,7 +6,7 @@
 .PHONY: ui-build ui-dev
 .PHONY: ingest worker api
 .PHONY: images images-push
-.PHONY: sync-labels check-demo-sboms
+.PHONY: check-demo-sboms
 .PHONY: kind-up kind-down kind-reingest kind-build kind-deploy kind-stop kind-start kind-status
 .PHONY: docs-serve docs-build docs-deps
 
@@ -288,10 +288,6 @@ images-push: images ## Build and push all images to GHCR (TAG=dev)
 	docker push $(REGISTRY)/$(REPO)/ui:$(TAG)
 	@echo "✅ Pushed 5 images to $(REGISTRY)/$(REPO) with tag $(TAG)"
 
-
-# ─── GitHub ──────────────────────────────────────────────────────────────────
-sync-labels: ## Sync GitHub labels from .github/labels.yml (requires gh + yq)
-	.github/scripts/sync-labels.sh
 
 # ─── Kind (local Kubernetes) ─────────────────────────────────────────────────
 kind-up: ## Deploy BOMHort to a local Kind cluster (see local/secrets.env)

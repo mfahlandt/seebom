@@ -74,11 +74,52 @@ fixture:
 
 1. Ensure all CI checks pass (Go build + test + vet, Angular build, Helm lint)
 2. Fill out the [PR template](.github/PULL_REQUEST_TEMPLATE.md) completely
-3. At least one maintainer approval is required for merge
+3. At least one maintainer approval is required for merge (see [Labels and Chat-Ops](#labels-and-chat-ops))
 4. Sign off your commits (Developer Certificate of Origin):
    ```bash
    git commit -s -m "feat: add new feature"
    ```
+
+## Labels and Chat-Ops
+
+Labeling, review routing and merging are automated with
+[cncf/prow-github-actions](https://github.com/cncf/prow-github-actions), configured in
+[`.github/prow.yaml`](.github/prow.yaml) and driven by
+[`.github/workflows/prow.yml`](.github/workflows/prow.yml). Who may approve what is defined in the
+`OWNERS` files (root and per component directory).
+
+### What happens automatically
+
+- Opening a PR applies component labels (`backend`, `frontend`, `helm`, `clickhouse`,
+  `documentation`, `ci`, `examples`, `security`) from the `OWNERS` files covering the changed
+  files and requests a review from one of their reviewers.
+- New issues get `needs-triage` until a maintainer applies a `triage/*` label.
+- A PR is merged (squash) automatically once it carries `lgtm` and `approved`, has no
+  `do-not-merge/*` or `hold` label, and all required checks pass. `lgtm` is bound to the
+  reviewed commit; a new push removes it.
+
+### Slash commands
+
+Write a command at the start of a line in an issue or PR comment. Several commands may be placed
+on separate lines. Commands inside code blocks or blockquotes are ignored. Every label command
+has a `/remove-<command> <value>` form.
+
+| Command | Who | Effect |
+|---|---|---|
+| `/lgtm`, `/lgtm cancel` | OWNERS reviewers/approvers (not the author) | Adds/removes `lgtm` |
+| `/approve`, `/approve cancel` | OWNERS approvers | Marks the changed files as approved; `approved` is set once every file is covered. A GitHub approving review counts too |
+| `/hold`, `/hold cancel` (`/unhold`) | anyone | Adds/removes `do-not-merge/hold` |
+| `/assign [@user]`, `/unassign`, `/cc [@user]`, `/uncc` | anyone | Assignees / review requests |
+| `/priority <critical\|high\|medium\|low>` | org members | Exclusive `priority/*` label |
+| `/triage <accepted\|needs-information\|duplicate\|not-planned>` | org members | Exclusive `triage/*` label; clears `needs-triage` |
+| `/label <name>` | org members | Plain labels: `bug`, `enhancement`, `feature`, `fix`, `docs`, `chore`, `security`, `test`, `skip-changelog`, ... |
+| `/good-first-issue`, `/help` | org members | `good first issue` / `help wanted` |
+| `/close`, `/reopen`, `/retitle <title>`, `/milestone <name>`, `/lock` | org members | Issue / PR housekeeping |
+| `/retest`, `/test <job>`, `/ok-to-test` | org members | Re-run CI |
+
+Release-notes categories in [`.github/release.yml`](.github/release.yml) rely on the plain labels
+(`enhancement`, `feature`, `bug`, `fix`, `docs`, `test`, `chore`, `dependencies`, `ci`,
+`security`), so apply one of them with `/label` before a PR merges.
 
 ## What to Contribute
 

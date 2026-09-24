@@ -55,6 +55,21 @@ See the [Development Guide](https://docs.bomhort.dev/docs/development/) for deta
 - Run `cd backend && go test ./... -count=1 -race` before submitting
 - See [Testing Guide](https://docs.bomhort.dev/docs/development/testing/) for patterns and conventions
 
+### Demo SBOMs
+
+Sample SBOMs under `examples/` are **git-ignored on purpose** (`examples/**/*.spdx.json`,
+`examples/**/*.cdx.json`): they carry deliberately outdated packages, and osv-scanner —
+which drives the OpenSSF Scorecard — honours `.gitignore`, so this is what keeps the
+demo data from being reported as BOMHort's own vulnerabilities (#394). Ignoring them
+does not remove tracked files from git; it only affects new ones. So when you add a
+fixture:
+
+1. `git add -f examples/<dir>/<path>/<file>.spdx.json` — a plain `git add` silently skips it
+2. Document it in that directory's `README.md` (`examples/fleet/README.md`, …)
+3. Run `make check-demo-sboms` — it fails on a fixture that is on disk but untracked, on a
+   README that names a file git does not have, and on a tracked fixture no README mentions.
+   CI runs the same check.
+
 ## Pull Request Process
 
 1. Ensure all CI checks pass (Go build + test + vet, Angular build, Helm lint)

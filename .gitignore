@@ -67,6 +67,8 @@ patch_api.py
 #
 # Consequence: a NEW demo SBOM needs `git add -f`. That is the trade for not
 # having to rename the files away from the .spdx.json / .cdx.json convention
-# this project itself documents.
+# this project itself documents. Forgetting it is caught by
+# `make check-demo-sboms` locally and by the "Demo SBOM inventory" CI job,
+# which cross-checks each examples/*/README.md against what git tracks.
 examples/**/*.spdx.json
 examples/**/*.cdx.json

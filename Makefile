@@ -6,7 +6,7 @@
 .PHONY: ui-build ui-dev
 .PHONY: ingest worker api
 .PHONY: images images-push
-.PHONY: sync-labels
+.PHONY: sync-labels check-demo-sboms
 .PHONY: kind-up kind-down kind-reingest kind-build kind-deploy kind-stop kind-start kind-status
 .PHONY: docs-serve docs-build docs-deps
 
@@ -54,6 +54,9 @@ check-migrations: ## Fail if the Helm chart's migrations have drifted from db/mi
 		fi; \
 	done
 	@echo "✅ Helm migrations in sync."
+
+check-demo-sboms: ## Fail if a demo SBOM under examples/ is on disk but not tracked, or not documented in its README
+	@.github/scripts/check-demo-sboms.sh
 
 migrate: ## Run all pending database migrations
 	@echo "⏳ Running migrations..."

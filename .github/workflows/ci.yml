@@ -124,3 +124,18 @@ jobs:
 
       - name: Test license exceptions templates
         run: python3 -B -m unittest discover -s deploy/helm/tests -v
+
+  demo-sboms:
+    name: Demo SBOM inventory
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # examples/**/*.spdx.json is git-ignored so osv-scanner / Scorecard do
+      # not report the deliberately vulnerable demo data as dependencies
+      # (#394). A new fixture therefore needs `git add -f`, which is easy to
+      # forget; this catches the fingerprint of that mistake — a README that
+      # documents a file git does not have.
+      - name: Every documented demo SBOM is tracked, every tracked one documented
+        run: .github/scripts/check-demo-sboms.sh
+

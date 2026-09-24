@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
@@ -48,6 +49,31 @@ const projectKeyExpr = `
 		s.source_file
 	)
 `
+
+// projectSBOMs selects the (sbom_id, project_name) pairs of the whole estate
+// with the project resolved through projectKeyExpr. Every project-scoped
+// query starts from this so the identity rule is applied in exactly one
+// place; a caller that re-derived the name differently would attach stats to
+// projects the listing never produces.
+//
+// Filter on project_name in an outer WHERE — ClickHouse resolves SELECT
+// aliases there, so `WHERE project_name = ?` works without repeating the
+// expression.
+const projectSBOMs = `(
+	SELECT s.sbom_id AS sbom_id, s.ingested_at AS ingested_at, s.tags AS tags,
+	       s.document_version AS document_version, s.source_repo AS source_repo,
+	       s.cluster AS cluster, s.namespace AS namespace,
+	       ` + projectKeyExpr + ` AS project_name
+	FROM (SELECT * FROM sboms FINAL) AS s
+)`
+
+// packageKeyExpr is the de-duplication identity of a component (#398): the
+// PURL, or name@version for packages without one. Requires the aliased
+// relation `p` over sbom_packages.
+const packageKeyExpr = `arrayMap(
+	(purl, name, ver) -> if(purl != '', purl, concat(name, '@', ver)),
+	p.package_purls, p.package_names, p.package_versions
+)`
 
 // QueryProjects fetches a grouped project listing.
 //
@@ -102,13 +128,14 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 	//
 	// groupUniqArrayArray flattens the per-SBOM tag arrays into one distinct
 	// set per project, so the listing can show a project's groupings without a
-	// second round trip.
+	// second round trip. argMax picks the id of the newest SBOM, which is what
+	// "latest" should mean — groupArray order is not defined.
 	query := fmt.Sprintf(`
 		SELECT
 			project_name,
 			count() AS sbom_count,
 			max(s.ingested_at) AS latest_ingested,
-			groupArray(toString(s.sbom_id)) AS sbom_ids,
+			argMax(toString(s.sbom_id), s.ingested_at) AS latest_sbom_id,
 			arraySort(groupUniqArrayArray(s.tags)) AS project_tags
 		FROM (
 			SELECT
@@ -136,16 +163,11 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 	var items []dto.ProjectListItem
 	for rows.Next() {
 		var item dto.ProjectListItem
-		var sbomIDs []string
 		var latestIngested time.Time
-		if err := rows.Scan(&item.ProjectName, &item.SBOMCount, &latestIngested, &sbomIDs, &item.Tags); err != nil {
+		if err := rows.Scan(&item.ProjectName, &item.SBOMCount, &latestIngested, &item.LatestSBOMID, &item.Tags); err != nil {
 			return nil, fmt.Errorf("failed to scan project row: %w", err)
 		}
 		item.LatestIngested = latestIngested.UTC().Format(time.RFC3339)
-		// Store the latest SBOM ID for quick navigation.
-		if len(sbomIDs) > 0 {
-			item.LatestSBOMID = sbomIDs[0]
-		}
 		items = append(items, item)
 	}
 
@@ -153,8 +175,8 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 		items = []dto.ProjectListItem{}
 	}
 
-	// Enrich with package and vulnerability counts in a second pass.
-	// This is more efficient than a massive JOIN in the main query.
+	// Enrich with de-duplicated package and vulnerability counts for the
+	// projects on this page only.
 	if len(items) > 0 {
 		c.enrichProjectStats(ctx, items)
 	}
@@ -169,29 +191,43 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 
 // enrichProjectStats adds package_count and vuln_count to project items.
 //
-// The joined sboms projection must carry `project` too, or projectKeyExpr
-// would fall through to its heuristic here while the main query used the
-// configured value — producing stats keyed by names that match no listed
-// project, i.e. counts that silently render as zero.
+// Semantics (#398): both counts are de-duplicated across the project's
+// SBOMs. Before this, package_count was the sum of per-SBOM array lengths
+// and vuln_count the number of finding rows, so a project with ten versions
+// reported roughly ten times its real size — numbers that grew with upload
+// frequency rather than with content.
+//
+// Scope (#344-E): only the projects on the current page are aggregated. The
+// previous version scanned sbom_packages and vulnerabilities for *every*
+// project in the estate on each page view and threw away all but fifty rows.
+//
+// Errors are logged and leave the counts at zero rather than failing the
+// listing: a slow or unavailable stats path must not take the project list
+// down with it.
 func (c *Client) enrichProjectStats(ctx context.Context, items []dto.ProjectListItem) {
-	const sbomProjection = `(SELECT sbom_id, source_file, document_name, project FROM sboms FINAL) AS s`
+	names := make([]string, len(items))
+	for i := range items {
+		names[i] = items[i].ProjectName
+	}
 
-	// Package counts per project.
+	// Distinct components per project. The ARRAY JOIN explodes each SBOM's
+	// package arrays into one row per component; uniqExact then collapses
+	// the same component appearing in several versions.
 	pkgQuery := fmt.Sprintf(`
-		SELECT project_name, sum(pkg_count) AS total_packages
-		FROM (
-			SELECT
-				%s AS project_name,
-				length(p.package_names) AS pkg_count
+		SELECT s.project_name, uniqExact(pkg_key) AS package_count
+		FROM %s AS s
+		INNER JOIN (
+			SELECT p.sbom_id AS sbom_id, arrayJoin(%s) AS pkg_key
 			FROM (SELECT * FROM sbom_packages FINAL) AS p
-			INNER JOIN %s
-				ON p.sbom_id = s.sbom_id
-		)
-		GROUP BY project_name
-	`, projectKeyExpr, sbomProjection)
+		) AS pk ON pk.sbom_id = s.sbom_id
+		WHERE s.project_name IN (?)
+		GROUP BY s.project_name
+	`, projectSBOMs, packageKeyExpr)
 
-	pkgMap := make(map[string]uint64)
-	if rows, err := c.Conn.Query(ctx, pkgQuery); err == nil {
+	pkgMap := make(map[string]uint64, len(items))
+	if rows, err := c.Conn.Query(ctx, pkgQuery, names); err != nil {
+		log.Printf("WARNING: project package counts: %v", err)
+	} else {
 		for rows.Next() {
 			var name string
 			var count uint64
@@ -202,21 +238,20 @@ func (c *Client) enrichProjectStats(ctx context.Context, items []dto.ProjectList
 		rows.Close()
 	}
 
-	// Vulnerability counts per project.
+	// Distinct (vuln_id, purl) pairs per project.
 	vulnQuery := fmt.Sprintf(`
-		SELECT project_name, count() AS vuln_count
-		FROM (
-			SELECT
-				%s AS project_name
-			FROM (SELECT * FROM vulnerabilities FINAL) AS v
-			INNER JOIN %s
-				ON v.sbom_id = s.sbom_id
-		)
-		GROUP BY project_name
-	`, projectKeyExpr, sbomProjection)
+		SELECT s.project_name, uniqExact(v.vuln_id, v.purl) AS vuln_count
+		FROM %s AS s
+		INNER JOIN (SELECT sbom_id, vuln_id, purl FROM vulnerabilities FINAL) AS v
+			ON v.sbom_id = s.sbom_id
+		WHERE s.project_name IN (?)
+		GROUP BY s.project_name
+	`, projectSBOMs)
 
-	vulnMap := make(map[string]uint64)
-	if rows, err := c.Conn.Query(ctx, vulnQuery); err == nil {
+	vulnMap := make(map[string]uint64, len(items))
+	if rows, err := c.Conn.Query(ctx, vulnQuery, names); err != nil {
+		log.Printf("WARNING: project vulnerability counts: %v", err)
+	} else {
 		for rows.Next() {
 			var name string
 			var count uint64
@@ -248,11 +283,17 @@ func (c *Client) QueryTags(ctx context.Context) ([]dto.TagListItem, error) {
 	// project_count is the more meaningful number of the two: tags group
 	// projects, so "12 projects" answers what an operator actually asked,
 	// while the SBOM count mostly reflects how many versions were uploaded.
+	//
+	// is_project (#398): a tag that is also a project name is a parent. The
+	// IN against the distinct project names is one extra pass over sboms,
+	// which is cheap next to the arrayJoin and saves the UI a lookup per
+	// chip.
 	query := fmt.Sprintf(`
 		SELECT
 			tag,
 			count() AS sbom_count,
-			uniqExact(project_name) AS project_count
+			uniqExact(project_name) AS project_count,
+			tag IN (SELECT DISTINCT %s FROM (SELECT * FROM sboms FINAL) AS s) AS is_project
 		FROM (
 			SELECT
 				arrayJoin(s.tags) AS tag,
@@ -261,7 +302,7 @@ func (c *Client) QueryTags(ctx context.Context) ([]dto.TagListItem, error) {
 		)
 		GROUP BY tag
 		ORDER BY tag ASC
-	`, projectKeyExpr)
+	`, projectKeyExpr, projectKeyExpr)
 
 	rows, err := c.Conn.Query(ctx, query)
 	if err != nil {
@@ -272,9 +313,11 @@ func (c *Client) QueryTags(ctx context.Context) ([]dto.TagListItem, error) {
 	items := []dto.TagListItem{}
 	for rows.Next() {
 		var item dto.TagListItem
-		if err := rows.Scan(&item.Tag, &item.SBOMCount, &item.ProjectCount); err != nil {
+		var isProject uint8
+		if err := rows.Scan(&item.Tag, &item.SBOMCount, &item.ProjectCount, &isProject); err != nil {
 			return nil, fmt.Errorf("failed to scan tag row: %w", err)
 		}
+		item.IsProject = isProject != 0
 		items = append(items, item)
 	}
 

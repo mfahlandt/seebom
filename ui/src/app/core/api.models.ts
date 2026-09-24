@@ -76,6 +76,11 @@ export interface VulnerabilityListItem {
   /** "sbom": the winning statement is scoped to this SBOM; unscoped
    *  statements never apply, so this is the only value (#350). */
   vex_scope?: 'sbom';
+  /**
+   * On project-level listings only (#398): how many of the project's SBOMs
+   * carry this (vuln_id, purl) pair. Absent on per-SBOM listings.
+   */
+  affected_sboms?: number;
 }
 
 export interface DependencyNode {
@@ -278,6 +283,11 @@ export interface PackageDetailResponse {
 export interface ProjectListItem {
   project_name: string;
   sbom_count: number;
+  /**
+   * De-duplicated across the project's SBOMs (#398): a component shipped in
+   * every version counts once, as does a (vuln_id, purl) pair. These are the
+   * project's numbers, not the sum of its versions' numbers.
+   */
   package_count: number;
   vuln_count: number;
   latest_ingested: string;
@@ -291,6 +301,53 @@ export interface ProjectListItem {
    */
   tags: string[];
 }
+
+/**
+ * One project as a unit, from GET /api/v1/projects/{name} (#398). Mirrors
+ * ClusterStats / NamespaceStats so the drill-downs share components.
+ */
+export interface ProjectDetail {
+  project_name: string;
+  tags: string[];
+  /**
+   * Tags that are themselves project names — the parents. A bucket laid out
+   * {parent}/{subproject}/… with INGEST_PATH_LAYOUT="tag/project" gives every
+   * sub-project its parent as a tag; these render as links up the tree.
+   */
+  parents: string[];
+  /** Other projects tagged with this project's name — its sub-projects. */
+  related_project_count: number;
+
+  sbom_count: number;
+  package_count: number;
+  vuln_count: number;
+  critical_vulns: number;
+  high_vulns: number;
+  medium_vulns: number;
+  low_vulns: number;
+
+  latest_ingested?: string;
+  latest_version?: string;
+  latest_sbom_id?: string;
+  source_repo?: string;
+
+  /** Where the project is deployed; empty on a catalogue instance. */
+  clusters: string[];
+  namespaces: string[];
+  license_breakdown: Record<string, number>;
+}
+
+/** One distinct component across a project's SBOMs (#398). */
+export interface ProjectPackageItem {
+  name: string;
+  version: string;
+  purl?: string;
+  /** How many of the project's SBOMs ship this component. */
+  sbom_count: number;
+  /** Distinct vulnerability ids known against it within the project. */
+  vuln_count: number;
+}
+
 /**
  * One grouping label and its reach, from GET /api/v1/tags.
  *
@@ -303,6 +360,11 @@ export interface TagListItem {
   sbom_count: number;
   /** Distinct projects carrying the tag; the number a grouping is really about. */
   project_count: number;
+  /**
+   * The tag is also a project name (#398) — a parent whose children carry
+   * it. Rendered as a link to the parent rather than as a plain filter chip.
+   */
+  is_project: boolean;
 }
 
 export interface GlobalSearchPackage {

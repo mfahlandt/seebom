@@ -244,6 +244,21 @@ licenseExceptions:
 licensePolicy:
   enabled: true
   mountPath: /data/config/license-policy.json
+  # How compound SPDX expressions ("Apache-2.0 AND MIT", "MIT OR GPL-2.0-only")
+  # are classified. Injected as LICENSE_EXPRESSION_MODE and overrides the
+  # "expressionMode" field of the policy file.
+  #   strict           – SPDX semantics: AND needs every operand permissive,
+  #                      one copyleft operand makes the expression copyleft;
+  #                      OR is permissive if any operand is. (default)
+  #   permissive-wins  – AND is treated like OR: one permissive operand is
+  #                      enough. For catalogues whose generators join a
+  #                      package's licenses with AND regardless of meaning.
+  #   off              – no expression evaluation; compound strings that are
+  #                      not listed verbatim in the policy stay "unknown".
+  # Leave empty to defer to the policy file / built-in default (strict).
+  # Changing this only affects newly processed SBOMs; re-process to update
+  # stored compliance results.
+  expressionMode: ""
 
 # Ingestion Watcher (CronJob)
 ingestionWatcher:

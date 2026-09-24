@@ -83,6 +83,7 @@ cp .env.example .env
 | `GITHUB_TOKEN` | *(empty)* | GitHub personal access token for license resolution. Increases rate limit from 60 to 5000 req/h. No scopes needed. |
 | `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution for `pkg:npm/*` packages with `NOASSERTION`/empty licenses. |
 | `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution for `pkg:nuget/*` packages with `NOASSERTION`/empty licenses. Legacy packages without `licenseExpression` fall back to their GitHub repository license. |
+| `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | How compound SPDX expressions (`Apache-2.0 AND MIT`, `MIT OR GPL-2.0-only`) are classified: `strict` (SPDX semantics), `permissive-wins` (one permissive operand suffices) or `off` (whole string looked up verbatim). Overrides `expressionMode` in `license-policy.json`. See "License Policy". |
 | `CLUSTER_NAME` | *(empty)* | Cluster identifier for multi-cluster deployments. All ingested data is tagged with this value. Empty = single-instance mode. |
 | `NAMESPACE` | *(empty)* | Default deployment-namespace label (#138) stamped onto all ingested data. Overridable per bucket and per upload (`?namespace=`). |
 | `PROJECT` | *(empty)* | Default project label (#57) stamped onto all ingested data. Overridable per bucket and per upload (`?project=`). |
@@ -509,6 +510,31 @@ The bundled default policy is derived from the [CNCF Allowed Third-Party License
 - **Permissive (allowed):** Apache-2.0, MIT, MIT-0, 0BSD, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Python-2.0, PostgreSQL, UPL-1.0, X11, Zlib, OpenSSL, and a few more (18 total)
 - **Copyleft (flagged):** GPL, LGPL, AGPL, MPL-2.0, EPL, EUPL, CPAL, and others (21 total)
 - **Unknown:** Any license not in either list is flagged for review
+
+### Compound Expressions
+
+SBOM generators frequently declare SPDX *expressions* rather than single IDs —
+`Apache-2.0 AND BSD-3-Clause AND MIT`, `MIT OR GPL-2.0-only`,
+`GPL-2.0-only WITH Classpath-exception-2.0`. BOMHort parses these (precedence
+`WITH` > `AND` > `OR`, parentheses, case-insensitive operators, deprecated `+`)
+and folds the operands into one category. The rule is configurable:
+
+| Mode | `Apache-2.0 AND MIT` | `MIT AND GPL-3.0-only` | `MIT OR GPL-3.0-only` |
+|------|----------------------|------------------------|-----------------------|
+| `strict` (default) | permissive | copyleft | permissive |
+| `permissive-wins` | permissive | permissive | permissive |
+| `off` | unknown | unknown | unknown |
+
+`strict` follows SPDX semantics — `AND` binds you to every operand, `OR` lets you
+choose. `permissive-wins` treats `AND` like `OR`; use it when your generators join
+a package's licenses with `AND` regardless of dual-licensing. `off` restores the
+pre-evaluation behaviour. A policy entry that lists a whole expression verbatim
+always wins, and a malformed expression (`MIT AND`) stays `unknown`.
+
+Set it via `expressionMode` in `license-policy.json`, the `LICENSE_EXPRESSION_MODE`
+environment variable (Compose `.env`), or `licensePolicy.expressionMode` in Helm —
+the environment variable wins. `GET /api/v1/license-policy` reports the active mode.
+Changing it only affects newly processed SBOMs; re-process to update stored results.
 
 ### License Exceptions
 

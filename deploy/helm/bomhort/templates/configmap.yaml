@@ -33,6 +33,12 @@ data:
   SBOM_LIMIT: {{ .Values.ingestionWatcher.sbomLimit | quote }}
   EXCEPTIONS_FILE: {{ .Values.licenseExceptions.mountPath | quote }}
   LICENSE_POLICY_FILE: {{ .Values.licensePolicy.mountPath | quote }}
+  {{- with .Values.licensePolicy.expressionMode }}
+  {{- if not (has . (list "strict" "permissive-wins" "off")) }}
+  {{- fail (printf "licensePolicy.expressionMode must be one of strict, permissive-wins, off (got %q)" .) }}
+  {{- end }}
+  LICENSE_EXPRESSION_MODE: {{ . | quote }}
+  {{- end }}
   {{- with .Values.originalStore }}
   ORIGINAL_STORE_BACKEND: {{ .backend | default "auto" | quote }}
   {{- if .s3.bucket }}

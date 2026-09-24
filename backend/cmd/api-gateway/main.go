@@ -125,6 +125,7 @@ func main() {
 	} else {
 		log.Printf("Using default license policy: %v", err)
 	}
+	applyLicenseExpressionMode(cfg.LicenseExpressionMode)
 
 	mux := http.NewServeMux()
 

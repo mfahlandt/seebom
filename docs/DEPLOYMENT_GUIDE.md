@@ -634,6 +634,7 @@ cp .env.example .env
 | `WORKER_REPLICAS` | `1` | Number of parallel parsing worker containers |
 | `WORKER_BATCH_SIZE` | `50` | Jobs claimed per polling cycle per worker |
 | `SKIP_OSV` | `false` | Skip OSV vulnerability API calls. Set `true` for fast initial bulk load. |
+| `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | Classification of compound SPDX expressions (`A AND B`, `A OR B`): `strict`, `permissive-wins` or `off`. Overrides `expressionMode` in `license-policy.json`. Re-scan after changing. |
 | `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI |
 | `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand, titles, disclaimer) |
 

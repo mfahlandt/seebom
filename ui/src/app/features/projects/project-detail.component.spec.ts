@@ -150,7 +150,42 @@ describe('ProjectDetailComponent', () => {
     expect(component.detail).toBeNull();
     expect(harness.routeNativeElement!.querySelector('.not-found')).toBeTruthy();
   });
+
+  it('should open on the overview and derive its KPIs from the read model and the vuln rows', async () => {
+    const { harness, component } = await open('kubernetes-mcp-server');
+    const enc = 'kubernetes-mcp-server';
+    httpMock.expectOne((r) => r.url === `/api/v1/projects/${enc}`).flush(detail({
+      sbom_count: 3,
+      license_breakdown: { permissive: 40, copyleft: 2, unknown: 1 },
+    }));
+    httpMock.expectOne((r) => r.url === `/api/v1/projects/${enc}/sboms`).flush({ data: [], total: 3, page: 1, page_size: 100 });
+    const vuln = (id: string, over: object = {}) => ({
+      vuln_id: id, severity: 'HIGH', purl: 'pkg:golang/x@1', summary: '', fixed_version: '',
+      source_file: '', discovered_at: '', affected_sboms: 1, ...over,
+    });
+    httpMock.expectOne((r) => r.url === `/api/v1/projects/${enc}/vulnerabilities`).flush([
+      vuln('CVE-1', { affected_sboms: 3 }),
+      vuln('CVE-2', { vex_status: 'not_affected' }),
+      vuln('CVE-3', { vex_status: 'affected', affected_sboms: 3 }),
+    ]);
+    harness.detectChanges();
+
+    expect(component.activeTab).toBe('overview');
+    // Only not_affected suppresses; an explicit "affected" statement does not.
+    expect(component.suppressedVulns).toBe(1);
+    expect(component.effectiveVulns).toBe(2);
+    expect(component.inEveryVersion).toBe(2);
+    // Findings = everything that is not permissive.
+    expect(component.licenseViolations).toBe(3);
+    expect(component.licenseSegments.map((s) => s.value)).toEqual([40, 2, 1]);
+    expect(component.vexSegments.length).toBe(2);
+
+    const el = harness.routeNativeElement!;
+    expect(el.querySelectorAll('.kpi-card').length).toBeGreaterThanOrEqual(5);
+    expect(el.querySelectorAll('app-donut-chart').length).toBe(3);
+  });
 });
+
 
 
 

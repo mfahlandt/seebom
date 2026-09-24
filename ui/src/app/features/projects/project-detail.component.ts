@@ -13,8 +13,10 @@ import {
   SBOMListItem,
   VulnerabilityListItem,
 } from '../../core/api.models';
+import { DonutChartComponent, DonutSegment } from '../../shared/charts/donut-chart.component';
+import { HorizontalBarChartComponent, BarItem } from '../../shared/charts/horizontal-bar-chart.component';
 
-type Tab = 'versions' | 'vulns' | 'packages' | 'subprojects';
+type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
 
 /**
  * One project as a unit (#398).
@@ -25,11 +27,16 @@ type Tab = 'versions' | 'vulns' | 'packages' | 'subprojects';
  * of the project's versions with de-duplicated counts, and — through tags
  * that are themselves project names — shows the way up to a parent and down
  * to sub-projects.
+ *
+ * The Overview tab is the global dashboard narrowed to this project: the
+ * same KPI cards and charts, fed from the project read model instead of the
+ * instance-wide stats, so a maintainer reads one project the way an operator
+ * reads the fleet.
  */
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule],
+  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="project-detail" *ngIf="detail">
@@ -94,6 +101,9 @@ type Tab = 'versions' | 'vulns' | 'packages' | 'subprojects';
       </div>
 
       <div class="tabs">
+        <button [class.active]="activeTab === 'overview'" (click)="activeTab = 'overview'">
+          Overview
+        </button>
         <button [class.active]="activeTab === 'versions'" (click)="activeTab = 'versions'">
           Versions ({{ sboms.length | number }})
         </button>
@@ -106,6 +116,78 @@ type Tab = 'versions' | 'vulns' | 'packages' | 'subprojects';
         <button *ngIf="detail.related_project_count" [class.active]="activeTab === 'subprojects'" (click)="selectSubprojects()">
           Sub-projects ({{ detail.related_project_count | number }})
         </button>
+      </div>
+
+      <!-- Overview: the dashboard, scoped to this project -->
+      <div *ngIf="activeTab === 'overview'" class="tab-content overview">
+        <div class="kpi-row">
+          <div class="kpi-card">
+            <span class="kpi-value">{{ detail.sbom_count | number }}</span>
+            <span class="kpi-label">{{ detail.sbom_count === 1 ? 'Version' : 'Versions' }}</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-value">{{ detail.package_count | number }}</span>
+            <span class="kpi-label">Distinct Packages</span>
+          </div>
+          <div class="kpi-card warn">
+            <span class="kpi-value">{{ effectiveVulns | number }}</span>
+            <span class="kpi-label">{{ suppressedVulns > 0 ? 'Effective Vulns' : 'Vulnerabilities' }}</span>
+          </div>
+          <div class="kpi-card ok" *ngIf="suppressedVulns > 0">
+            <span class="kpi-value">{{ suppressedVulns | number }}</span>
+            <span class="kpi-label">Suppressed by VEX</span>
+          </div>
+          <div class="kpi-card" [class.warn]="licenseViolations > 0" [class.ok]="licenseViolations === 0">
+            <span class="kpi-value">{{ licenseViolations | number }}</span>
+            <span class="kpi-label">License Findings</span>
+          </div>
+          <div class="kpi-card">
+            <span class="kpi-value">{{ inEveryVersion | number }}</span>
+            <span class="kpi-label">Vulns in every version</span>
+          </div>
+        </div>
+
+        <div class="charts-row">
+          <div class="chart-card">
+            <h3>Vulnerability Severity</h3>
+            <app-donut-chart [segments]="severitySegments" centerLabel="Vulnerabilities" />
+          </div>
+          <div class="chart-card">
+            <h3>License Breakdown</h3>
+            <app-donut-chart [segments]="licenseSegments" centerLabel="Packages" />
+          </div>
+          <div class="chart-card">
+            <h3>VEX Effectiveness</h3>
+            @if (suppressedVulns > 0) {
+              <app-donut-chart [segments]="vexSegments" centerLabel="Total" />
+            } @else {
+              <div class="empty-vex">
+                <p class="empty-vex-title">No VEX suppressions</p>
+                <p class="empty-vex-hint">No <code>not_affected</code> statement covers a finding of this project.</p>
+              </div>
+            }
+          </div>
+        </div>
+
+        <div class="charts-row two-col">
+          <div class="chart-card">
+            <h3>Vulnerabilities by Severity</h3>
+            <app-horizontal-bar-chart [bars]="severityBars" />
+          </div>
+          <div class="chart-card">
+            <h3>Packages by License Category</h3>
+            <app-horizontal-bar-chart [bars]="licenseBars" />
+          </div>
+        </div>
+
+        <div class="quick-links">
+          <button class="quick-link" (click)="activeTab = 'vulns'">Vulnerabilities <span class="arrow">→</span></button>
+          <button class="quick-link" (click)="selectPackages()">Packages <span class="arrow">→</span></button>
+          <a *ngIf="detail.latest_sbom_id" [routerLink]="['/sboms', detail.latest_sbom_id]" class="quick-link">
+            Latest SBOM<span *ngIf="detail.latest_version"> ({{ detail.latest_version }})</span> <span class="arrow">→</span>
+          </a>
+          <a routerLink="/license-compliance" [queryParams]="{search: detail.project_name}" class="quick-link">License Compliance <span class="arrow">→</span></a>
+        </div>
       </div>
 
       <!-- Versions -->
@@ -274,8 +356,38 @@ type Tab = 'versions' | 'vulns' | 'packages' | 'subprojects';
     }
     .tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
     .tab-content { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    .tab-content.overview { overflow-y: auto; gap: 12px; }
     .viewport { flex: 1; min-height: 400px; }
     .empty { padding: 32px; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
+
+    /* Overview: same vocabulary as the global dashboard, scoped to one project. */
+    .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .kpi-card {
+      display: flex; flex-direction: column; gap: 2px; padding: 14px 16px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+    }
+    .kpi-value { font-size: 1.4rem; font-weight: 700; color: var(--text); line-height: 1.2; letter-spacing: -0.02em; }
+    .kpi-label { font-size: 0.68rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500; }
+    .kpi-card.warn .kpi-value { color: var(--severity-critical); }
+    .kpi-card.ok .kpi-value { color: var(--status-success); }
+    .charts-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .charts-row.two-col { grid-template-columns: repeat(2, 1fr); }
+    .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 16px 20px; }
+    .chart-card h3 { margin: 0 0 12px; font-size: 0.78rem; font-weight: 600; color: var(--dark); text-transform: uppercase; letter-spacing: 0.03em; }
+    .empty-vex { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 180px; text-align: center; }
+    .empty-vex-title { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); }
+    .empty-vex-hint { margin: 4px 0 0; font-size: 0.72rem; color: var(--text-muted); }
+    .empty-vex-hint code { font-family: monospace; background: var(--surface-alt); padding: 1px 4px; border-radius: 2px; }
+    .quick-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; }
+    .quick-link {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: 4px; text-decoration: none; color: var(--dark); cursor: pointer;
+      font-size: 0.78rem; font-weight: 500; font-family: inherit; transition: border-color 0.15s; text-align: left;
+    }
+    .quick-link:hover { border-color: var(--accent); color: var(--accent); }
+    .arrow { color: var(--text-muted); }
+    .quick-link:hover .arrow { color: var(--accent); }
 
     .row { height: 52px; display: flex; align-items: center; border-bottom: 1px solid var(--border); }
     .row-link { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 12px; text-decoration: none; color: inherit; height: 100%; }
@@ -359,7 +471,20 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   packageSearch = '';
   subprojects: ProjectListItem[] = [];
 
-  activeTab: Tab = 'versions';
+  activeTab: Tab = 'overview';
+
+  // Overview tab. Severity and license come from the read model; the VEX
+  // split is derived from the vulnerability rows, which already carry the
+  // latest-wins statement per (vuln, package) across the project's versions.
+  severitySegments: DonutSegment[] = [];
+  severityBars: BarItem[] = [];
+  licenseSegments: DonutSegment[] = [];
+  licenseBars: BarItem[] = [];
+  vexSegments: DonutSegment[] = [];
+  suppressedVulns = 0;
+  effectiveVulns = 0;
+  licenseViolations = 0;
+  inEveryVersion = 0;
 
   private sbomPage = 1;
   private packagePage = 1;
@@ -416,6 +541,7 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
       // Packages total is known from the header without loading the list;
       // the list itself loads on first tab open.
       this.packagesTotal = res.detail.package_count;
+      this.buildOverview(res.detail, res.vulns);
       this.cdr.markForCheck();
     });
   }
@@ -423,6 +549,38 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+  }
+
+  /** Same palette and order as the global dashboard so the two read alike. */
+  private buildOverview(d: ProjectDetail, vulns: VulnerabilityListItem[]): void {
+    this.severitySegments = [
+      { label: 'Critical', value: d.critical_vulns, color: '#C43030' },
+      { label: 'High', value: d.high_vulns, color: '#E8871E' },
+      { label: 'Medium', value: d.medium_vulns, color: '#C07012' },
+      { label: 'Low', value: d.low_vulns, color: '#4b5563' },
+    ];
+    this.severityBars = [...this.severitySegments];
+
+    const lb = d.license_breakdown || {};
+    this.licenseSegments = [
+      { label: 'Permissive', value: lb['permissive'] || 0, color: '#0D6B5E' },
+      { label: 'Copyleft', value: lb['copyleft'] || 0, color: '#C43030' },
+      { label: 'Unknown', value: lb['unknown'] || 0, color: '#9ca3af' },
+    ];
+    this.licenseBars = [...this.licenseSegments];
+    this.licenseViolations = (lb['copyleft'] || 0) + (lb['unknown'] || 0);
+
+    this.suppressedVulns = vulns.filter((v) => v.vex_status === 'not_affected').length;
+    this.effectiveVulns = Math.max(0, vulns.length - this.suppressedVulns);
+    this.inEveryVersion = d.sbom_count > 0
+      ? vulns.filter((v) => v.affected_sboms === d.sbom_count).length
+      : 0;
+    this.vexSegments = this.suppressedVulns > 0
+      ? [
+          { label: 'Effective', value: this.effectiveVulns, color: '#E8871E' },
+          { label: 'Suppressed', value: this.suppressedVulns, color: '#0D6B5E' },
+        ]
+      : [];
   }
 
   /** Tags that are groupings rather than parents. */
@@ -510,7 +668,16 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     this.packagesTotal = 0;
     this.packageSearch = '';
     this.subprojects = [];
-    this.activeTab = 'versions';
+    this.activeTab = 'overview';
+    this.severitySegments = [];
+    this.severityBars = [];
+    this.licenseSegments = [];
+    this.licenseBars = [];
+    this.vexSegments = [];
+    this.suppressedVulns = 0;
+    this.effectiveVulns = 0;
+    this.licenseViolations = 0;
+    this.inEveryVersion = 0;
     this.sbomPage = 1;
     this.packagePage = 1;
     this.packagesLoaded = false;
@@ -522,4 +689,11 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
   trackByPackage(_i: number, p: ProjectPackageItem): string { return p.purl || p.name + '@' + p.version; }
   trackByProject(_i: number, p: ProjectListItem): string { return p.project_name; }
 }
+
+
+
+
+
+
+
 

@@ -110,8 +110,9 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 ## Go (Backend)
 - Use standard idiomatic Go. Handle errors explicitly; never swallow them.
 - HTTP routing uses Go 1.22+ stdlib `net/http` with method-pattern registration (e.g., `mux.HandleFunc("GET /api/v1/sboms", ...)`). No web framework.
-- Only 5 direct dependencies: `clickhouse-go/v2`, `goccy/go-json`, `google/uuid`, `minio/minio-go/v7`, `protobom/protobom`. Keep it minimal.
-- Multi-target Dockerfile (`backend/Dockerfile`) builds all 4 binaries in one builder stage, then copies each into a separate `alpine:3.21` runtime stage.
+- Only 6 direct dependencies: `clickhouse-go/v2`, `goccy/go-json`, `google/uuid`, `minio/minio-go/v7`, `protobom/protobom`, `modelcontextprotocol/go-sdk`. Keep it minimal — adding a 7th is a maintainer decision, not an implementation detail.
+- `modelcontextprotocol/go-sdk` must stay pinned **`>= v1.4.1`** (approved 2026-09-24 for the MCP server, #399). Everything below it carries four HIGH advisories: CVE-2026-27896 and GHSA-q382-vc8q-7jhj (JSON key confusion — case folding, then `NUL`-terminated duplicate keys), CVE-2026-33252 (cross-site tool execution: no `Origin`/`Content-Type` validation on Streamable HTTP) and CVE-2026-34742 (DNS-rebinding protection off by default on localhost). `v1.4.1` requires Go 1.25+. Never downgrade this pin to resolve a build conflict.
+- Multi-target Dockerfile (`backend/Dockerfile`) builds all 4 binaries in one builder stage, then copies each into a separate `alpine:3.21` runtime stage. (Becomes 5 with `cmd/mcp-server`, #399.)
 - Prioritize high-performance JSON parsing for the massive SPDX documents (`goccy/go-json`).
 - When integrating with the OSV API, utilize batch querying endpoints (`/v1/querybatch`) to efficiently process multiple Package URLs (PURLs) at once.
 - Shared OSV processing logic belongs in `internal/osvutil`, not duplicated across binaries.

@@ -784,6 +784,75 @@ See [Fleet Views]({{< relref "/docs/ownership" >}}) for how tags are configured 
 
 ---
 
+### `GET /api/v1/projects/{name}`
+
+One project as a unit. All counts are **de-duplicated across the project's
+SBOMs** (versions): `package_count` is distinct components, `vuln_count` is
+distinct `(vulnerability, package)` pairs, bucketed under the highest severity
+seen. `license_breakdown` is summed over SBOMs (per-SBOM category counts have
+no component identity) and answers "what does this project ship under" as a
+proportion. `parents` are the entries of `tags` that are themselves project
+names; sub-projects are `GET /api/v1/projects?tag={name}`.
+
+The UI's project page renders this as its **Overview** tab — the dashboard
+scoped to one project: KPI cards, severity and license donuts, and the VEX
+split derived from the vulnerability rows below.
+
+A `name` containing `/` (the `org/project` fallback shape) is sent
+percent-encoded. `404` when no SBOM resolves to that name.
+
+**Response:** `200 OK`
+```json
+{
+  "project_name": "notification-hub",
+  "tags": ["platform"],
+  "parents": [],
+  "related_project_count": 0,
+  "sbom_count": 1,
+  "package_count": 12,
+  "vuln_count": 0,
+  "critical_vulns": 0, "high_vulns": 0, "medium_vulns": 0, "low_vulns": 0,
+  "latest_ingested": "2026-09-24T20:03:40Z",
+  "latest_version": "2.3.0",
+  "latest_sbom_id": "8ca2efd4-9b83-5b93-a013-d53b7ddc54a9",
+  "clusters": ["prod-eu"],
+  "namespaces": ["platform"],
+  "license_breakdown": { "permissive": 7, "copyleft": 3, "unknown": 1 }
+}
+```
+
+### `GET /api/v1/projects/{name}/sboms`
+
+The project's SBOMs (versions), newest first. Same row shape and `page` /
+`page_size` parameters as `GET /api/v1/sboms`.
+
+### `GET /api/v1/projects/{name}/vulnerabilities`
+
+One row per distinct `(vuln_id, purl)` across every SBOM of the project, with
+`affected_sboms` (in how many versions it occurs) and the effective VEX status:
+among all statements scoped to any of the project's SBOMs that cover the pair,
+the newest wins. Same row shape as `GET /api/v1/vulnerabilities`; not paginated.
+
+### `GET /api/v1/projects/{name}/packages`
+
+Distinct components across the project's SBOMs, most exposed first
+(`vuln_count` desc, then `sbom_count` desc). Paginated; `search` matches name
+or PURL.
+
+**Response:** `200 OK`
+```json
+{
+  "data": [
+    { "name": "github.com/example/and-with-copyleft", "version": "v3.2.0",
+      "purl": "pkg:golang/github.com/example/and-with-copyleft@v3.2.0",
+      "sbom_count": 1, "vuln_count": 0 }
+  ],
+  "total": 12, "page": 1, "page_size": 50
+}
+```
+
+---
+
 ### `GET /api/v1/projects/license-compliance`
 
 Projects with copyleft or unknown license packages (filtered by active exceptions).

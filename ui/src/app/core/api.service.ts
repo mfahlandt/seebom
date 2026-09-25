@@ -20,6 +20,8 @@ import {
   LicenseExceptionsFile,
   ArchivedPackageInfo,
   ProjectListItem,
+  ProjectDetail,
+  ProjectPackageItem,
   TagListItem,
   GlobalSearchResponse,
   FleetCluster,
@@ -41,12 +43,20 @@ export class ApiService {
     return this.http.get<DashboardStats>(`${this.baseUrl}/stats/dashboard`);
   }
 
-  getSboms(page = 1, pageSize = 50, search = ''): Observable<PaginatedResponse<SBOMListItem>> {
+  /**
+   * SBOM list. `search` is a substring match on document name / source path;
+   * `project` (#398) is the exact project identity and scopes the list to
+   * one project's versions. They compose.
+   */
+  getSboms(page = 1, pageSize = 50, search = '', project = ''): Observable<PaginatedResponse<SBOMListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
     if (search) {
       params = params.set('search', search);
+    }
+    if (project) {
+      params = params.set('project', project);
     }
     return this.http.get<PaginatedResponse<SBOMListItem>>(`${this.baseUrl}/sboms`, { params });
   }
@@ -175,6 +185,43 @@ export class ApiService {
    */
   getTags(): Observable<TagListItem[]> {
     return this.http.get<TagListItem[]>(`${this.baseUrl}/tags`);
+  }
+
+  // ── Project read model (#398) ──
+  //
+  // Names are percent-encoded because the org/project fallback shape
+  // contains "/" — unencoded it would route to /projects/{org}/{project},
+  // which is not a path the API has.
+
+  getProjectDetail(name: string): Observable<ProjectDetail> {
+    return this.http.get<ProjectDetail>(`${this.baseUrl}/projects/${encodeURIComponent(name)}`);
+  }
+
+  getProjectSboms(name: string, page = 1, pageSize = 50): Observable<PaginatedResponse<SBOMListItem>> {
+    const params = new HttpParams()
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    return this.http.get<PaginatedResponse<SBOMListItem>>(
+      `${this.baseUrl}/projects/${encodeURIComponent(name)}/sboms`, { params });
+  }
+
+  /** One row per distinct (vuln_id, purl) across the project's SBOMs. */
+  getProjectVulnerabilities(name: string): Observable<VulnerabilityListItem[]> {
+    return this.http.get<VulnerabilityListItem[]>(
+      `${this.baseUrl}/projects/${encodeURIComponent(name)}/vulnerabilities`);
+  }
+
+  getProjectPackages(
+    name: string, page = 1, pageSize = 50, search = '',
+  ): Observable<PaginatedResponse<ProjectPackageItem>> {
+    let params = new HttpParams()
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    if (search) {
+      params = params.set('search', search);
+    }
+    return this.http.get<PaginatedResponse<ProjectPackageItem>>(
+      `${this.baseUrl}/projects/${encodeURIComponent(name)}/packages`, { params });
   }
 
   globalSearch(q: string, limit?: number): Observable<GlobalSearchResponse> {

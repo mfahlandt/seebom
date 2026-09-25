@@ -149,13 +149,17 @@ func main() {
 		writeJSON(w, http.StatusOK, stats)
 	})
 
-	// List SBOMs with pagination and optional search.
+	// List SBOMs with pagination and optional search / project filter (#398).
+	// ?project= is the exact project name as the project listing shows it;
+	// ?search= is a substring match on document name or source path. They
+	// compose, so a project page can offer a search box within the project.
 	mux.HandleFunc("GET /api/v1/sboms", func(w http.ResponseWriter, r *http.Request) {
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
 		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
+		project := sanitizeProjectName(r.URL.Query().Get("project"))
 
-		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search)
+		resp, err := chClient.QuerySBOMs(r.Context(), page, pageSize, search, project)
 		if err != nil {
 			log.Printf("ERROR: list sboms: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOMs")
@@ -325,6 +329,90 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, items)
+	})
+
+	// ── Project read model (#398) ──────────────────────────────────────────
+	//
+	// One project as a unit: header stats, its versions, its distinct
+	// components and its distinct findings. {name} is the project name as the
+	// listing shows it; a name containing "/" (the org/project fallback shape)
+	// is sent percent-encoded and arrives decoded through PathValue.
+	//
+	// Sub-projects are not a separate endpoint: they are
+	// GET /api/v1/projects?tag={name}, which exists and paginates.
+	//
+	// The literal route /projects/license-compliance above is more specific
+	// and wins; a project literally named "license-compliance" is therefore
+	// unreachable here, which is an acceptable trade for not renaming a
+	// shipped endpoint.
+
+	mux.HandleFunc("GET /api/v1/projects/{name}", func(w http.ResponseWriter, r *http.Request) {
+		name := sanitizeProjectName(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Invalid project name")
+			return
+		}
+		detail, err := chClient.QueryProjectDetail(r.Context(), name)
+		if err != nil {
+			if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+				writeError(w, http.StatusNotFound, "Project not found")
+				return
+			}
+			log.Printf("ERROR: project detail for %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch project")
+			return
+		}
+		writeJSON(w, http.StatusOK, detail)
+	})
+
+	mux.HandleFunc("GET /api/v1/projects/{name}/sboms", func(w http.ResponseWriter, r *http.Request) {
+		name := sanitizeProjectName(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Invalid project name")
+			return
+		}
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+		resp, err := chClient.QueryProjectSBOMs(r.Context(), name, page, pageSize)
+		if err != nil {
+			log.Printf("ERROR: project sboms for %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch project SBOMs")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
+	})
+
+	mux.HandleFunc("GET /api/v1/projects/{name}/vulnerabilities", func(w http.ResponseWriter, r *http.Request) {
+		name := sanitizeProjectName(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Invalid project name")
+			return
+		}
+		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name)
+		if err != nil {
+			log.Printf("ERROR: project vulnerabilities for %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch project vulnerabilities")
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	})
+
+	mux.HandleFunc("GET /api/v1/projects/{name}/packages", func(w http.ResponseWriter, r *http.Request) {
+		name := sanitizeProjectName(r.PathValue("name"))
+		if name == "" {
+			writeError(w, http.StatusBadRequest, "Invalid project name")
+			return
+		}
+		page := parseUint64(r.URL.Query().Get("page"), 1)
+		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+		search := sanitizeSearchTerm(r.URL.Query().Get("search"))
+		resp, err := chClient.QueryProjectPackages(r.Context(), name, page, pageSize, search)
+		if err != nil {
+			log.Printf("ERROR: project packages for %s: %v", sanitizeLogParam(name), err)
+			writeError(w, http.StatusInternalServerError, "Failed to fetch project packages")
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
 	})
 
 	// Projects affected by a specific CVE (including transitive dependencies).
@@ -780,6 +868,27 @@ func sanitizeSearchTerm(s string) string {
 		";", "", "\x00", "", "\\", "",
 	).Replace(s)
 	return s
+}
+
+// sanitizeProjectName prepares a project name for an exact-match lookup
+// (#398). It is deliberately *not* sanitizeSearchTerm: a project name is an
+// identity, and stripping characters from it would make some projects
+// unreachable — the org/project fallback shape contains "/", and nothing
+// stops an operator naming a project with "&". The value only ever travels
+// as a bound parameter, so the concern is not SQL but garbage: control
+// characters, and a length no real name reaches.
+func sanitizeProjectName(s string) string {
+	s = strings.TrimSpace(s)
+	const maxLen = 256
+	if len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // isValidUUID checks whether the given string matches UUID format.

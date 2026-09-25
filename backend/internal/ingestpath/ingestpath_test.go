@@ -1,6 +1,18 @@
 package ingestpath
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+// equal compares Attributes treating nil and empty Tags as the same — a
+// derived result with no tags must match a literal Attributes{} in tests.
+func equal(a, b Attributes) bool {
+	if len(a.Tags) == 0 && len(b.Tags) == 0 {
+		a.Tags, b.Tags = nil, nil
+	}
+	return reflect.DeepEqual(a, b)
+}
 
 func TestParseLayout_Empty(t *testing.T) {
 	for _, spec := range []string{"", "   ", "/", "//"} {
@@ -11,7 +23,7 @@ func TestParseLayout_Empty(t *testing.T) {
 		if l.Enabled() {
 			t.Errorf("ParseLayout(%q) should be disabled", spec)
 		}
-		if got := l.Derive("a/b/c/f.json"); got != (Attributes{}) {
+		if got := l.Derive("a/b/c/f.json"); !equal(got, Attributes{}) {
 			t.Errorf("disabled layout derived %+v, want zero", got)
 		}
 	}
@@ -29,6 +41,10 @@ func TestParseLayout_Valid(t *testing.T) {
 		{"namespace", "namespace"},
 		{"_/project", "_/project"},
 		{"_/_/cluster", "_/_/cluster"},
+		{"tag/project", "tag/project"},
+		{"tag/_/tag/file", "tag/_/tag/file"},
+		{"file", "file"},
+		{"cluster/tag/tag/project", "cluster/tag/tag/project"},
 	}
 	for _, tt := range tests {
 		l, err := ParseLayout(tt.spec)
@@ -51,6 +67,12 @@ func TestParseLayout_Invalid(t *testing.T) {
 		"cluster/cluster",
 		"namespace/project/namespace",
 		"cluster//namespace",
+		// file must be last: everything before it is a directory.
+		"file/project",
+		"tag/file/tag",
+		// file and project both set project.
+		"project/file",
+		"file/project",
 	} {
 		if _, err := ParseLayout(spec); err == nil {
 			t.Errorf("ParseLayout(%q) should have failed", spec)
@@ -123,7 +145,7 @@ func TestDerive_FullLayout(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := l.Derive(tt.key); got != tt.want {
+			if got := l.Derive(tt.key); !equal(got, tt.want) {
 				t.Errorf("Derive(%q) = %+v, want %+v", tt.key, got, tt.want)
 			}
 		})
@@ -137,7 +159,7 @@ func TestDerive_SkipToken(t *testing.T) {
 	}
 	got := l.Derive("prod-eu/ignore-me/payment-service/sbom.spdx.json")
 	want := Attributes{Cluster: "prod-eu", Project: "payment-service"}
-	if got != want {
+	if !equal(got, want) {
 		t.Errorf("Derive() = %+v, want %+v", got, want)
 	}
 	if got.Namespace != "" {
@@ -154,7 +176,124 @@ func TestDerive_ReorderedLayout(t *testing.T) {
 	}
 	got := l.Derive("payment-service/prod-eu/sbom.spdx.json")
 	want := Attributes{Cluster: "prod-eu", Project: "payment-service"}
-	if got != want {
+	if !equal(got, want) {
+		t.Errorf("Derive() = %+v, want %+v", got, want)
+	}
+}
+
+// TestDerive_TagToken is the #398 parent/sub-project case: the CNCF
+// sub-project bucket is laid out {parent}/{subproject}/{version}/file, and the
+// parent must survive as a grouping label instead of being thrown away.
+func TestDerive_TagToken(t *testing.T) {
+	l, err := ParseLayout("tag/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		key  string
+		want Attributes
+	}{
+		{
+			name: "parent becomes a tag, subproject stays the identity",
+			key:  "podman/kubernetes-mcp-server/0.0.57/podman_kubernetes-mcp-server_0_0_57_spdx.json",
+			want: Attributes{Project: "kubernetes-mcp-server", Tags: []string{"podman"}},
+		},
+		{
+			name: "shallow path yields the tag only",
+			key:  "podman/sbom.spdx.json",
+			want: Attributes{Tags: []string{"podman"}},
+		},
+		{
+			name: "root file yields nothing",
+			key:  "sbom.spdx.json",
+			want: Attributes{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := l.Derive(tt.key); !equal(got, tt.want) {
+				t.Errorf("Derive(%q) = %+v, want %+v", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDerive_RepeatedTagToken(t *testing.T) {
+	l, err := ParseLayout("cluster/tag/tag/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := l.Derive("prod-eu/team-a/tier-1/svc/sbom.json")
+	want := Attributes{Cluster: "prod-eu", Project: "svc", Tags: []string{"team-a", "tier-1"}}
+	if !equal(got, want) {
+		t.Errorf("Derive() = %+v, want %+v", got, want)
+	}
+}
+
+// TestDerive_FileToken is the #398 sandbox-review case: the file is named
+// after the project and the directories carry review metadata, so the org
+// level must be a tag rather than the project identity.
+func TestDerive_FileToken(t *testing.T) {
+	l, err := ParseLayout("tag/_/tag/file")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name string
+		key  string
+		want Attributes
+	}{
+		{
+			name: "org is a tag, filename stem is the project",
+			key:  "sandbox-applications/501/siemens-healthineers/k2s.spdx.json",
+			want: Attributes{Project: "k2s", Tags: []string{"sandbox-applications", "siemens-healthineers"}},
+		},
+		{
+			name: "stacked extensions are all stripped",
+			key:  "sandbox-applications/527/azure/unbounded.cdx.json",
+			want: Attributes{Project: "unbounded", Tags: []string{"sandbox-applications", "azure"}},
+		},
+		{
+			name: "no extension is fine",
+			key:  "sandbox-applications/527/azure/unbounded",
+			want: Attributes{Project: "unbounded", Tags: []string{"sandbox-applications", "azure"}},
+		},
+		{
+			name: "shallow path still takes the file",
+			key:  "sandbox-applications/k2s.spdx.json",
+			want: Attributes{Project: "k2s", Tags: []string{"sandbox-applications"}},
+		},
+		{
+			name: "root file yields only the project",
+			key:  "k2s.spdx.json",
+			want: Attributes{Project: "k2s"},
+		},
+		{
+			name: "dotfile yields no project rather than a nonsense one",
+			key:  "sandbox-applications/1/org/.json",
+			want: Attributes{Tags: []string{"sandbox-applications", "org"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := l.Derive(tt.key); !equal(got, tt.want) {
+				t.Errorf("Derive(%q) = %+v, want %+v", tt.key, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDerive_FileTokenAlone(t *testing.T) {
+	l, err := ParseLayout("file")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := l.Derive("deep/ignored/dirs/payment-service.spdx.json")
+	want := Attributes{Project: "payment-service"}
+	if !equal(got, want) {
 		t.Errorf("Derive() = %+v, want %+v", got, want)
 	}
 }

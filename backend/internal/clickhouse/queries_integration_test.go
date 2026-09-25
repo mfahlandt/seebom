@@ -97,8 +97,10 @@ func TestQueriesExecute(t *testing.T) {
 		run  func() error
 	}{
 		{"QueryDashboardStats", func() error { _, err := c.QueryDashboardStats(ctx); return err }},
-		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, ""); return err }},
-		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test"); return err }},
+		{"QuerySBOMs", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", ""); return err }},
+		{"QuerySBOMs/search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "test", ""); return err }},
+		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api"); return err }},
+		{"QuerySBOMs/project+search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api"); return err }},
 		{"QuerySBOMDetail", func() error { _, err := c.QuerySBOMDetail(ctx, someID); return err }},
 		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},
@@ -115,6 +117,13 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryProjects", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", ""); return err }},
 		{"QueryProjects/tag", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", "sandbox"); return err }},
 		{"QueryTags", func() error { _, err := c.QueryTags(ctx); return err }},
+		// Project read model (#398). The detail query returns ErrSBOMNotFound
+		// for an unknown name, which isEmptyResult accepts.
+		{"QueryProjectDetail", func() error { _, err := c.QueryProjectDetail(ctx, "no-such-project"); return err }},
+		{"QueryProjectSBOMs", func() error { _, err := c.QueryProjectSBOMs(ctx, "no-such-project", 1, 10); return err }},
+		{"QueryProjectVulnerabilities", func() error { _, err := c.QueryProjectVulnerabilities(ctx, "no-such-project"); return err }},
+		{"QueryProjectPackages", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, ""); return err }},
+		{"QueryProjectPackages/search", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, "curl"); return err }},
 		// The archived-repo pair carries the purl→repo mapping rebuilt in SQL.
 		// It shipped broken twice: once semantically (a LIKE that could never
 		// match gopkg.in/yaml.v3 against go-yaml/yaml) and once as a plain type

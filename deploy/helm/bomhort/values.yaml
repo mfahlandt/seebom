@@ -74,9 +74,12 @@ ownership:
   #   prod-eu/payments/payment-service/app.spdx.json
   #     -> cluster=prod-eu namespace=payments project=payment-service
   #
-  # Valid segments: cluster, namespace, project, and "_" to skip a directory
-  # level that carries no meaning. A malformed layout fails at startup rather
-  # than silently ingesting everything unlabelled.
+  # Valid segments: cluster, namespace, project, "_" to skip a directory
+  # level that carries no meaning, "tag" to turn a level into a grouping
+  # label (may repeat; "tag/project" makes {parent}/{sub}/... a hierarchy),
+  # and "file" as the last segment to take the project from the filename
+  # minus extensions. A malformed layout fails at startup rather than
+  # silently ingesting everything unlabelled.
   #
   # Explicit configuration always wins: derivation only fills dimensions that
   # are still empty. Override per bucket with "pathLayout" in an s3.buckets

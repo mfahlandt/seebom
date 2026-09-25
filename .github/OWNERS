@@ -1,0 +1,6 @@
+# Inherits approvers from the root OWNERS file.
+reviewers:
+  - mfahlandt
+  - koksay
+labels:
+  - ci

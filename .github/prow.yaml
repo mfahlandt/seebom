@@ -1,0 +1,161 @@
+# prow-github-actions configuration for seebom-labs/BOMHort.
+# Reference: https://github.com/cncf/prow-github-actions/blob/main/docs/configuration.md
+#
+# Every key under `labels` is a /<key> command (and a /remove-<key> form) once it is listed in
+# `prow-commands` in .github/workflows/prow.yml. Prow label commands always produce
+# <key>/<value> labels. The label-sync job (Actions -> Prow -> Run workflow, or a push to main
+# that touches this file) creates and recolors every label described here; it never deletes or
+# renames.
+#
+# The flat labels used by release notes (.github/release.yml) and by the component OWNERS files
+# (backend, frontend, helm, ...) are kept verbatim under `labels.labels` and applied with
+# `/label <name>` or automatically by the owners-label plugin.
+
+labels:
+  priority:
+    values:
+      - name: critical
+        color: b60205
+        description: Must be resolved immediately
+      - name: high
+        color: d93f0b
+        description: Should be resolved soon
+      - name: medium
+        color: fbca04
+        description: Should be resolved in a regular release
+      - name: low
+        color: c2e0c6
+        description: Nice to have
+    exclusive: true
+
+  triage:
+    values:
+      - name: accepted
+        color: 0e8a16
+        description: Issue or PR is valid with enough information to be actionable
+      - name: needs-information
+        color: b60205
+        description: Needs additional information before it can be worked on
+      - name: duplicate
+        color: ebf84a
+        description: Duplicate issue or PR, can be closed
+      - name: not-planned
+        color: D97706
+        description: Out of scope, or not planned to be worked on
+    exclusive: true
+
+  do-not-merge:
+    - name: hold
+      color: e11d21
+      description: Indicates that a PR should not merge because someone has issued a /hold command.
+    - name: work-in-progress
+      color: e11d21
+      description: Indicates that a PR should not merge because it is a work in progress.
+
+  # Plain labels applied verbatim by `/label <name>` or by OWNERS `labels:` entries.
+  # Also the catalogue for labels set by other tooling (dependabot, release.yml, issue
+  # templates) so that label-sync keeps their colors and descriptions.
+  labels:
+    # ─── Release notes categories (.github/release.yml) ────────────────────
+    - name: enhancement
+      color: a2eeef
+      description: New feature or improvement
+    - name: feature
+      color: 0075ca
+      description: New feature request
+    - name: bug
+      color: d73a4a
+      description: Something isn't working
+    - name: fix
+      color: e4e669
+      description: Bug fix
+    - name: documentation
+      color: 0075ca
+      description: Documentation changes
+    - name: docs
+      color: 0075ca
+      description: Documentation changes
+    - name: test
+      color: bfd4f2
+      description: Test improvements
+    - name: testing
+      color: bfd4f2
+      description: Test improvements
+    - name: security
+      color: ee0701
+      description: Security related changes
+
+    # ─── Maintenance ──────────────────────────────────────���────────────────
+    - name: chore
+      color: fef2c0
+      description: Maintenance and housekeeping
+    - name: dependencies
+      color: 0366d6
+      description: Dependency updates
+    - name: ci
+      color: e1e4e8
+      description: CI/CD pipeline changes
+
+    # ─── Components (applied automatically via OWNERS `labels:`) ───────────
+    - name: backend
+      color: 00ADD8
+      description: Go backend (API, workers, parsers)
+    - name: frontend
+      color: DD0031
+      description: Angular UI
+    - name: helm
+      color: 0F1689
+      description: Helm chart / Kubernetes deployment
+    - name: clickhouse
+      color: FFCC00
+      description: ClickHouse schema or queries
+    - name: examples
+      color: 5319e7
+      description: Example manifests and sample SBOMs
+
+    # ─── Status ────────────────────────────────────────────────────────────
+    - name: good first issue
+      color: 7057ff
+      description: Good for newcomers
+    - name: help wanted
+      color: '008672'
+      description: Extra attention is needed
+    - name: skip-changelog
+      color: ededed
+      description: Exclude from auto-generated release notes
+    - name: needs-triage
+      color: ededed
+      description: Indicates an issue that has not been triaged yet (no triage/* label)
+
+# Issues without a triage/* label carry needs-triage until a maintainer runs /triage <value>.
+require_matching_label:
+  - regexp: ^triage/
+    missing_label: needs-triage
+    issues: true
+    prs: false
+
+# Merge gate. OWNERS files exist, so both lgtm and approved are required.
+# Branch protection (required status checks, up-to-date branch) still applies: the bot
+# only merges once GitHub reports the PR as mergeable.
+tide:
+  labels: [lgtm, approved]
+  missing_labels: [do-not-merge/*, needs-rebase, hold]
+  merge_method: squash
+  merge_on_events: true
+
+hold:
+  label: do-not-merge/hold
+
+# Request reviews from OWNERS reviewers when a PR opens.
+blunderbuss:
+  request_count: 1
+  ignore_drafts: true
+  ignore_authors: ['dependabot[bot]']
+
+approve:
+  # The author never approves their own changes, even implicitly.
+  require_self_approval: true
+
+lgtm:
+  bind_to_commit: true
+

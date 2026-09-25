@@ -1,0 +1,3 @@
+# Security-sensitive: vulnerability data ingestion. Inherits approvers/reviewers.
+labels:
+  - security

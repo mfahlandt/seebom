@@ -264,6 +264,12 @@ func extractLicense(lics []CDXLicense) string {
 //     way to say "the source lives here".
 //  2. pedigree.commits[0].uid as the ref if the vcs URL carried none:
 //     generators that fill pedigree list the build commit first.
+//  3. (#355) metadata.component.externalReferences[type=distribution] when
+//     it is *evidently* a forge URL (release download, tag, .git). The CDX
+//     counterpart of the SPDX documentNamespace fallback; serialNumber itself
+//     is a urn:uuid by spec and never names a repository. Held to
+//     NormalizeStrict so registry tarballs and CDN links are not mistaken
+//     for repos.
 func extractSourceRepo(doc *CDXDocument) (repo, ref string) {
 	root := doc.Metadata.Component
 	if root == nil {
@@ -277,6 +283,18 @@ func extractSourceRepo(doc *CDXDocument) (repo, ref string) {
 		if r, rf := sourcerepo.Normalize(er.URL); r != "" {
 			repo, ref = r, rf
 			break
+		}
+	}
+
+	if repo == "" {
+		for _, er := range root.ExternalReferences {
+			if er.Type != "distribution" && er.Type != "distribution-intake" {
+				continue
+			}
+			if r, rf := sourcerepo.NormalizeStrict(er.URL); r != "" {
+				repo, ref = r, rf
+				break
+			}
 		}
 	}
 

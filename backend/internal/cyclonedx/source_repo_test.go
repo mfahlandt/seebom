@@ -147,3 +147,80 @@ func TestSourceRepoPedigreeWithoutVCSYieldsNothing(t *testing.T) {
 		t.Errorf("got (%q, %q), want empty — a ref without a repo is not actionable", repo, ref)
 	}
 }
+
+// #355: CDX counterpart of the SPDX documentNamespace fallback. A
+// distribution reference pointing at a forge release is evidently the
+// product's repository, so it may stand in when no vcs reference exists.
+func TestSourceRepoFromDistributionFallback(t *testing.T) {
+	repo, ref := parseSourceDoc(t, `{
+		"bomFormat": "CycloneDX",
+		"specVersion": "1.5",
+		"metadata": {
+			"component": {
+				"type": "application",
+				"name": "app",
+				"externalReferences": [
+					{"type": "website", "url": "https://app.dev"},
+					{"type": "distribution", "url": "https://github.com/org/app/releases/download/v1.2.3/app_1.2.3_linux_amd64.tar.gz"}
+				]
+			}
+		},
+		"components": []
+	}`)
+
+	if repo != "https://github.com/org/app" || ref != "v1.2.3" {
+		t.Errorf("got (%q, %q), want (https://github.com/org/app, v1.2.3)", repo, ref)
+	}
+}
+
+// vcs remains authoritative over distribution even when both normalise.
+func TestSourceRepoVCSBeatsDistribution(t *testing.T) {
+	repo, ref := parseSourceDoc(t, `{
+		"bomFormat": "CycloneDX",
+		"specVersion": "1.5",
+		"metadata": {
+			"component": {
+				"type": "application",
+				"name": "app",
+				"externalReferences": [
+					{"type": "distribution", "url": "https://github.com/mirror/app/releases/tag/v9"},
+					{"type": "vcs", "url": "https://github.com/real/app"}
+				]
+			}
+		},
+		"components": []
+	}`)
+
+	if repo != "https://github.com/real/app" || ref != "" {
+		t.Errorf("distribution outranked vcs: (%q, %q)", repo, ref)
+	}
+}
+
+// A distribution URL that is merely *a* URL (registry tarball, CDN, vendor
+// site) is not a repository and must not be stored as one.
+func TestSourceRepoIgnoresNonForgeDistribution(t *testing.T) {
+	for _, u := range []string{
+		"https://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",
+		"https://repo1.maven.org/maven2/org/example/app/1.0/app-1.0.jar",
+		"https://downloads.example.com/app/v1.2.3/app.tar.gz",
+		"https://anchore.com/syft/dir/app-3b1f0e5a",
+	} {
+		t.Run(u, func(t *testing.T) {
+			repo, ref := parseSourceDoc(t, `{
+				"bomFormat": "CycloneDX",
+				"specVersion": "1.5",
+				"metadata": {
+					"component": {
+						"type": "application",
+						"name": "app",
+						"externalReferences": [{"type": "distribution", "url": "`+u+`"}]
+					}
+				},
+				"components": []
+			}`)
+			if repo != "" || ref != "" {
+				t.Errorf("non-forge distribution %q stored as repo: (%q, %q)", u, repo, ref)
+			}
+		})
+	}
+}

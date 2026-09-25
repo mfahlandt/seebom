@@ -409,7 +409,27 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 // Multiple roots (rare, e.g. multi-product documents): the first root that
 // yields a repo wins — deterministic because packages are scanned in document
 // order. Ambiguity is resolvable via the upload headers or PATCH.
+//
+// Last resort (#355): documentNamespace. On the CNCF corpus, 500 of 500 SBOMs
+// carry "https://github.com/org/repo/releases/tag/vX.Y.Z" there and *none*
+// declare a root via DESCRIBES/documentDescribes, so without this branch the
+// feature had 0 % coverage in practice. It stays last because a root's
+// downloadLocation is a statement about the product while documentNamespace
+// is only conventionally related to it; sourcerepo.NormalizeStrict accepts
+// only URLs that are evidently a repository (forge host or forge path shape),
+// so UUID-style namespaces (syft's https://anchore.com/syft/…, spdx.org/spdxdocs,
+// urn:uuid:…) yield "" and nothing is guessed from them.
+// packages[0] is deliberately *not* treated as an implicit root — in these
+// very documents it is a dependency.
 func extractSourceRepo(doc *SPDXDocument) (repo, ref string) {
+	if repo, ref = sourceRepoFromRoots(doc); repo != "" {
+		return repo, ref
+	}
+	return sourcerepo.NormalizeStrict(doc.DocumentNamespace)
+}
+
+// sourceRepoFromRoots implements steps 1 and 2 of extractSourceRepo.
+func sourceRepoFromRoots(doc *SPDXDocument) (repo, ref string) {
 	roots := describedRoots(doc)
 	if len(roots) == 0 {
 		return "", ""

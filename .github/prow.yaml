@@ -15,41 +15,41 @@ labels:
   priority:
     values:
       - name: critical
-        color: b60205
+        color: 'b60205'
         description: Must be resolved immediately
       - name: high
-        color: d93f0b
+        color: 'd93f0b'
         description: Should be resolved soon
       - name: medium
-        color: fbca04
+        color: 'fbca04'
         description: Should be resolved in a regular release
       - name: low
-        color: c2e0c6
+        color: 'c2e0c6'
         description: Nice to have
     exclusive: true
 
   triage:
     values:
       - name: accepted
-        color: 0e8a16
+        color: '0e8a16'
         description: Issue or PR is valid with enough information to be actionable
       - name: needs-information
-        color: b60205
+        color: 'b60205'
         description: Needs additional information before it can be worked on
       - name: duplicate
-        color: ebf84a
+        color: 'ebf84a'
         description: Duplicate issue or PR, can be closed
       - name: not-planned
-        color: D97706
+        color: 'D97706'
         description: Out of scope, or not planned to be worked on
     exclusive: true
 
   do-not-merge:
     - name: hold
-      color: e11d21
+      color: 'e11d21'
       description: Indicates that a PR should not merge because someone has issued a /hold command.
     - name: work-in-progress
-      color: e11d21
+      color: 'e11d21'
       description: Indicates that a PR should not merge because it is a work in progress.
 
   # Plain labels applied verbatim by `/label <name>` or by OWNERS `labels:` entries.
@@ -58,73 +58,73 @@ labels:
   labels:
     # ─── Release notes categories (.github/release.yml) ────────────────────
     - name: enhancement
-      color: a2eeef
+      color: 'a2eeef'
       description: New feature or improvement
     - name: feature
-      color: 0075ca
+      color: '0075ca'
       description: New feature request
     - name: bug
-      color: d73a4a
+      color: 'd73a4a'
       description: Something isn't working
     - name: fix
-      color: e4e669
+      color: 'e4e669'
       description: Bug fix
     - name: documentation
-      color: 0075ca
+      color: '0075ca'
       description: Documentation changes
     - name: docs
-      color: 0075ca
+      color: '0075ca'
       description: Documentation changes
     - name: test
-      color: bfd4f2
+      color: 'bfd4f2'
       description: Test improvements
     - name: testing
-      color: bfd4f2
+      color: 'bfd4f2'
       description: Test improvements
     - name: security
-      color: ee0701
+      color: 'ee0701'
       description: Security related changes
 
     # ─── Maintenance ──────────────────────────────────────���────────────────
     - name: chore
-      color: fef2c0
+      color: 'fef2c0'
       description: Maintenance and housekeeping
     - name: dependencies
-      color: 0366d6
+      color: '0366d6'
       description: Dependency updates
     - name: ci
-      color: e1e4e8
+      color: 'e1e4e8'
       description: CI/CD pipeline changes
 
     # ─── Components (applied automatically via OWNERS `labels:`) ───────────
     - name: backend
-      color: 00ADD8
+      color: '00ADD8'
       description: Go backend (API, workers, parsers)
     - name: frontend
-      color: DD0031
+      color: 'DD0031'
       description: Angular UI
     - name: helm
-      color: 0F1689
+      color: '0F1689'
       description: Helm chart / Kubernetes deployment
     - name: clickhouse
-      color: FFCC00
+      color: 'FFCC00'
       description: ClickHouse schema or queries
     - name: examples
-      color: 5319e7
+      color: '5319e7'
       description: Example manifests and sample SBOMs
 
     # ─── Status ────────────────────────────────────────────────────────────
     - name: good first issue
-      color: 7057ff
+      color: '7057ff'
       description: Good for newcomers
     - name: help wanted
       color: '008672'
       description: Extra attention is needed
     - name: skip-changelog
-      color: ededed
+      color: 'ededed'
       description: Exclude from auto-generated release notes
     - name: needs-triage
-      color: ededed
+      color: 'ededed'
       description: Indicates an issue that has not been triaged yet (no triage/* label)
 
 # Issues without a triage/* label carry needs-triage until a maintainer runs /triage <value>.

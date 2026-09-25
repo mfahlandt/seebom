@@ -64,6 +64,9 @@ services:
       TAGS: ${TAGS:-}
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json
+      # strict (default) | permissive-wins | off — how compound SPDX expressions
+      # ("Apache-2.0 AND MIT") are classified. Overrides the policy file.
+      LICENSE_EXPRESSION_MODE: ${LICENSE_EXPRESSION_MODE:-}
       # API Authentication (off by default; set AUTH_ENABLED=true in .env to enable)
       AUTH_ENABLED: ${AUTH_ENABLED:-false}
       SERVICE_TOKEN: ${SERVICE_TOKEN:-}
@@ -173,6 +176,9 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json
+      # strict (default) | permissive-wins | off — how compound SPDX expressions
+      # ("Apache-2.0 AND MIT") are classified. Overrides the policy file.
+      LICENSE_EXPRESSION_MODE: ${LICENSE_EXPRESSION_MODE:-}
       # S3 bucket ingestion (worker needs same config to fetch S3 objects)
       S3_BUCKETS: ${S3_BUCKETS:-}
       S3_BUCKET: ${S3_BUCKET:-}

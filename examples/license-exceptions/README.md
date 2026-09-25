@@ -8,6 +8,12 @@ is separate and is unchanged.
 approvals. It is outside the scanned SBOM directory and every example rule is
 `pending`, so copying it alone does not exempt anything.
 
+`convert-cncf-exceptions.py` prepares the CNCF foundation's
+[exception registry](https://github.com/cncf/foundation/blob/main/license-exceptions/exceptions.json)
+for a deployment: BOMHort loads the upstream file as-is, the script only
+drops inactive entries, makes wildcard scopes explicit and reports prose
+package names that need a human to replace them with a real module path.
+
 ## Configure
 
 1. Copy the example to `my-exceptions.json`.

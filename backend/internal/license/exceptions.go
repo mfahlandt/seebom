@@ -178,46 +178,20 @@ func BuildIndex(ef *ExceptionsFile) *ExceptionIndex {
 // splitLicenses splits compound license expressions into individual SPDX IDs.
 // Handles comma-separated ("GPL-2.0-only, GPL-2.0-or-later"),
 // OR-separated ("MPL-2.0 OR LGPL-3.0-or-later"),
-// and AND-separated ("MPL-2.0 AND BSD-3-Clause") expressions.
+// AND-separated ("MPL-2.0 AND BSD-3-Clause") and parenthesised mixes via the
+// shared SPDX expression parser. A WITH clause stays one identifier. An
+// expression that does not parse is returned verbatim so a rule never
+// silently loses its license restriction.
 func splitLicenses(expr string) []string {
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
 		return nil
 	}
-
-	// Try comma-separated first (e.g. "GPL-2.0-only, GPL-2.0-or-later").
-	if strings.Contains(expr, ",") {
-		parts := strings.Split(expr, ",")
-		var result []string
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				result = append(result, p)
-			}
-		}
-		if len(result) > 0 {
-			return result
-		}
+	tree, err := parseExpression(expr)
+	if err != nil {
+		return []string{expr}
 	}
-
-	// Try SPDX operators: " OR " and " AND ".
-	for _, sep := range []string{" OR ", " AND "} {
-		if strings.Contains(expr, sep) {
-			parts := strings.Split(expr, sep)
-			var result []string
-			for _, p := range parts {
-				p = strings.TrimSpace(p)
-				if p != "" {
-					result = append(result, p)
-				}
-			}
-			if len(result) > 0 {
-				return result
-			}
-		}
-	}
-
-	return []string{expr}
+	return tree.leafIDs()
 }
 
 // IsExempt checks if a package+license combination is covered by an exception.

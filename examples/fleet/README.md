@@ -22,8 +22,10 @@ examples/fleet/
 │   │   └── query-service/
 │   │       └── query-service-0.9.0.spdx.json  ← Python deps
 │   └── platform/
-│       └── ingress-gateway/
-│           └── ingress-gateway-3.1.0.spdx.json
+│       ├── ingress-gateway/
+│       │   └── ingress-gateway-3.1.0.spdx.json
+│       └── notification-hub/
+│           └── notification-hub-2.3.0.spdx.json ← SPDX license expressions
 ├── prod-us/
 │   ├── payments/payment-api/payment-api-1.3.9.spdx.json      ← older version
 │   └── platform/ingress-gateway/ingress-gateway-3.0.4.spdx.json
@@ -55,6 +57,7 @@ dimension stays `""` (*unassigned*).
 | Two SBOM formats | SPDX 2.3 + CycloneDX 1.5 | Format detection is automatic; ownership works the same for both |
 | Real vulnerable versions | `lodash@4.17.15`, `golang.org/x/net@v0.17.0`, `gin@v1.6.0`, `urllib3@1.26.4` | OSV returns actual CVEs, so severity breakdowns are non-empty |
 | Copyleft violation | `legacy-report-tool` (GPL-3.0-only, LGPL-3.0-or-later, GPL-2.0-only) | Puts a `copyleft` entry into the license breakdown of exactly one cluster |
+| SPDX license expressions | `prod-eu/platform/notification-hub/notification-hub-2.3.0.spdx.json` | One package per expression shape — `A AND B` (all permissive), `MIT AND GPL-3.0-only`, `MIT OR GPL-2.0-only`, `WITH`, parentheses, lower-case `and`, deprecated `LGPL-2.1+`, a malformed `MIT AND`. Each package's `comment` states the expected category per `LICENSE_EXPRESSION_MODE`; re-scan with `strict` vs `permissive-wins` and compare the project's license breakdown (5/4/2 vs 7/3/1 permissive/copyleft/unknown) |
 | VEX with provenance | `payment-api.openvex.json` | Suppression inherits the ownership labels of the SBOM it is scoped to |
 | Automated VEX (tool-generated) | `ledger-2.0.1.vexviper.openvex.json` | Real [VEXViper](https://github.com/seebom-labs/VEXViper) output (heuristic provider): `tooling`/`role` set, so the UI shows the *automated* badge; covers `under_investigation` and `fixed` |
 | Human review supersedes automation | `ledger-2.0.1.review.openvex.json` | Newer timestamp, same `(vuln, purl)` as the VEXViper draft — latest-wins flips gin `GHSA-h395-qcrw-5vmq` to `not_affected` and the badge from automated to human |

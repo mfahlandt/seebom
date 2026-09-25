@@ -911,7 +911,9 @@ for stored compliance results to become consistent across endpoints.
 
 ### `GET /api/v1/license-policy`
 
-Active license classification policy (permissive vs. copyleft lists).
+Active license classification policy (permissive vs. copyleft lists) and the
+mode used to fold compound SPDX expressions (`strict` | `permissive-wins` |
+`off`; see [Deployment → License Policy](/docs/deployment/#4-license-policy)).
 
 **Response:** `200 OK`
 ```json
@@ -921,7 +923,8 @@ Active license classification policy (permissive vs. copyleft lists).
   ],
   "copyleft": [
     "GPL-2.0-only", "GPL-3.0-only", "LGPL-2.1-only", "AGPL-3.0-only", "MPL-2.0"
-  ]
+  ],
+  "expressionMode": "strict"
 }
 ```
 

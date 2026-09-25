@@ -51,6 +51,17 @@ func main() {
 	} else {
 		log.Printf("Using default license policy (tried %s): %v", cfg.LicensePolicyFile, err)
 	}
+	// LICENSE_EXPRESSION_MODE wins over the policy file's expressionMode.
+	// Applied after LoadPolicy on purpose: it must also take effect when the
+	// file was missing and the built-in defaults are active.
+	if cfg.LicenseExpressionMode != "" {
+		mode, err := license.ParseExpressionMode(cfg.LicenseExpressionMode)
+		if err != nil {
+			log.Fatalf("Invalid LICENSE_EXPRESSION_MODE: %v", err)
+		}
+		license.SetExpressionMode(mode)
+	}
+	log.Printf("License expression mode: %s", license.GetExpressionMode())
 
 	// Load license exceptions if available (try config path, then SBOM dir fallback).
 	var exceptionsIndex *license.ExceptionIndex

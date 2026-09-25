@@ -41,12 +41,24 @@ import { ProjectListItem, TagListItem } from '../../core/api.models';
           *ngFor="let t of tags; trackBy: trackByTag"
           class="tag-chip"
           [class.selected]="activeTag === t.tag"
-          [title]="t.project_count + ' projects, ' + t.sbom_count + ' SBOMs'"
+          [class.is-project]="t.is_project"
+          [title]="t.project_count + ' projects, ' + t.sbom_count + ' SBOMs' + (t.is_project ? ' — also a project' : '')"
           (click)="selectTag(t.tag)"
         >
           {{ t.tag }}
           <span class="tag-count">{{ t.project_count | number }}</span>
         </button>
+      </div>
+
+      <!--
+        When the active tag is itself a project (#398), say so and offer the
+        way up: "subprojects of podman" is a different mental model from
+        "projects tagged podman", and the parent's own page is one click away.
+      -->
+      <div class="parent-banner" *ngIf="activeTagIsProject">
+        Sub-projects of
+        <a [routerLink]="['/projects', activeTag]" class="parent-link">{{ activeTag }}</a>
+        <span class="parent-hint">— open the parent for its own SBOMs and aggregated view</span>
       </div>
 
       <div class="search-bar">
@@ -63,7 +75,12 @@ import { ProjectListItem, TagListItem } from '../../core/api.models';
 
       <cdk-virtual-scroll-viewport itemSize="64" class="viewport" (scrolledIndexChange)="onScroll()">
         <div *cdkVirtualFor="let project of projects; trackBy: trackByProject" class="project-row">
-          <a [routerLink]="['/sboms']" [queryParams]="{search: project.project_name}" class="project-link">
+          <!--
+            The row opens the project page (#398), not a substring search of
+            the SBOM list: "kubernetes" is one project with eleven versions,
+            and a search for the word returned 1 368 documents.
+          -->
+          <a [routerLink]="['/projects', project.project_name]" class="project-link">
             <div class="project-info">
               <span class="name">{{ project.project_name }}</span>
               <span class="meta">
@@ -71,18 +88,21 @@ import { ProjectListItem, TagListItem } from '../../core/api.models';
                 <!--
                   A project's groupings, shown inline. Only tags other than the
                   active filter are listed: repeating the tag every row was
-                  filtered by adds noise without information.
+                  filtered by adds noise without information. Tags that are
+                  parent projects are marked so the reader can tell "belongs to
+                  podman" from "is in the sandbox tier" at a glance.
                 -->
                 <span
                   class="tag-badge"
                   *ngFor="let t of otherTags(project)"
-                  [title]="'Grouping: ' + t"
-                >{{ t }}</span>
+                  [class.parent]="isProjectTag(t)"
+                  [title]="isProjectTag(t) ? 'Sub-project of ' + t : 'Grouping: ' + t"
+                >{{ isProjectTag(t) ? '↑ ' : '' }}{{ t }}</span>
               </span>
             </div>
             <div class="project-stats">
-              <span class="stat packages">{{ project.package_count | number }} packages</span>
-              <span class="stat vulns" [class.has-vulns]="project.vuln_count > 0">
+              <span class="stat packages" title="Distinct components across all versions">{{ project.package_count | number }} packages</span>
+              <span class="stat vulns" [class.has-vulns]="project.vuln_count > 0" title="Distinct findings across all versions">
                 {{ project.vuln_count | number }} vulns
               </span>
               <span class="date">{{ project.latest_ingested | date:'mediumDate' }}</span>
@@ -137,12 +157,23 @@ import { ProjectListItem, TagListItem } from '../../core/api.models';
       border-color: var(--accent); font-weight: 600;
     }
     .tag-count { font-size: 0.65rem; opacity: 0.7; }
+    .tag-chip.is-project { border-style: dashed; }
+    .parent-banner {
+      display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+      margin: -4px 0 12px; padding: 8px 12px; font-size: 0.78rem;
+      background: var(--status-info-bg); border: 1px solid var(--accent);
+      border-radius: 4px; color: var(--text-secondary);
+    }
+    .parent-link { font-weight: 700; color: var(--accent-hover); text-decoration: none; }
+    .parent-link:hover { text-decoration: underline; }
+    .parent-hint { color: var(--text-muted); }
     .tag-badge {
       display: inline-block; margin-left: 6px; padding: 1px 6px;
       background: var(--surface-alt); color: var(--text-secondary);
       border: 1px solid var(--border); border-radius: 2px;
       font-size: 0.65rem; font-weight: 500;
     }
+    .tag-badge.parent { border-style: dashed; color: var(--accent-hover); }
     .search-input {
       width: 100%; padding: 8px 36px 8px 12px; font-size: 0.82rem;
       border: 1px solid var(--border); border-radius: 4px;
@@ -252,10 +283,12 @@ export class ProjectListComponent implements OnInit, OnDestroy {
     this.api.getTags().pipe(takeUntil(this.destroy$)).subscribe({
       next: (tags) => {
         this.tags = tags;
+        this.projectTags = new Set(tags.filter((t) => t.is_project).map((t) => t.tag));
         this.cdr.markForCheck();
       },
       error: () => {
         this.tags = [];
+        this.projectTags = new Set();
         this.cdr.markForCheck();
       },
     });
@@ -338,6 +371,19 @@ export class ProjectListComponent implements OnInit, OnDestroy {
   otherTags(project: ProjectListItem): string[] {
     return (project.tags ?? []).filter((t) => t !== this.activeTag);
   }
+
+  /** Whether a tag is a parent project (#398), per GET /tags. */
+  isProjectTag(tag: string): boolean {
+    return this.projectTags.has(tag);
+  }
+
+  /** The active filter is a parent project — show the way up. */
+  get activeTagIsProject(): boolean {
+    return !!this.activeTag && this.projectTags.has(this.activeTag);
+  }
+
+  /** Names of tags that are also projects; kept as a Set for O(1) row lookups. */
+  private projectTags = new Set<string>();
 
   loadMore(): void {
     this.page++;

@@ -217,9 +217,19 @@ Rules:
   ingestion root (`SBOM_DIR`, or a bucket's `prefix`, which is stripped first —
   otherwise a bucket with prefix `k3s-io/` would label everything
   `cluster=k3s-io`).
-* The **filename is never consumed**. A file directly at the root yields nothing.
-* Valid tokens: `cluster`, `namespace`, `project`, and `_` to skip a level that
-  carries no meaning (`cluster/_/project`).
+* The **filename is only consumed by `file`** (below). Otherwise a file directly
+  at the root yields nothing.
+* Valid tokens: `cluster`, `namespace`, `project`, `_` to skip a level that
+  carries no meaning (`cluster/_/project`), and two hierarchy tokens:
+  * `tag` turns a directory level into a grouping label instead of an identity.
+    It may repeat. This is how a parent/sub-project layout is expressed:
+    `{parent}/{subproject}/{version}/f.json` with `tag/project` yields
+    `project=subproject, tags=[parent]` — and because the parent's name is now a
+    tag, the parent's own project page lists its sub-projects.
+  * `file` takes the project from the filename with all extensions stripped
+    (`k2s.spdx.json` → `k2s`). Must be the **last** token and excludes
+    `project`. For layouts where the file is named after the project and the
+    directories carry review metadata.
 * A duplicate or unknown token is a **startup error**, not a silent fallback.
 * A path shallower than the layout fills what it can; a deeper path is matched
   from the left. One oddly-placed file must never fail an ingestion run.
@@ -229,7 +239,14 @@ Rules:
 INGEST_PATH_LAYOUT="cluster/namespace/project"   # prod-eu/payments/svc/f.json
 INGEST_PATH_LAYOUT="namespace/project"           # payments/svc/f.json
 INGEST_PATH_LAYOUT="cluster/_/project"           # prod-eu/2026-09/svc/f.json
+INGEST_PATH_LAYOUT="tag/project"                 # podman/kubernetes-mcp-server/0.0.57/f.json
+                                                 #   -> project=kubernetes-mcp-server tags=[podman]
+INGEST_PATH_LAYOUT="tag/_/tag/file"              # sandbox-applications/501/siemens/k2s.spdx.json
+                                                 #   -> project=k2s tags=[sandbox-applications, siemens]
 ```
+
+Path-derived tags are **merged** with the static `TAGS` / per-bucket `tags`
+below — tags are additive, unlike the either/or dimensions.
 
 ### 2. Static labels (global or per bucket)
 
@@ -374,7 +391,7 @@ with migration `015` (#138, #57). All three are
 | Every SBOM has `cluster=<bucket prefix>` | Prefix not stripped — a stale BOMHort version | Upgrade; the prefix is stripped before the layout is applied |
 | Namespace numbers look too high | Aggregated across clusters | Add `?cluster=` or look at `cluster_count` |
 | Labels do not change after editing the config | The labels are written at ingest, not at query time | Re-ingest; `make re-scan` (Compose) or `make kind-reingest` (Kind) |
-| Container startup fails with `invalid INGEST_PATH_LAYOUT` | Duplicate or unknown segment | Valid tokens are `cluster`, `namespace`, `project`, `_` |
+| Container startup fails with `invalid INGEST_PATH_LAYOUT` | Duplicate or unknown segment, or `file` not last | Valid tokens are `cluster`, `namespace`, `project`, `tag`, `file`, `_` |
 
 ## See also
 

@@ -72,6 +72,10 @@ type VulnerabilityListItem struct {
 	// VEXScope (#350): "sbom" when the winning statement is scoped to this
 	// SBOM, "global" for unscoped legacy statements. Omitted without VEX.
 	VEXScope string `json:"vex_scope,omitempty"`
+	// AffectedSBOMs (#398) is set only on project-level listings: how many of
+	// the project's SBOMs carry this (vuln_id, purl) pair. Omitted on
+	// per-SBOM listings where it would always be 1.
+	AffectedSBOMs uint64 `json:"affected_sboms,omitempty"`
 }
 
 // DependencyNode represents a single node in the dependency tree for the UI.
@@ -382,6 +386,13 @@ type FleetCluster struct {
 }
 
 // ProjectListItem is the response DTO for the project list view.
+//
+// Count semantics (#398, frozen at 1.0): PackageCount and VulnCount are
+// de-duplicated across every SBOM of the project. A component shipped in all
+// ten versions of a project counts once, not ten times; a (vuln_id, purl) pair
+// present in five versions counts once. Before #398 both were per-SBOM sums,
+// which made a project's numbers grow with the number of versions uploaded
+// rather than with what it actually contains.
 type ProjectListItem struct {
 	ProjectName    string `json:"project_name"`
 	SBOMCount      uint64 `json:"sbom_count"`
@@ -396,6 +407,66 @@ type ProjectListItem struct {
 	Tags []string `json:"tags"`
 }
 
+// ProjectDetail is the response DTO for GET /api/v1/projects/{name} (#398):
+// one project as a unit, aggregated across all of its SBOMs. It mirrors
+// ClusterStats/NamespaceStats so the three drill-downs share UI components.
+//
+// Every count is de-duplicated across the project's SBOMs (see
+// ProjectListItem). Severity buckets count distinct (vuln_id, purl) pairs, so
+// a CRITICAL present in every version is one CRITICAL.
+type ProjectDetail struct {
+	ProjectName string   `json:"project_name"`
+	Tags        []string `json:"tags"`
+	// Parents are the entries of Tags that are themselves project names in
+	// this instance. That is how a hierarchy is expressed without a second
+	// identity column: a bucket laid out {parent}/{subproject}/… with layout
+	// "tag/project" gives every sub-project its parent as a tag, and the UI
+	// renders those tags as links up to the parent's page.
+	Parents []string `json:"parents"`
+	// RelatedProjectCount is the number of *other* projects carrying this
+	// project's name as a tag — its sub-projects. The list itself is
+	// GET /api/v1/projects?tag={name}, which already exists and paginates.
+	RelatedProjectCount uint64 `json:"related_project_count"`
+
+	SBOMCount     uint64 `json:"sbom_count"`
+	PackageCount  uint64 `json:"package_count"`
+	VulnCount     uint64 `json:"vuln_count"`
+	CriticalVulns uint64 `json:"critical_vulns"`
+	HighVulns     uint64 `json:"high_vulns"`
+	MediumVulns   uint64 `json:"medium_vulns"`
+	LowVulns      uint64 `json:"low_vulns"`
+
+	// LatestVersion is the document_version of the most recently ingested
+	// SBOM, LatestSBOMID its id — the natural entry point into the versions.
+	LatestIngested string `json:"latest_ingested,omitempty"`
+	LatestVersion  string `json:"latest_version,omitempty"`
+	LatestSBOMID   string `json:"latest_sbom_id,omitempty"`
+	// SourceRepo is the repository the project's SBOMs point at, when they
+	// agree. Taken from the newest SBOM that has one.
+	SourceRepo string `json:"source_repo,omitempty"`
+
+	// Clusters and Namespaces are where this project is deployed — empty on
+	// a catalogue instance, populated on a fleet.
+	Clusters         []string          `json:"clusters"`
+	Namespaces       []string          `json:"namespaces"`
+	LicenseBreakdown map[string]uint64 `json:"license_breakdown"`
+}
+
+// ProjectPackageItem is one distinct component across a project's SBOMs
+// (GET /api/v1/projects/{name}/packages, #398). The identity is the PURL, or
+// name@version for packages without one.
+type ProjectPackageItem struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	PURL    string `json:"purl,omitempty"`
+	// SBOMCount is how many of the project's SBOMs ship this component —
+	// "in 10 of 11 versions" is the answer a maintainer wants.
+	SBOMCount uint64 `json:"sbom_count"`
+	// VulnCount is the number of distinct vulnerability ids on this component
+	// anywhere in the project.
+	VulnCount uint64 `json:"vuln_count"`
+}
+
 // TagListItem describes one grouping label and its reach, powering a
 // data-driven grouping UI: the frontend renders whatever tags an instance
 // actually uses rather than a hard-coded list.
@@ -406,4 +477,9 @@ type TagListItem struct {
 	// across 40 sandbox applications should read as "40 projects", not "300".
 	SBOMCount    uint64 `json:"sbom_count"`
 	ProjectCount uint64 `json:"project_count"`
+	// IsProject (#398) is true when the tag is also the name of a project in
+	// this instance — i.e. it is a parent, and the projects carrying it are
+	// its sub-projects. The UI renders such tags as a link to the parent's
+	// page rather than as a plain filter chip.
+	IsProject bool `json:"is_project"`
 }

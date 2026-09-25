@@ -128,7 +128,7 @@ describe('ProjectListComponent', () => {
   it('should filter by tag and reset paging', async () => {
     const { harness, component } = await open();
     flushProjects();
-    flushTags([{ tag: 'sandbox-applications', sbom_count: 312, project_count: 41 }]);
+    flushTags([{ tag: 'sandbox-applications', sbom_count: 312, project_count: 41, is_project: false }]);
     harness.detectChanges();
 
     expect(component.tags.length).toBe(1);
@@ -155,7 +155,7 @@ describe('ProjectListComponent', () => {
   it('should clear the filter when the active tag is clicked again', async () => {
     const { harness, component } = await open();
     flushProjects();
-    flushTags([{ tag: 'graduated', sbom_count: 89, project_count: 12 }]);
+    flushTags([{ tag: 'graduated', sbom_count: 89, project_count: 12, is_project: false }]);
 
     component.selectTag('graduated');
     await harness.fixture.whenStable();
@@ -210,7 +210,7 @@ describe('ProjectListComponent', () => {
     const req = httpMock.expectOne((r) => r.url.includes('/api/v1/projects'));
     expect(req.request.params.get('tag')).toBe('sandbox-applications');
     req.flush({ data: [k2s], total: 1, page: 1, page_size: 100 });
-    flushTags([{ tag: 'sandbox-applications', sbom_count: 312, project_count: 41 }]);
+    flushTags([{ tag: 'sandbox-applications', sbom_count: 312, project_count: 41, is_project: false }]);
 
     // The chip must come up pre-selected, otherwise the link shows filtered
     // data while the UI claims nothing is filtered.
@@ -233,7 +233,7 @@ describe('ProjectListComponent', () => {
   it('should write the grouping to the URL when a chip is clicked', async () => {
     const { harness, component } = await open();
     flushProjects();
-    flushTags([{ tag: 'incubating', sbom_count: 5, project_count: 2 }]);
+    flushTags([{ tag: 'incubating', sbom_count: 5, project_count: 2, is_project: false }]);
 
     component.selectTag('incubating');
     await harness.fixture.whenStable();
@@ -251,7 +251,7 @@ describe('ProjectListComponent', () => {
   it('should drop the parameter from the URL when the grouping is cleared', async () => {
     const { harness, component } = await open('/projects?tag=incubating');
     flushProjects();
-    flushTags([{ tag: 'incubating', sbom_count: 5, project_count: 2 }]);
+    flushTags([{ tag: 'incubating', sbom_count: 5, project_count: 2, is_project: false }]);
 
     component.selectTag('incubating');
     await harness.fixture.whenStable();
@@ -268,7 +268,7 @@ describe('ProjectListComponent', () => {
   it('should not reload when the filter state is unchanged', async () => {
     const { harness } = await open('/projects?tag=incubating');
     flushProjects();
-    flushTags([{ tag: 'incubating', sbom_count: 5, project_count: 2 }]);
+    flushTags([{ tag: 'incubating', sbom_count: 5, project_count: 2, is_project: false }]);
 
     await TestBed.inject(Router).navigate([], {
       queryParams: { tag: 'incubating', unrelated: '1' },
@@ -277,6 +277,72 @@ describe('ProjectListComponent', () => {
 
     // verify() in afterEach fails if this triggered another /projects call.
     expect(true).toBe(true);
+  });
+
+  // ── Project identity (#398) ─────────────────────────────────────────────
+  // A row opens the project page, not a substring search of the SBOM list:
+  // "kubernetes" is one project with eleven versions, while a search for the
+  // word matched 1 368 documents from other projects.
+
+  it('should link each row to the project page, not to an SBOM search', async () => {
+    const { harness } = await open();
+    flushProjects({ data: [k2s], total: 1 });
+    flushTags();
+    harness.detectChanges();
+
+    const link = harness.routeNativeElement!.querySelector('a.project-link') as HTMLAnchorElement;
+    expect(link).toBeTruthy();
+    expect(link.getAttribute('href')).toBe('/projects/k2s');
+    expect(link.getAttribute('href')).not.toContain('/sboms');
+    expect(link.getAttribute('href')).not.toContain('search=');
+  });
+
+  it('should percent-encode a project name containing a slash', async () => {
+    const { harness } = await open();
+    flushProjects({ data: [{ ...k2s, project_name: 'cncf/k2s' }], total: 1 });
+    flushTags();
+    harness.detectChanges();
+
+    const link = harness.routeNativeElement!.querySelector('a.project-link') as HTMLAnchorElement;
+    // Unencoded, the router would read this as /projects/cncf/k2s — a path
+    // that does not exist. The detail route decodes it back.
+    expect(link.getAttribute('href')).toBe('/projects/cncf%2Fk2s');
+  });
+
+  it('should mark tags that are parent projects', async () => {
+    const { component } = await open();
+    flushProjects();
+    flushTags([
+      { tag: 'podman', sbom_count: 40, project_count: 6, is_project: true },
+      { tag: 'subprojects', sbom_count: 900, project_count: 200, is_project: false },
+    ]);
+
+    expect(component.isProjectTag('podman')).toBe(true);
+    expect(component.isProjectTag('subprojects')).toBe(false);
+    expect(component.isProjectTag('never-seen')).toBe(false);
+  });
+
+  it('should show the way up when the active tag is itself a project', async () => {
+    const { harness, component } = await open('/projects?tag=podman');
+    flushProjects();
+    flushTags([{ tag: 'podman', sbom_count: 40, project_count: 6, is_project: true }]);
+    harness.detectChanges();
+
+    expect(component.activeTagIsProject).toBe(true);
+    const banner = harness.routeNativeElement!.querySelector('.parent-banner');
+    expect(banner).toBeTruthy();
+    const up = banner!.querySelector('a.parent-link') as HTMLAnchorElement;
+    expect(up.getAttribute('href')).toBe('/projects/podman');
+  });
+
+  it('should not show the parent banner for a plain grouping tag', async () => {
+    const { harness, component } = await open('/projects?tag=sandbox-applications');
+    flushProjects();
+    flushTags([{ tag: 'sandbox-applications', sbom_count: 21, project_count: 21, is_project: false }]);
+    harness.detectChanges();
+
+    expect(component.activeTagIsProject).toBe(false);
+    expect(harness.routeNativeElement!.querySelector('.parent-banner')).toBeNull();
   });
 });
 

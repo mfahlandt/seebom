@@ -74,7 +74,7 @@ fixture:
 
 1. Ensure all CI checks pass (Go build + test + vet, Angular build, Helm lint)
 2. Fill out the [PR template](.github/PULL_REQUEST_TEMPLATE.md) completely
-3. At least one maintainer approval is required for merge (see [Labels and Chat-Ops](#labels-and-chat-ops))
+3. `/lgtm` from an OWNERS reviewer and `/approve` from an OWNERS approver are required for merge (see [Labels and Chat-Ops](#labels-and-chat-ops))
 4. Sign off your commits (Developer Certificate of Origin):
    ```bash
    git commit -s -m "feat: add new feature"
@@ -136,25 +136,33 @@ Component labels come from the `labels:` list in `OWNERS` files, not from glob r
 - Every label used in `OWNERS` must be listed under `labels.labels` in `.github/prow.yaml` so
   that label-sync creates it with color and description.
 
-### Interplay with branch protection on `main`
+### Merge gate on `main`
 
-`main` is protected (required status checks `Backend (Go)`, `Frontend (Angular)`, `Helm Lint`
-with "require branches to be up to date", one approving review from a code owner, stale reviews
-dismissed on push). Prow does not weaken any of this:
+Prow **is** the review gate. Since 2026-09-25 branch protection on `main` requires the status
+checks `Backend (Go)`, `Frontend (Angular)`, `Helm Lint` and **`prow/lgtm`**, with "require
+branches to be up to date" — and no GitHub review. Who may approve what is decided by the
+`OWNERS` files, not by a review count:
 
-- The merge is a regular GitHub merge API call with the workflow's `GITHUB_TOKEN`. GitHub rejects
-  it until the PR is mergeable, so `lgtm` + `approved` alone never merge anything. Prow retries
-  on every PR/review/check event and hourly.
-- `/approve` and `/lgtm` only set labels; they are **not** GitHub reviews. The CODEOWNERS
-  requirement is satisfied only by a GitHub approving review from someone listed in
-  [`.github/CODEOWNERS`](.github/CODEOWNERS). Such a review also counts as `/approve`, so the
-  normal flow is: reviewer submits an approving review, then (or in the same comment) `/lgtm`.
-  Keep `CODEOWNERS` and the `approvers:` in `OWNERS` in sync.
-- "Require branches to be up to date": Prow does not rebase or update branches. If `main` moved,
-  update the branch (button in the PR or `git rebase`); this drops `lgtm` (bound to the commit)
-  and dismisses the stale GitHub review, both must be given again.
-- The `Prow` workflow itself must not be a required status check (it runs on
-  `pull_request_target` and would gate itself).
+- `/lgtm` from an OWNERS reviewer writes the `prow/lgtm` commit status for the reviewed commit.
+  Without it the PR cannot be merged at all — not by Tide, not by the merge button.
+- `/approve` from an OWNERS approver (or a GitHub approving review, which counts the same) sets
+  `approved` once every changed file is covered. Tide requires both labels; a human pressing
+  "Merge" is only stopped by `prow/lgtm`, so do not press it without `approved`.
+- The merge is a regular GitHub merge API call with the workflow's `GITHUB_TOKEN`. GitHub still
+  rejects it until every required check is green and the branch is up to date; Prow retries on
+  every PR/review/check event and hourly.
+- Prow does not rebase or update branches. If `main` moved, update the branch (button in the PR
+  or `git rebase`); this drops `lgtm` (bound to the commit), which must be given again.
+- The `Prow` *workflow* itself must not be a required status check (it runs on
+  `pull_request_target` and would gate itself); `prow/lgtm` is a commit *status* the workflow
+  writes, which is why it can be required.
+- [`.github/CODEOWNERS`](.github/CODEOWNERS) still drives GitHub's automatic review requests and
+  is kept in sync with the `approvers:` in `OWNERS`; it no longer blocks merges.
+
+Why not a required GitHub review on top? `/approve` is a comment, not a review, and on
+repositories with OWNERS files prow-github-actions deliberately submits no bot review (a bot
+review would satisfy the requirement by itself). Requiring both meant every PR needed the same
+person to approve twice, and Tide waited on a gate it could never pass.
 
 ## What to Contribute
 

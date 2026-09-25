@@ -17,6 +17,13 @@ export const routes: Routes = [
       import('./features/projects/project-list.component').then((m) => m.ProjectListComponent),
   },
   {
+    // One project as a unit (#398). The name may contain "/" in the
+    // org/project fallback shape; routerLink encodes it, and paramMap decodes.
+    path: 'projects/:name',
+    loadComponent: () =>
+      import('./features/projects/project-detail.component').then((m) => m.ProjectDetailComponent),
+  },
+  {
     path: 'sboms',
     loadComponent: () =>
       import('./features/sbom-explorer/sbom-list.component').then((m) => m.SbomListComponent),

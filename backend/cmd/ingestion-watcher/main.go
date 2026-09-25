@@ -14,6 +14,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
+	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -35,21 +36,26 @@ type ownership struct {
 	// prefix "k3s-io/" would read that as the cluster segment.
 	prefix string
 	layout ingestpath.Layout
-	// tags are the bucket's grouping labels (global TAGS merged with the
-	// bucket's own). Unlike cluster/namespace/project they are not derived
-	// from the key -- they are pure configuration, so every object in the
-	// bucket carries the same set.
+	// tags are the bucket's configured grouping labels (global TAGS merged
+	// with the bucket's own). Every object in the bucket carries them; a
+	// layout with "tag" segments adds per-object labels on top (#398).
 	tags []string
 }
 
 // resolve returns the ownership for one object key, applying path
-// derivation on top of the configured values.
+// derivation on top of the configured values. Dimensions are either/or
+// (explicit config wins); tags are additive, so path-derived labels join the
+// configured ones rather than replacing them.
 func (o ownership) resolve(key string) (cluster, namespace, project string, tags []string) {
 	cluster, namespace, project, tags = o.cluster, o.namespace, o.project, o.tags
 	if !o.layout.Enabled() {
 		return
 	}
-	ingestpath.Apply(o.layout.Derive(stripPrefix(key, o.prefix)), &cluster, &namespace, &project)
+	derived := o.layout.Derive(stripPrefix(key, o.prefix))
+	ingestpath.Apply(derived, &cluster, &namespace, &project)
+	if len(derived.Tags) > 0 {
+		tags = tagpkg.Merge(o.tags, derived.Tags)
+	}
 	return
 }
 
@@ -174,7 +180,12 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 		// whatever they left unset. RelPath is already relative to SBOM_DIR,
 		// which is exactly the root the layout is defined against.
 		cluster, namespace, project := cfg.ClusterName, cfg.Namespace, cfg.Project
-		ingestpath.Apply(layout.Derive(f.RelPath), &cluster, &namespace, &project)
+		derived := layout.Derive(f.RelPath)
+		ingestpath.Apply(derived, &cluster, &namespace, &project)
+		fileTags := cfg.Tags
+		if len(derived.Tags) > 0 {
+			fileTags = tagpkg.Merge(cfg.Tags, derived.Tags)
+		}
 
 		batch = append(batch, models.IngestionJob{
 			CreatedAt:  time.Now(),
@@ -186,7 +197,7 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 			Cluster:    cluster,
 			Namespace:  namespace,
 			Project:    project,
-			Tags:       cfg.Tags,
+			Tags:       fileTags,
 		})
 
 		// Flush batch when it reaches the threshold.

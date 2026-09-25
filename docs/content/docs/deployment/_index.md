@@ -643,6 +643,40 @@ kubectl edit configmap bomhort-license-policy
 kubectl rollout restart deployment bomhort-api-gateway bomhort-parsing-worker
 ```
 
+### Compound SPDX expressions
+
+Declared licenses are often expressions rather than single IDs —
+`Apache-2.0 AND BSD-3-Clause AND MIT`, `MIT OR GPL-2.0-only`,
+`GPL-2.0-only WITH Classpath-exception-2.0`. BOMHort parses them (precedence
+`WITH` > `AND` > `OR`, parentheses, case-insensitive operators, deprecated `+`)
+and folds the operands into one category according to
+`licensePolicy.expressionMode`:
+
+| Mode | `Apache-2.0 AND MIT` | `MIT AND GPL-3.0-only` | `MIT OR GPL-3.0-only` |
+|------|----------------------|------------------------|-----------------------|
+| `strict` (default) | permissive | copyleft | permissive |
+| `permissive-wins` | permissive | permissive | permissive |
+| `off` | unknown | unknown | unknown |
+
+```yaml
+licensePolicy:
+  expressionMode: permissive-wins   # rendered as LICENSE_EXPRESSION_MODE
+```
+
+`strict` follows SPDX semantics and never hides a copyleft operand.
+`permissive-wins` is for catalogues whose SBOM generators join a package's
+licenses with `AND` regardless of dual-licensing (the CNCF example values use
+it). `off` restores the pre-evaluation behaviour. The Helm value overrides the
+`expressionMode` field of the policy file; an invalid value fails
+`helm template`. A verbatim policy entry for a whole expression always wins,
+and a malformed expression stays `unknown`.
+
+{{% alert title="Re-process after changing the mode" color="warning" %}}
+The mode is applied when an SBOM is parsed. Existing rows keep their stored
+category until the SBOMs are re-processed; a watcher run alone skips unchanged
+files (SHA256 dedup).
+{{% /alert %}}
+
 ---
 
 ## 5. Custom Theme

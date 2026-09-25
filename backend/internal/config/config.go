@@ -82,7 +82,11 @@ type Config struct {
 	IgnorePrefix      string // Files with this prefix are skipped during local scan (default "_")
 	ExceptionsFile    string // Path to license-exceptions.json
 	LicensePolicyFile string // Path to license-policy.json
-	GitHubToken       string // GitHub personal access token (optional, increases rate limit)
+	// LicenseExpressionMode overrides the policy file's expressionMode for
+	// compound SPDX expressions: "strict" | "permissive-wins" | "off".
+	// Empty (default) defers to the policy file, then the built-in default.
+	LicenseExpressionMode string
+	GitHubToken           string // GitHub personal access token (optional, increases rate limit)
 
 	// Multi-cluster
 	ClusterName string // Cluster identifier for this instance (default "" = unassigned)
@@ -144,34 +148,35 @@ const (
 // Load reads configuration from environment variables with sensible defaults.
 func Load() (*Config, error) {
 	cfg := &Config{
-		ClickHouseHost:     getEnv("CLICKHOUSE_HOST", "localhost"),
-		ClickHousePort:     getEnvInt("CLICKHOUSE_PORT", 9000),
-		ClickHouseDatabase: getEnv("CLICKHOUSE_DATABASE", "bomhort"),
-		ClickHouseUser:     getEnv("CLICKHOUSE_USER", "default"),
-		ClickHousePassword: getEnv("CLICKHOUSE_PASSWORD", ""),
-		SBOMDir:            getEnv("SBOM_DIR", "./sboms"),
-		APIPort:            getEnvInt("API_PORT", 8080),
-		CORSAllowedOrigins: getEnv("CORS_ALLOWED_ORIGINS", "*"),
-		WorkerID:           getEnv("WORKER_ID", ""),
-		WorkerBatchSize:    getEnvInt("WORKER_BATCH_SIZE", 10),
-		SkipOSV:            getEnvBool("SKIP_OSV", false),
-		SkipGitHubResolve:  getEnvBool("SKIP_GITHUB_RESOLVE", false),
-		SkipNPMResolve:     getEnvBool("SKIP_NPM_RESOLVE", false),
-		SkipNuGetResolve:   getEnvBool("SKIP_NUGET_RESOLVE", false),
-		SBOMLimit:          getEnvInt("SBOM_LIMIT", 0),
-		IgnorePrefix:       getEnv("SBOM_IGNORE_PREFIX", "_"),
-		ExceptionsFile:     getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),
-		LicensePolicyFile:  getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
-		GitHubToken:        getEnv("GITHUB_TOKEN", ""),
-		ClusterName:        getEnv("CLUSTER_NAME", ""),
-		Namespace:          getEnv("NAMESPACE", ""),
-		Project:            getEnv("PROJECT", ""),
-		Tags:               tags.Parse(getEnv("TAGS", "")),
-		IngestPathLayout:   getEnv("INGEST_PATH_LAYOUT", ""),
-		AuthEnabled:        getEnvBool("AUTH_ENABLED", false),
-		ServiceToken:       getEnv("SERVICE_TOKEN", ""),
-		APIKeys:            parseAPIKeys(getEnv("API_KEYS", "")),
-		MaxUploadSizeMB:    getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
+		ClickHouseHost:        getEnv("CLICKHOUSE_HOST", "localhost"),
+		ClickHousePort:        getEnvInt("CLICKHOUSE_PORT", 9000),
+		ClickHouseDatabase:    getEnv("CLICKHOUSE_DATABASE", "bomhort"),
+		ClickHouseUser:        getEnv("CLICKHOUSE_USER", "default"),
+		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", ""),
+		SBOMDir:               getEnv("SBOM_DIR", "./sboms"),
+		APIPort:               getEnvInt("API_PORT", 8080),
+		CORSAllowedOrigins:    getEnv("CORS_ALLOWED_ORIGINS", "*"),
+		WorkerID:              getEnv("WORKER_ID", ""),
+		WorkerBatchSize:       getEnvInt("WORKER_BATCH_SIZE", 10),
+		SkipOSV:               getEnvBool("SKIP_OSV", false),
+		SkipGitHubResolve:     getEnvBool("SKIP_GITHUB_RESOLVE", false),
+		SkipNPMResolve:        getEnvBool("SKIP_NPM_RESOLVE", false),
+		SkipNuGetResolve:      getEnvBool("SKIP_NUGET_RESOLVE", false),
+		SBOMLimit:             getEnvInt("SBOM_LIMIT", 0),
+		IgnorePrefix:          getEnv("SBOM_IGNORE_PREFIX", "_"),
+		ExceptionsFile:        getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),
+		LicensePolicyFile:     getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
+		LicenseExpressionMode: strings.ToLower(strings.TrimSpace(getEnv("LICENSE_EXPRESSION_MODE", ""))),
+		GitHubToken:           getEnv("GITHUB_TOKEN", ""),
+		ClusterName:           getEnv("CLUSTER_NAME", ""),
+		Namespace:             getEnv("NAMESPACE", ""),
+		Project:               getEnv("PROJECT", ""),
+		Tags:                  tags.Parse(getEnv("TAGS", "")),
+		IngestPathLayout:      getEnv("INGEST_PATH_LAYOUT", ""),
+		AuthEnabled:           getEnvBool("AUTH_ENABLED", false),
+		ServiceToken:          getEnv("SERVICE_TOKEN", ""),
+		APIKeys:               parseAPIKeys(getEnv("API_KEYS", "")),
+		MaxUploadSizeMB:       getEnvInt("MAX_UPLOAD_SIZE_MB", 50),
 
 		OriginalStoreBackend:  strings.ToLower(getEnv("ORIGINAL_STORE_BACKEND", OriginalStoreAuto)),
 		OriginalStoreS3Bucket: getEnv("ORIGINAL_STORE_S3_BUCKET", ""),
@@ -183,6 +188,12 @@ func Load() (*Config, error) {
 	case OriginalStoreAuto, OriginalStoreS3, OriginalStoreFS, OriginalStoreNone:
 	default:
 		return nil, fmt.Errorf("invalid ORIGINAL_STORE_BACKEND %q (want auto|s3|fs|none)", cfg.OriginalStoreBackend)
+	}
+
+	switch cfg.LicenseExpressionMode {
+	case "", "strict", "permissive-wins", "off":
+	default:
+		return nil, fmt.Errorf("invalid LICENSE_EXPRESSION_MODE %q (want strict|permissive-wins|off)", cfg.LicenseExpressionMode)
 	}
 
 	// Fail fast on a malformed layout rather than ingesting a whole fleet with

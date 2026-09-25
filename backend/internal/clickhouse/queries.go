@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
@@ -167,26 +168,42 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 }
 
 // QuerySBOMs fetches a paginated list of SBOMs with package and vulnerability counts.
-// If search is non-empty, it filters SBOMs whose document_name or source_file contains the term.
-func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
+//
+// search, when non-empty, matches document_name or source_file (substring,
+// case-insensitive). project (#398), when non-empty, restricts the list to
+// the SBOMs that resolve to that project through projectKeyExpr — the same
+// rule the project listing and project page use, so "the SBOMs of
+// kubernetes" is eleven documents and not every path containing the word.
+// The two compose: search narrows within the project.
+func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, project string) (*dto.PaginatedResponse[dto.SBOMListItem], error) {
 	if page == 0 {
 		page = 1
 	}
 	offset := (page - 1) * pageSize
 
-	// Build WHERE clause for search.
-	whereClause := ""
-	var searchArgs []interface{}
+	// Build WHERE clause. The project predicate uses the derived key rather
+	// than the raw column so rows that predate ownership config (project =
+	// '') are still found under the name the listing shows for them.
+	var conds []string
+	var whereArgs []interface{}
+	if project != "" {
+		conds = append(conds, "("+projectKeyExpr+") = ?")
+		whereArgs = append(whereArgs, project)
+	}
 	if search != "" {
-		whereClause = "WHERE s.document_name ILIKE ? OR s.source_file ILIKE ?"
+		conds = append(conds, "(s.document_name ILIKE ? OR s.source_file ILIKE ?)")
 		pattern := "%" + search + "%"
-		searchArgs = append(searchArgs, pattern, pattern)
+		whereArgs = append(whereArgs, pattern, pattern)
+	}
+	whereClause := ""
+	if len(conds) > 0 {
+		whereClause = "WHERE " + strings.Join(conds, " AND ")
 	}
 
-	// Count total (with search filter).
+	// Count total (with filters).
 	var total uint64
 	countQuery := "SELECT count() FROM (SELECT * FROM sboms FINAL) AS s " + whereClause
-	if err := c.Conn.QueryRow(ctx, countQuery, searchArgs...).Scan(&total); err != nil {
+	if err := c.Conn.QueryRow(ctx, countQuery, whereArgs...).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count sboms: %w", err)
 	}
 
@@ -220,7 +237,7 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search s
 		LIMIT ? OFFSET ?
 	`, whereClause)
 
-	args := append(searchArgs, pageSize, offset)
+	args := append(whereArgs, pageSize, offset)
 	rows, err := c.Conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sboms: %w", err)

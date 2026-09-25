@@ -23,12 +23,24 @@ import { SBOMListItem } from '../../core/api.models';
         </span>
       </div>
 
+      <!--
+        Project scope (#398). ?project= is an identity filter, not a search:
+        it lists exactly this project's versions. Named explicitly so the
+        reader knows why the list is short, with the way to the project page
+        and the way out.
+      -->
+      <div class="scope-banner" *ngIf="projectScope">
+        Versions of
+        <a [routerLink]="['/projects', projectScope]" class="scope-link">{{ projectScope }}</a>
+        <a routerLink="/sboms" class="scope-clear" title="Show all SBOMs">✕ clear</a>
+      </div>
+
       <div class="search-bar">
         <input
           type="text"
           [(ngModel)]="searchTerm"
           (ngModelChange)="onSearchChange($event)"
-          placeholder="Search projects by name…"
+          [placeholder]="projectScope ? 'Search within ' + projectScope + '…' : 'Search SBOMs by document name or path…'"
           class="search-input"
         />
         <span class="search-loading" *ngIf="loading">⏳</span>
@@ -47,7 +59,8 @@ import { SBOMListItem } from '../../core/api.models';
             <span class="owner-badge" *ngIf="sbom.namespace" [title]="'Namespace: ' + sbom.namespace">
               {{ sbom.namespace }}
             </span>
-            <span class="owner-badge" *ngIf="sbom.project" [title]="'Project: ' + sbom.project">
+            <!-- The project badge is redundant inside a project scope. -->
+            <span class="owner-badge" *ngIf="sbom.project && sbom.project !== projectScope" [title]="'Project: ' + sbom.project">
               {{ sbom.project }}
             </span>
             <span class="packages">{{ sbom.package_count | number }} packages</span>
@@ -67,7 +80,10 @@ import { SBOMListItem } from '../../core/api.models';
       </div>
 
       <div *ngIf="!loading && total === 0 && searchTerm" class="empty-search">
-        No SBOMs matching "{{ searchTerm }}"
+        No SBOMs matching "{{ searchTerm }}"<span *ngIf="projectScope"> in {{ projectScope }}</span>
+      </div>
+      <div *ngIf="!loading && total === 0 && !searchTerm && projectScope" class="empty-search">
+        No SBOMs resolve to project "{{ projectScope }}"
       </div>
     </div>
   `,
@@ -77,6 +93,15 @@ import { SBOMListItem } from '../../core/api.models';
     h1 { margin: 0; font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; }
     .result-count { font-size: 0.75rem; color: var(--text-muted); }
     .search-hint { font-style: italic; }
+    .scope-banner {
+      display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;
+      padding: 8px 12px; font-size: 0.78rem; color: var(--text-secondary);
+      background: var(--status-info-bg); border: 1px solid var(--accent); border-radius: 4px;
+    }
+    .scope-link { font-weight: 700; color: var(--accent-hover); text-decoration: none; }
+    .scope-link:hover { text-decoration: underline; }
+    .scope-clear { margin-left: auto; color: var(--text-muted); text-decoration: none; font-size: 0.72rem; }
+    .scope-clear:hover { color: var(--text); }
 
     .search-bar { position: relative; margin-bottom: 12px; }
     .search-input {
@@ -147,8 +172,11 @@ export class SbomListComponent implements OnInit, OnDestroy {
   total = 0;
   searchTerm = '';
   loading = false;
+  /** Exact project identity from ?project= (#398); '' = unscoped. */
+  projectScope = '';
 
   private page = 1;
+  private loadedOnce = false;
   private readonly pageSize = 100;
   private readonly searchSubject = new Subject<string>();
   private readonly destroy$ = new Subject<void>();
@@ -170,10 +198,26 @@ export class SbomListComponent implements OnInit, OnDestroy {
       this.loadSboms(term);
     });
 
-    // Read initial search from URL query parameter.
-    const initialSearch = this.route.snapshot.queryParamMap.get('search') || '';
-    this.searchTerm = initialSearch;
-    this.loadSboms(initialSearch);
+    // The URL carries both filters. Subscribed rather than snapshotted so a
+    // navigation from one project scope to another (or to none) reloads.
+    // Rows are only discarded on an actual filter change — the first emit
+    // must not blank out rows a caller has already placed.
+    this.route.queryParamMap.pipe(takeUntil(this.destroy$)).subscribe((params) => {
+      const project = params.get('project') || '';
+      const search = params.get('search') || '';
+      const changed = project !== this.projectScope || search !== this.searchTerm;
+      if (this.loadedOnce && !changed) {
+        return;
+      }
+      if (changed) {
+        this.page = 1;
+        this.sboms = [];
+      }
+      this.projectScope = project;
+      this.searchTerm = search;
+      this.loadedOnce = true;
+      this.loadSboms(search);
+    });
   }
 
   ngOnDestroy(): void {
@@ -203,7 +247,7 @@ export class SbomListComponent implements OnInit, OnDestroy {
     this.loading = true;
     this.cdr.markForCheck();
 
-    this.api.getSboms(this.page, this.pageSize, search).subscribe((response) => {
+    this.api.getSboms(this.page, this.pageSize, search, this.projectScope).subscribe((response) => {
       if (append) {
         this.sboms = [...this.sboms, ...response.data];
       } else {

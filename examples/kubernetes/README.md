@@ -41,6 +41,32 @@ helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
 |------|-------------|----------|
 | `values-production.yaml` | **S3 buckets** (default) or seed job (PVC fallback) | Production, large-scale ingestion |
 | `values-minimal.yaml` | **S3 buckets** (default) or git-sync (PVC fallback) | Small repos (< 1 GB), CI/staging |
+| `values-headless.yaml` | S3 buckets | API-only deployments without the UI |
+| `values-cncf.yaml` | S3 bucket (CNCF project SBOMs) | The public CNCF catalogue instance: no auth, CNCF branding, `licensePolicy.expressionMode: permissive-wins`, foundation exceptions via `--set-file` |
+
+---
+
+## License Classification of Compound Expressions
+
+SBOM generators frequently emit SPDX expressions rather than single
+identifiers — `Apache-2.0 AND BSD-3-Clause AND MIT`, `MIT OR GPL-2.0-only`,
+`GPL-2.0-only WITH Classpath-exception-2.0`. BOMHort evaluates these operand
+by operand against the policy. `licensePolicy.expressionMode` (injected as
+`LICENSE_EXPRESSION_MODE`, overriding the policy file's `expressionMode`)
+selects the rule:
+
+| Mode | `Apache-2.0 AND MIT` | `MIT AND GPL-3.0-only` | `MIT OR GPL-3.0-only` |
+|------|----------------------|------------------------|-----------------------|
+| `strict` (default) | permissive | copyleft | permissive |
+| `permissive-wins` | permissive | permissive | permissive |
+| `off` | unknown | unknown | unknown |
+
+`strict` follows SPDX semantics: AND binds you to every operand, OR lets you
+choose. `permissive-wins` is for catalogues whose generators join a package's
+licenses with AND regardless of whether it is dual-licensed. `off` restores
+the pre-evaluation behaviour. A policy entry that lists a whole expression
+verbatim always wins. Changing the mode only affects newly processed SBOMs —
+re-process to update stored results.
 
 ---
 

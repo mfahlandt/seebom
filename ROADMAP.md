@@ -1,34 +1,36 @@
 # BOMHort Product Roadmap
 
-> Last updated: 2026-09-24
+> Last updated: 2026-09-25
 > Project Board: https://github.com/orgs/seebom-labs/projects/1
-> Milestone v1.0.0: https://github.com/seebom-labs/BOMHort/milestone/1
+> Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) · [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) · [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) · [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) · [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3) · [v2.0.0](https://github.com/seebom-labs/BOMHort/milestone/4)
 
 ## Executive Summary
 
-BOMHort is transitioning from a single-instance SBOM visualization tool into an **enterprise-grade, multi-cluster Software Supply Chain Security platform**. Phase 1 (foundation, auth, multi-cluster model, push ingestion) is complete and shipped in v0.4–v0.6.
+BOMHort is transitioning from a single-instance SBOM visualization tool into an **enterprise-grade, multi-cluster Software Supply Chain Security platform**. Phase 1 (foundation, auth, multi-cluster model, push ingestion) is complete and shipped in v0.4–v0.7.
 
-The roadmap is now organised around one hard deadline — the **v1.0.0 schema and API freeze** — and what must land before it:
+The roadmap is organised around one hard deadline — the **v1.0.0 schema and API freeze** — and, since 2026-09-25, around one regulatory fact: the **EU Cyber Resilience Act's vulnerability-reporting obligations are in force since 2026-09-11**, and the first customer questionnaires asking for a CRA-grade vulnerability register have arrived. Consequently the CRA scope that Phase 4 had parked in 2027 H1 moves **into 1.0**, and 1.0 is reached in three steps:
 
-1. **Phase 2 — v1.0 Freeze Preparation (Sep–Nov 2026):** one coordinated migration wave (`014`–`022`, complete) for every forward-only item, the API-contract changes, the **consumer-facing contract** (project-centric read model #398, MCP server #399), the chart/correctness hygiene that `values.yaml` stability demands (#344, #355, #391, #392, #397), plus versioned docs. Anything that can be added later without breaking the contract is *deliberately* pushed past 1.0.
-2. **Phase 3 — Automation & Fleet Operations (v1.1.0, Q1 2027):** the [VEXViper](https://github.com/seebom-labs/VEXViper) integration epic (automated VEX generation), namespace/workload views, auditor exports, OSV mirror, attestation verification.
-3. **Phase 4 — Analytics & Compliance (v1.2.0, 2027 H1):** CRA readiness scoring, EPSS, Scorecard, Lottery Factor, SBOM diff, enriched SBOM export.
+1. **v0.8.0 — Contract (Oct 2026):** the consumer-facing contract and chart hygiene that were the 1.0 blockers: MCP server #399 first, project aggregation UI #58, `source_repo` fix #355, `values.yaml` shape (#397, #391, #392, #344-I), perf #344-E — plus the two cheapest register items (#412, #266).
+2. **v0.9.0 — Vulnerability register (Nov 2026):** CRA Annex I Part II made queryable: CVSS #408, CWE #409, KEV #410, EPSS #64, remediation record #413, SLA due dates #411 — the #414 umbrella.
+3. **v1.0.0 — Freeze + CRA dashboard (Jan 2027):** CRA readiness score #141 (re-scoped onto the register), MTTR #7, auditor report bundle #62, crypto-library inventory #419, versioned docs #145. Then freeze.
+4. **v1.1.0 — Automation, Fleet & Cryptography (Apr 2027):** VEXViper epic #338, fleet views, OSV mirror, attestations #143, and the CBOM block #420 (#415–#418).
+5. **v1.2.0 — Analytics (Jul 2027):** Scorecard, Lottery Factor, SBOM diff, tree view, blast radius, enriched export.
 
-The sequencing is driven by one rule: **if it can't be back-filled, it lands before 1.0; if it's additive, it lands after.**
+Two rules drive sequencing. The old one still holds: **if it can't be back-filled, it lands before 1.0; if it's additive, it lands after** — the register work is additive, it lands before 1.0 for *market* reasons, not contract reasons, and the schema register below says so per row. The new one: **issues raised by the consumer side ship first** — @jeefy's #398 (✅ v0.7.x) and #399 open every release they appear in, because they are the questions an external consumer of the contract actually asked.
 
-> **Re-plan 2026-09-24.** Two newly filed issues are pulled into 1.0, and the backlog
-> is now fully triaged — **every open issue carries a milestone**.
-> **#398 (project-centric view)** changes what a "project" *is* and fixes the double-counted
-> `package_count`/`vuln_count` in the already-frozen `ProjectListItem` — a row-semantics
-> change of the same class as #335. **#399 (MCP server)** is the first external consumer of
-> the REST contract and needs its own `values.yaml` block, which freezes with 1.0.
-> Consequences: **#58 (Aggregated SBOM View) moves from Phase 3 to Phase 2** (it is the
-> aggregation half of #398); **five previously unsorted issues (#344, #355, #391, #392,
-> #397) join Phase 2** because they either touch `values.yaml` or invalidate a box the 1.0
-> criteria already tick; **#57 moves to v1.1.0** (its column shipped, only the post-1.0
-> policy work remains); and the 1.0 target moves from end-October to **end-November 2026**.
-> Milestones `v1.1.0`, `v1.2.0` and `v2.0.0` now exist to hold Phases 3, 4 and the
-> breaking-change backlog.
+> **Re-plan 2026-09-25.** Triggered by two customer security questionnaires
+> (vulnerability register incl. CVE/CWE/CVSS/EPSS/KEV/remediation/due date → **#414**;
+> cryptographic risk management incl. CBOM inventory, crypto policy, PQC → **#420**), each
+> broken into sub-issues (#408–#413, #415–#419). Decisions:
+> **(1)** the 1.0 milestone is split into `v0.8.0` (contract, 2026-10-31), `v0.9.0`
+> (register, 2026-11-30) and `v1.0.0` (freeze + CRA dashboard, **2027-01-31**);
+> **(2)** everything CRA-shaped moves into that 1.0 path: #414's sub-issues, #64 (from
+> v1.2.0), #141 (from v1.2.0, re-scoped to not wait for #143/#140), #7 (from v1.2.0), #62
+> and #266 (from v1.1.0), #419 (new);
+> **(3)** the CBOM block #415–#418 lands in v1.1.0 — three new tables, all additive, not
+> CRA-critical; **(4)** #399 is the first item of v0.8.0; **(5)** v1.1.0 → 2027-04-30,
+> v1.2.0 → 2027-07-31. The previous re-plan (2026-09-24) is preserved below where its
+> reasoning still applies.
 
 ---
 
@@ -49,183 +51,109 @@ The sequencing is driven by one rule: **if it can't be back-filled, it lands bef
 | ~~#37~~ | ~~Version Skew Detection~~ | ✅ PRs #103, #126. |
 | ~~#132~~ / ~~#133~~ | ~~Cluster listing + detail endpoints~~ | ✅ `GET /api/v1/clusters`, `/clusters/{name}/{stats,sboms}`. |
 | ~~#135~~ | ~~SBOM Upload (Push Model)~~ | ✅ `POST /api/v1/sboms/upload` (auth-gated, S3 or `pushed/` dir). |
-| #136 | Enhanced CORS | 🟡 **Functionally done** — `POST` on the upload route, `X-API-Key`/`X-Service-Token`/`X-Filename` headers, configurable origins. Remaining scope (`CORS_ALLOW_CREDENTIALS`, configurable methods/headers) is additive → **moved to 1.x**, removed from the v1.0 milestone. |
+| ~~#398~~ | ~~Project-centric read model~~ | ✅ v0.7.x (#401): `GET /api/v1/projects/{name}` + sub-resources, de-duplicated counts, project identity rule (`projectKeyExpr`) is contract. |
+| #136 | Enhanced CORS | 🟡 **Functionally done** — `POST` on the upload route, `X-API-Key`/`X-Service-Token`/`X-Filename` headers, configurable origins. Remaining scope (`CORS_ALLOW_CREDENTIALS`, configurable methods/headers) is additive → v1.1.0. |
 
-**Delivered beyond the roadmap:** Global Search (`GET /api/v1/search`), Package Search + detail page, in-toto attestation unwrapping, protobom parsing backend, license resolution via GitHub + npm + NuGet registries with license-text classification (`internal/licensetext`), SPDX file-level filtering, dark mode, white-label theming.
+**Delivered beyond the roadmap:** Global Search (`GET /api/v1/search`), Package Search + detail page, in-toto attestation unwrapping, protobom parsing backend, license resolution via GitHub + npm + NuGet registries with license-text classification (`internal/licensetext`), SPDX license *expression* evaluation (#402), SPDX file-level filtering, dark mode, white-label theming, Prow chat-ops (#405).
+
+**Schema wave `014`–`022` — complete.** `document_store` (#256), `namespace`/`project` columns (#138, #57), `source_repo`/`source_ref` (#332), VEX provenance (#334), VEX SBOM scope (#350), OSV aliases (`019`), VEX `product_ref` (`020`), `document_version` (`021`), `tags` (#357). Every column the post-1.0 features were known to need exists; the register work below adds columns and tables of its own and is listed in the Schema Change Register.
 
 ---
 
-## Phase 2: v1.0 Freeze Preparation (Sep–Nov 2026)
+## Phase 2: The road to 1.0 (Oct 2026 – Jan 2027)
 
-**Theme:** Land every forward-only data capture, every API-contract change and the first external consumer of that contract in **one coordinated wave**, then freeze.
+**Theme:** Freeze a contract that an external consumer has already exercised (#399), and ship a CRA-grade vulnerability register *inside* the frozen surface rather than bolting it on after.
 
-### 2a. Schema wave `014`–`022` (must land together, before the freeze) ✅
+### 2a. v0.8.0 — Contract (due 2026-10-31)
 
-Migration `013` is taken by `013_create_registry_license_cache` (shipped in v0.6.x). The issues below previously claimed `013` — numbering is now fixed as follows. The wave is **complete**; `018`–`022` are listed in the Schema Change Register below.
+Everything that was blocking 1.0 on 2026-09-24, minus the tag. Order within the release is the order of the table.
 
-| Migration | # | Issue | Type | Why pre-1.0 |
-|-----------|---|-------|------|-------------|
-| `014_create_document_store` | **#256** | Tier-2 fidelity capture — persist original SBOM bytes at ingest | New table (`ReplacingMergeTree`, reference + `sha256` only; bytes in configurable blob store: S3/MinIO prefix **or** PVC) | **The real 1.0 driver.** Forward-only: SBOMs ingested before this exist permanently lose round-trip/export fidelity. Also needs a follow-up hook in the already-merged upload handler (#135). Enables #255, and makes every other column below back-fillable. |
-| `015_add_namespace_project_columns` ✅ | **#138** | Namespace filtering | `ADD COLUMN namespace LowCardinality(String) DEFAULT ''` on core tables (same pattern as `cluster`; **no** `ORDER BY` change — not possible on MergeTree without rebuild) | Ingestion path convention (`{bucket}/{cluster}/{namespace}/…`) + upload field. `?namespace=` on list endpoints is an additive query param, but the ingestion contract should be fixed before 1.0. |
-| `016_add_source_columns` ✅ | **#332** | `source_repo` / `source_ref` as first-class SBOM attribute | `ADD COLUMN source_repo String, source_ref String` on `sboms` | Cheap `ADD COLUMN`; populated at parse time from SPDX `downloadLocation`/`ExternalRef` and CycloneDX `externalReferences[vcs]`/`pedigree.commits`. Overridable via `X-Source-Repo`/`X-Source-Ref` upload headers and `PATCH /api/v1/sboms/{id}`. Correctness blocker for the VEXViper sidecar (#338). ⚠️ **Column shipped, extraction does not work in practice — see #355 in 2d.** |
-| `017_add_vex_provenance` ✅ | **#334** (columns only) | VEX statement provenance | `ADD COLUMN author, role, tooling, status_notes` on `vex_statements` | OpenVEX already carries these; capturing them at ingest is forward-only-ish (VEX docs are small and re-uploadable, but automated producers won't re-send). UI badge + `?vex_source=` filter → Phase 3. |
-| *(bundled with 015)* | **#57** (column only) | `project` column | `ADD COLUMN project LowCardinality(String) DEFAULT ''` on core tables | Roadmap already asked to batch this with the `ADD COLUMN` wave. **Only the column** lands now; per-project policies / exception scopes are additive → Phase 3. |
+| # | Issue | Type | Why here |
+|---|-------|------|----------|
+| **#399** | **BOMHort MCP server** — read-only tool surface over the REST API (`cmd/mcp-server`), SDK `>= v1.4.1`, stdio default | New component + new `values.yaml` block (`mcp.*`) | **First in line** (consumer-side issue, @jeefy). First external consumer of the frozen REST contract; its `values.yaml` block freezes with 1.0. Full reasoning and the SDK advisory table are in [Prioritization Rationale](#why-399-mcp-server-before-the-freeze-when-its-purely-additive). |
+| **#58** | Aggregated SBOM View — N versions of one project as one expandable row | UI + query | UI half of #398 (✅); same de-dup semantics. |
+| **#355** | `source_repo` extraction yields 0 % on real SBOMs — `documentNamespace` fallback | Parser | #332 is ticked in the 1.0 criteria while populating **zero** of 500 CNCF SBOMs. #338/VEXViper depends on it. |
+| **#397** | `licenseExceptions.existingConfigMap` + `licensePolicy.existingConfigMap` | Helm values | Values shape; GitOps users otherwise inline ~180 KB into an Argo `Application` (cncf/automation#703). |
+| **#391** | Seed job never seeds — gate (`seedJob.enabled`) or remove | Helm values | Ships broken since March, rendered by our own `values-production.yaml`. |
+| **#392** | Chart ships ClickHouse 24.8, CI tests 24.12 — decide the supported floor | Helm values + CI matrix | Support policy starts at 1.0; the floor must be a written decision. |
+| **#344** E + I | `enrichProjectStats` per page (E — lands on #398's semantics), ClickHouse `max_threads`/`max_memory_usage`/`max_execution_time` in values (I) | Query + Helm values | E was sequenced behind #398, which shipped; I is values shape. A–D, F–H stay additive (post-1.0 MVs/indexes). |
+| **#412** | Expose the CVE id and OSV aliases in API, UI and lookups | DTO + query, **no migration** | Register item that costs nothing: `aliases` exist since `019`. Makes every finding answer "which CVE" before the register lands. |
+| **#266** | CSV export for vulnerabilities (stdlib `encoding/csv`) | New endpoint | Register item, `good first issue`. Column list grows in v0.9.0 as fields arrive; the endpoint shape is set here. |
 
-### 2b. API-contract changes (before the freeze, no migration)
+**Exit criteria:** an MCP client can ask `get_project` and get de-duplicated numbers; every `values.yaml` key 1.0 promises to keep exists; `source_repo` > 90 % on the CNCF corpus; a CSV of findings with CVE ids can be downloaded.
 
-| # | Issue | Why pre-1.0 |
-|---|-------|-------------|
-| **#335** ✅ | One row per `(vuln_id, purl)` in `/sboms/{id}/vulnerabilities` — latest VEX statement wins, expose `vex_timestamp` | **Changes row semantics** of a frozen endpoint. `argMax()`/`LIMIT 1 BY` in the ClickHouse query + DTO fields (`vex_timestamp`, `vex_author`, `vex_tooling`). Small, but must be in the 1.0 contract. |
-| **#177** ✅ | `cluster` in `SBOMListItem` DTO + badge | Additive DTO field; trivial. Shipped in v0.7.0 together with `namespace`/`project`, so the list contract is complete. |
+### 2b. v0.9.0 — Vulnerability register (due 2026-11-30)
 
-### 2c. Consumer-facing contract (new — added 2026-09-24)
+The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify and document vulnerabilities, remediate without delay. A register that a security officer can hand to an auditor needs, per finding and per deployed version: CVE, CWE, CVSS, EPSS, KEV status, remediation status, due date, and a timestamp proving it is current. Order is dependency order.
 
-Everything so far made BOMHort *capture* the right data. These two make it *answerable* —
-and both change or lock down surfaces that 1.0 freezes.
+| # | Issue | Migration | Notes |
+|---|-------|-----------|-------|
+| **#408** | CVSS score, vector, version (not only the bucket); v4 support | `023` `ADD COLUMN cvss_score, cvss_vector, cvss_version` on `vulnerabilities` | Score is already computed in `osvutil` and discarded. Backfill from `osv_json`. |
+| **#409** | CWE ids from OSV `database_specific.cwe_ids` | `023` `ADD COLUMN cwe_ids Array(String)` (same migration) | Backfill from `osv_json`. Enables CRA/crypto CWE filters (CWE-327/-326/-328/-295/-916). |
+| **#410** | CISA **KEV** catalogue status | `024_create_kev_catalog` (new table, keyed by CVE) | Daily feed in `cve-refresher`; matched via `aliases`. **CRA Art. 14: actively exploited vulnerabilities must be reported within 24 h** — KEV is the public signal for "actively exploited". Brings an externally set `dueDate`. |
+| **#64** | **EPSS** scores | `025_create_epss_scores` (new table, keyed by CVE) | **Pulled forward from v1.2.0.** Same shape as #410 (daily bulk → side table); the two share refresher plumbing and the triage rule *KEV ∨ EPSS ≥ x ∨ CVSS ≥ 9*. |
+| **#413** | VEX action statement as remediation record; `action_statement_timestamp` | `026` `ADD COLUMN action_statement_timestamp` on `vex_statements` | Surfaces what is stored; the remediation *status* column of the register. |
+| **#411** | Remediation SLA policy → policy-derived `due_date`, `overdue`, `remediation_status` | none (computed at query time from `remediation-policy.json`) | The *estimated resolution date* column. Config-driven like `license-policy.json`; KEV due date overrides. No write API — public frontend. |
+| **#414** | Umbrella: docs page "Using BOMHort as a vulnerability register", `last_refreshed_at` on export and dashboard, #266 column list finalised | — | Closes when the row above is complete. |
 
-| # | Issue | Type | Why pre-1.0 |
-|---|-------|------|-------------|
-| **#398** | Project-centric read model: `GET /api/v1/projects/{name}` + `/{name}/{sboms,packages,vulnerabilities}`, de-duplicated across all SBOMs of a project | Query + DTO, **no migration** (columns exist since `015`/`022`) | **Row-semantics change on a frozen endpoint**, same class as #335. `ProjectListItem.package_count` / `vuln_count` today `sum()` per-SBOM counts, so a project with 5 SBOMs of one component reports it 5×. Fixing that after 1.0 silently changes every number an operator has been reporting. The project *identity* rule (explicit `project` column → path derivation → `document_name` fallback, `projectKeyExpr`) also becomes contract — it decides what "OpenTelemetry" means versus `OpenTelemetry/subproject@v1.2.3`. |
-| **#399** | BOMHort MCP server — read-only tool surface over the REST API (`cmd/mcp-server`), port of the VEXViper MCP server | New component + **new `values.yaml` block** (`mcp.enabled`, transport, auth) | Helm values freeze with 1.0 (see the milestone criteria below). Shipping the server in 1.1 means either a breaking values reshuffle or living with a badly-guessed schema for a whole major. It is also the **first external consumer of the frozen REST contract** — it surfaces exactly the gaps #398 fixes, so it must be built *before* the freeze, not after. |
-| **#58** | Aggregated SBOM View — group N versions of one project into an expandable row | UI + query | **Moved up from Phase 3.** This is the UI half of #398 — same aggregation, same dedup semantics. Splitting them across the freeze would mean designing the de-dup twice. |
+**Exit criteria:** `GET /api/v1/projects/{name}/vulnerabilities` and the CSV export carry `cve_id, aliases, cwe_ids, cvss_score, cvss_vector, epss_score, epss_percentile, kev_listed, kev_due_date, vex_status, remediation_status, action_statement, action_statement_timestamp, discovered_at, due_date, last_refreshed_at`; the dashboard shows overdue and KEV counts.
 
-**Dependency decision for #399 — approved 2026-09-24.** The official Go SDK
-(`github.com/modelcontextprotocol/go-sdk`) is accepted as direct dependency **#6**, raising
-the budget from 5 to 6. `AGENTS.md:113` needs updating with the new list.
+### 2c. v1.0.0 — Freeze + CRA dashboard (due 2027-01-31)
 
-**Minimum version `v1.4.1` — this is not a style preference.** Everything below it carries
-four HIGH advisories, and three of them describe exactly the scenario a BOMHort MCP server
-would run in:
-
-| Advisory | What it breaks |
-|----------|----------------|
-| CVE-2026-27896 | `encoding/json` case-insensitive key matching (`Method` ≡ `method`, plus Unicode `ſ`/`K` folding) — a proxy or policy layer matching exact JSON-RPC field names can be walked straight past. Fixed in `v1.3.1` via `segmentio/encoding`. |
-| GHSA-q382-vc8q-7jhj | The `v1.3.1` fix itself: trailing `NUL` in keys + duplicate keys → last-key-wins override. Needs `segmentio/encoding v0.5.4`, pulled in by SDK `v1.4.1`. |
-| CVE-2026-33252 | Streamable-HTTP transport accepted cross-site `POST` without `Origin` or `Content-Type` validation → cross-site tool execution against an unauthenticated local server. |
-| CVE-2026-34742 | DNS-rebinding protection off by default for localhost HTTP servers. On by default from `v1.4.0`. |
-
-`v1.4.1` requires **Go 1.25+**; `backend/go.mod` is on `1.26.8`, so there is no toolchain
-blocker. It also pulls `segmentio/encoding` + `segmentio/asm` as indirects — `segmentio/asm`
-is already in the tree via `clickhouse-go`.
-
-Practical consequences, all of which belong in the 1.0 contract rather than a later patch:
-
-- **Pin `>= v1.4.1` in `go.mod` and add the SDK to the Dependabot/CVE watch list.** A
-  supply-chain tool shipping a transitively vulnerable MCP server is the kind of headline
-  the project does not recover from.
-- **Default transport is stdio.** HTTP transport is opt-in via `mcp.transport=http`, and
-  when enabled the chart must require either auth or an explicit allowed-origins list —
-  CVE-2026-33252 and -34742 are both "unauthenticated HTTP on localhost" bugs.
-- Both decisions are `values.yaml` shape, which is why they cannot wait for 1.1.
-
-**Scope guard for #399:** read-only tools only (`list_projects`, `get_project`,
-`search_packages`, `list_vulnerabilities`, `get_sbom`). No write tools, no LLM calls in-tree
-— that stays a Non-Goal (see below). Uploading and VEX generation remain VEXViper's job.
-
-### 2d. Chart & correctness hygiene (added 2026-09-24)
-
-Five issues that had no milestone. Each one either invalidates something the 1.0 criteria
-already claim as done, or changes `values.yaml` — which freezes with the tag.
-
-| # | Issue | Why pre-1.0 |
-|---|-------|-------------|
-| **#355** | `source_repo` extraction yields 0 % on real SBOMs — `documentNamespace` ignored when `DESCRIBES` is absent | **This is the sharpest one.** #332 is ticked off in the 1.0 criteria above, but on 500 CNCF SBOMs it populates `source_repo` for **zero** of them, while every one carries the repo in `documentNamespace`. Tagging 1.0 with a checked box for a feature at 0 % real-world coverage is the freeze claiming something it does not do — and #338/VEXViper depends on that field to know what to clone. Fix is one last-resort fallback branch in `extractSourceRepo` + release-URL handling in `sourcerepo.Normalize`. |
-| **#397** | `licenseExceptions.existingConfigMap` (+ `licensePolicy`) | Pure `values.yaml` addition → freezes with 1.0. Without it GitOps users must inline a ~180 KB exceptions file into an Argo `Application` (cncf/automation#703). Adding the key in 1.1 is fine mechanically, but the mutual-exclusion semantics with `custom` and the rollout-annotation behaviour are contract, not implementation. |
-| **#391** | Seed job never seeds — clone commented out since 2026-03, hangs forever | Ships broken in every release since March, renders whenever `gitSync.enabled=false` — which is **our own** `values-production.yaml` recommendation. Needs a `seedJob.enabled` flag (new value → freeze) and `activeDeadlineSeconds`, or removal. Either way `examples/` must stop pointing at it. |
-| **#392** | Chart ships ClickHouse 24.8, CI tests 24.12 | Not currently broken — all 22 migrations and the smoke-tested queries pass on 24.8 (measured in the issue). But the **support policy starts at 1.0**, so the supported ClickHouse floor has to be a deliberate, written-down decision before the tag, not a value nobody touched since the first commit. Either move the chart to 24.12 or add 24.8 to the test matrix and record the LTS intent. |
-| **#344** | UI latency: N+1 loops, `FINAL` everywhere, unused `dashboard_stats_mv`, no caching, 5000-row UI loads | The issue argues it needs no freeze — true for findings A–D and F–H, which stay additive. Two parts do not: **E** (`enrichProjectStats` full-scans `sbom_packages` + `vulnerabilities` for *all* projects) is the exact function #398 rewrites, so they must land together or the de-dup gets built twice; and **I** proposes ClickHouse `max_threads`/`max_memory_usage`/`max_execution_time` defaults in `values.yaml`. Priority is already `high`. |
-
-> **Sequencing note:** #344-E and #398 touch `queries_projects.go` in the same places.
-> Do #398 first (it defines the correct semantics), then #344-E makes those semantics fast.
-> Doing it the other way round means optimising a query that is about to change.
-
-### 2e. Release engineering
-
-| # | Issue | Notes |
-|---|-------|-------|
-| **#145** | Versioned documentation | Docsy `params.versions`, `release/vX.Y` branch → `docs.bomhort.dev/vX.Y/`. Must ship **with** the 1.0 tag, prepared beforehand. |
-| — | Data-migration Job covers all tables | ✅ `registry_license_cache` (#341) and `document_store` (#256) both covered. |
-| — | Helm chart ships every migration | ✅ Fixed while landing `015`: `013` and `014` had never been copied into `deploy/helm/bomhort/migrations/`, so Helm deployments never applied them. `make check-migrations` now guards the whole directory. |
-| — | Migration guide + `values.yaml` stability review | Required by our major-version policy (see `AGENTS.md`). The review must cover the **new** keys landing in this phase: `mcp.*` (#399), `licenseExceptions/licensePolicy.existingConfigMap` (#397), `seedJob.enabled` (#391), ClickHouse query limits (#344-I) and the ClickHouse image pin (#392). They all freeze together. |
-| — | `AGENTS.md` dependency list | Must go from 5 to 6 direct dependencies (`modelcontextprotocol/go-sdk >= v1.4.1`) — see 2c. |
-| — | Milestone hygiene | ✅ Done 2026-09-24: milestone 1 due date → `2026-11-30`; `v1.1.0`/`v1.2.0`/`v2.0.0` created; all 33 open issues assigned. See the milestone map below. |
+| # | Issue | Type | Notes |
+|---|-------|------|-------|
+| **#141** | **CRA compliance dashboard** — readiness score per project/cluster | New endpoint + UI, no migration | **Moved from v1.2.0 and re-scoped.** The 2026-09-24 plan made it wait for #140 (workloads), #143 (attestations) and #62. It no longer does: the score is computed from what v0.9.0 stores — SBOM coverage per project, register completeness (CVSS/CWE present), open KEV findings, overdue findings (#411), VEX coverage, refresh age. #140/#143 become *additional inputs* in v1.1.0, not prerequisites. |
+| **#7** | CVE fix time (MTTR) per project | `027_create_vulnerability_resolutions` (new table) | **Moved from v1.2.0.** CRA "remediate without delay" needs the backwards-looking number next to #411's forward-looking one. Detection in `parsing-worker` (finding disappears between versions) and on VEX `fixed`/`not_affected`. *Stretch: if the December soak needs the time, #7 drops to v1.1.0 — the table is additive.* |
+| **#62** | Auditor report bundle | Endpoint | **Moved from v1.1.0.** 1.0 scope: CSV + JSON bundle per project/fleet with a manifest (`sha256`, `generated_at`, `last_refreshed_at`, policy versions). **PDF only after the `gofpdf` vs `pdfcpu` decision** — not a 1.0 blocker. |
+| **#419** | Cryptographic **library** inventory from existing SBOMs (`crypto-libraries.json`, PURL match) | `028_create_crypto_libraries` (new table) | New. Works on every SBOM already ingested, no CBOM needed; first defensible answer to "cryptographic inventory" (#420) and the CRA "state-of-the-art encryption" evidence. Small. The CBOM block stays in v1.1.0. |
+| **#145** | Versioned documentation | Docs infra | Must ship **with** the tag. |
+| — | Migration guide + `values.yaml` stability review | Process | Covers every new key since v0.7: `mcp.*` (#399), `existingConfigMap` (#397), `seedJob.enabled` (#391), ClickHouse limits (#344-I), image pin (#392), `kev.*`/`epss.*` feed URLs and skips (#410, #64), `remediationPolicy.*` (#411), `cryptoLibraries.*` (#419). |
+| — | `AGENTS.md` dependency list | Docs | 5 → 6 direct dependencies (`modelcontextprotocol/go-sdk >= v1.4.1`). No further dependency for the register: KEV/EPSS are HTTP + JSON/CSV, stdlib. |
+| — | December soak | Process | v0.9.0 runs on the CNCF instance for four weeks before the tag; register numbers are compared against the questionnaire answers given by hand. |
 
 ### 🎯 v1.0.0 Milestone
 
-**Target: end of November 2026** (milestone due date set to `2026-11-30` on 2026-09-24).
-Moved twice: the previous re-plan pushed it from `2026-09-30` to end-October for #145 and
-soak time, and the 2026-09-24 re-plan added #398/#399/#58 plus the five hygiene issues
-(#344, #355, #391, #392, #397) on top.
+**Target: 2027-01-31** (was 2026-11-30; moved on 2026-09-25 to make room for v0.9.0 and a December soak).
 
 - API contract frozen (no breaking changes without major version bump)
 - ClickHouse schema stable (no `ORDER BY`/type changes; `ADD COLUMN` and new tables remain allowed)
-- Helm chart values stable — including `mcp.*` (#399), `existingConfigMap` (#397), `seedJob.enabled` (#391) and the ClickHouse limits (#344-I)
+- Helm chart values stable — including `mcp.*`, `existingConfigMap`, `seedJob.enabled`, ClickHouse limits, `kev.*`, `epss.*`, `remediationPolicy.*`, `cryptoLibraries.*`
 - Supported ClickHouse version floor decided, written down and covered by CI (#392)
 - Support policy (current − 2) takes effect
 - Versioned documentation enabled (#145)
+- **A CRA-grade vulnerability register is exportable per deployed version, and a readiness score is computed from it (#414, #141)**
 
 **v1.0 Criteria:**
-- [x] ~~Version Skew Detection~~ (#37)
-- [x] ~~API Authentication~~ (#134)
-- [x] ~~Cluster-aware schema~~ (#131)
-- [x] ~~Cluster listing + detail endpoints~~ (#132, #133)
-- [x] ~~Upload endpoint stable~~ (#135)
-- [x] ~~CycloneDX parsing~~ (#55)
-- [x] ~~Health probes~~ (#137)
-- [x] ~~Tier-2 fidelity capture — `document_store` + blob store (#256)~~
-- [x] ~~Namespace column + ingestion convention (#138)~~ — migration `015`, `INGEST_PATH_LAYOUT`, `?namespace=` on upload
-- [x] ~~`source_repo`/`source_ref` columns (#332)~~ — migration `016`, `X-Source-Repo`/`X-Source-Ref` headers, `PATCH /sboms/{id}`
-- [x] ~~VEX provenance columns (#334, columns only)~~ — migration `017`
-- [x] ~~`project` column (#57, column only)~~ — migration `015`, `?project=` on upload
-- [x] ~~One row per `(vuln_id, purl)` — latest VEX wins (#335)~~
-- [x] ~~`cluster` in `SBOMListItem` (#177)~~ — badges in the explorer
-- [ ] **Project-centric read model + de-duplicated project counts (#398)** — locks the project identity rule and fixes frozen row semantics
-- [ ] **Aggregated SBOM View (#58)** — UI half of #398
-- [ ] **MCP server + `mcp.*` Helm values (#399)** — read-only, SDK `>= v1.4.1`, stdio by default
-- [ ] **`source_repo` fallback to `documentNamespace` (#355)** — un-breaks the #332 checkbox above
-- [ ] **`licenseExceptions/licensePolicy.existingConfigMap` (#397)** — values shape
-- [ ] **Seed job fixed, gated or removed (#391)** — new `seedJob.enabled` value
-- [ ] **ClickHouse supported-version floor decided and tested (#392)** — support policy starts at 1.0
-- [ ] **Perf findings E + I (#344)** — `enrichProjectStats` (lands with #398) + ClickHouse limits in values
-- [ ] Versioned docs (#145) — must ship *with* the tag
-
-**Open 1.0 blockers: #398, #58, #399, #355, #397, #391, #392, #344, #145.** (#145 was the
-only one until the 2026-09-24 re-plan; the other eight were either new or had no milestone.)
+- [x] ~~Version Skew Detection~~ (#37) · ~~API Authentication~~ (#134) · ~~Cluster-aware schema~~ (#131) · ~~Cluster endpoints~~ (#132, #133) · ~~Upload~~ (#135) · ~~CycloneDX~~ (#55) · ~~Health probes~~ (#137)
+- [x] ~~Schema wave `014`–`022`~~ (#256, #138, #332, #334, #57 column, #350, #357)
+- [x] ~~One row per `(vuln_id, purl)` — latest VEX wins (#335)~~ · ~~`cluster` in `SBOMListItem` (#177)~~
+- [x] ~~Project-centric read model + de-duplicated counts (#398)~~
+- [ ] **v0.8.0:** MCP server + `mcp.*` (#399) · Aggregated SBOM View (#58) · `source_repo` fallback (#355) · `existingConfigMap` (#397) · seed job (#391) · ClickHouse floor (#392) · perf E + I (#344) · CVE id/aliases (#412) · CSV export (#266)
+- [ ] **v0.9.0:** CVSS (#408) · CWE (#409) · KEV (#410) · EPSS (#64) · remediation record (#413) · SLA due dates (#411) · register docs (#414)
+- [ ] **v1.0.0:** CRA dashboard (#141) · MTTR (#7, stretch) · report bundle (#62) · crypto-library inventory (#419) · versioned docs (#145) · migration guide + values review
 
 ### Milestone map
 
-Every open issue now carries a milestone — "no milestone" is no longer a valid state.
+Every open issue carries a milestone — "no milestone" is not a valid state.
 
-| Milestone | Due | Phase | Open issues |
+| Milestone | Due | Theme | Open issues |
 |-----------|-----|-------|-------------|
-| [v1.0.0](https://github.com/seebom-labs/seebom/milestone/1) | 2026-11-30 | Phase 2 — freeze | #58, #145, #344, #355, #391, #392, #397, #398, #399 |
-| [v1.1.0](https://github.com/seebom-labs/seebom/milestone/2) | 2027-03-31 | Phase 3 — automation & fleet | #57, #60, #62, #136, #140, #143, #176, #266, #267, #333, #336, #337, #338 |
-| [v1.2.0](https://github.com/seebom-labs/seebom/milestone/3) | 2027-06-30 | Phase 4 — analytics & compliance | #7, #38, #56, #61, #63, #64, #82, #141, #254, #255 |
-| [v2.0.0](https://github.com/seebom-labs/seebom/milestone/4) | — | breaking only | #268 |
+| [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | 2026-10-31 | Contract | #399, #58, #355, #397, #391, #392, #344, #412, #266 |
+| [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) | 2026-11-30 | Vulnerability register | #408, #409, #410, #64, #413, #411, #414 |
+| [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) | 2027-01-31 | Freeze + CRA dashboard | #141, #7, #62, #419, #145 |
+| [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) | 2027-04-30 | Automation, fleet & cryptography | #338, #336, #333, #337, #334 (UI), #138 (API/UI), #267, #176, #140, #57, #136, #60, #143, #420, #415, #416, #417, #418 |
+| [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3) | 2027-07-31 | Analytics | #61, #82, #38, #56, #63, #255, #254 |
+| [v2.0.0](https://github.com/seebom-labs/BOMHort/milestone/4) | — | breaking only | #268 |
 
-`v2.0.0` has no due date on purpose: per the major-version policy in `AGENTS.md` it is
-driven by accumulated breaking changes (earliest Q1/Q2 2028), not by a calendar.
+`v2.0.0` has no due date on purpose: per the major-version policy in `AGENTS.md` it is driven by accumulated breaking changes (earliest Q1/Q2 2028), not by a calendar.
 
-**#57 moved from v1.0.0 to v1.1.0.** Its `project` column shipped in migration `015` and is
-ticked off above; what remains in the issue is per-project *policies*, which are Phase 3 and
-additive. Leaving it on the 1.0 milestone made the freeze look blocked by work that is
-explicitly post-freeze.
-
-**Landed after the last re-plan, all still pre-1.0** (migrations `019`–`022`): OSV alias
-matching, the VEX rescue pass, `document_version`, and free-form `tags` (#357) with the
-`/tags` endpoint and the namespace drill-down. These close the schema wave — every column
-a post-1.0 feature is known to need now exists. **This is why #398 needs no migration:**
-`project` (`015`), `tags` (`022`) and `document_version` (`021`) already carry everything
-a project-centric read model has to group and de-duplicate by. What's left is query and
-DTO work — which is exactly the part that freezes.
-
-**Exit criteria:** Every SBOM ingested from 1.0 onward can be reproduced byte-for-byte; every column a later feature needs already exists; the vulnerability endpoint returns deterministic rows; **a project can be answered for as a project (de-duplicated, stable identity), and an agent can ask that question over MCP.**
+**Exit criteria for Phase 2:** Every SBOM ingested from 1.0 onward can be reproduced byte-for-byte; a project can be answered for as a project, by a human and by an agent over MCP; **every finding in every deployed version can be exported with CVE, CWE, CVSS, EPSS, KEV status, remediation status and due date, and the export says when it was last refreshed.**
 
 ---
 
-## Phase 3: Automation & Fleet Operations (v1.1.0, Q1 2027)
+## Phase 3: Automation, Fleet Operations & Cryptography (v1.1.0, due 2027-04-30)
 
-**Theme:** Make BOMHort a first-class platform for *automated* supply-chain workflows — starting with VEX generation — and finish the fleet-scale views.
+**Theme:** Make BOMHort a first-class platform for *automated* supply-chain workflows — starting with VEX generation — finish the fleet-scale views, and add the cryptographic dimension the register lacks.
 
 ### 3a. Epic #338 — Automated VEX generation (VEXViper integration)
 
@@ -233,10 +161,10 @@ DTO work — which is exactly the part that freezes.
 
 | # | Issue | Type | Notes |
 |---|-------|------|-------|
-| ~~#332~~ / ~~#335~~ | Correctness blockers | — | Landed in Phase 2. |
-| **#336** | Idempotent VEX upload + `GET /api/v1/uploads/{job_id}` (applied / matched / unmatched) | New table `upload_jobs` (additive) + content-hash dedupe | Unblocks scale; also surfaces PURL/vuln-id mismatches in the UI. |
+| ~~#332~~ / ~~#335~~ / **#355** | Correctness blockers | — | #332/#335 landed; #355 lands in v0.8.0. |
+| **#336** | Idempotent VEX upload + `GET /api/v1/uploads/{job_id}` (applied / matched / unmatched) | New table `upload_jobs` (additive) + content-hash dedupe | Unblocks scale; surfaces PURL/vuln-id mismatches. |
 | **#333** | Incremental listing (`since`/`cursor`) + `vex_status=missing` filter | Query-only, additive params | Cuts a 15 000-SBOM sweep from >25 min to seconds. |
-| **#334** | VEX provenance UI: automated vs. human badge, `status_notes`, `?vex_source=` | Frontend + query (columns from `017`) | Auditors see *who/what* decided. |
+| **#334** | VEX provenance UI: automated vs. human badge, `status_notes`, `?vex_source=` | Frontend + query (columns from `017`) | Auditors see *who/what* decided; #413 already shows the action statement. |
 | **#337** | Outbound webhooks (`sbom.ingested`, `findings.updated`, `vex.applied`, `upload.rejected`) | New Helm values + `internal/webhook` (stdlib only) | Replaces polling; HMAC-signed payloads. |
 | — | `docs/integrations/vexviper` | Docs | Once the above stabilises. |
 
@@ -245,193 +173,162 @@ DTO work — which is exactly the part that freezes.
 | # | Issue | Rationale |
 |---|-------|-----------|
 | **#138** (API + UI) | `?namespace=` filters + namespace chips | Column landed in `015`; this is the consumer side. |
-| **#267** → **#176** | Cluster filter via query param → full Cluster Picker (`/clusters` route, per-cluster dashboard) | Backend ready since #132/#133; UI has zero cluster awareness. #267 is the help-wanted Phase 1. |
-| **#140** | Workload vulnerability summary | Image → posture cross-reference; powers #141. |
-| **#57** (policies) | Per-project license policies, severity thresholds, exception scopes | Column landed in `015`; the project identity rule is fixed by #398, so policies finally have a stable key to attach to. Resolution via bucket config / upload payload / name convention. |
-| ~~**#58**~~ | ~~Aggregated SBOM View~~ | **Moved to Phase 2c** — it is the UI half of #398 and shares its de-dup semantics. |
+| **#267** → **#176** | Cluster filter via query param → full Cluster Picker | Backend ready since #132/#133; #267 is the help-wanted first step. |
+| **#140** | Workload vulnerability summary | Image → posture cross-reference; becomes an additional input to the #141 score. |
+| **#57** (policies) | Per-project license policies, severity thresholds, exception scopes | Project identity fixed by #398; policies have a stable key. |
 | **#136** (rest) | `CORS_ALLOW_CREDENTIALS`, configurable methods/headers | Small, additive. |
-| **#399** (write tools) | MCP write/mutation tools, if ever wanted | The 1.0 server is read-only by design. Additive tools need no contract change — that's the whole point of doing the read surface first. |
+| **#60** | Local OSV mirror | Offline / air-gapped; no rate limits. KEV/EPSS feeds (#410, #64) get the same mirror treatment here. |
+| **#143** | In-toto Witness integration | New `attestations` table (additive), signature verification, provenance display. Additional #141 score input. Phase 1 no new deps; `sigstore-go` later. |
+| **#399** (write tools) | MCP write/mutation tools, if ever wanted | The 1.0 server is read-only by design. |
 
-### 3c. Compliance foundations
+### 3c. Cryptography — the #420 umbrella (CBOM)
 
-| # | Issue | Rationale |
-|---|-------|-----------|
-| **#266** → **#62** | CSV export for vulnerabilities (stdlib `encoding/csv`, no new dependency) → full auditor reports (PDF; needs maintainer decision on `gofpdf` vs `pdfcpu`) | Auditors don't use UIs. CSV first, PDF after the dependency decision. |
-| **#60** | Local OSV Mirror | Removes the osv.dev runtime dependency; offline / air-gapped scans; no rate limits. |
-| **#143** | In-toto Witness integration | New `attestations` table (additive), signature verification, provenance display. Phased: Phase 1 no new deps; Sigstore/Fulcio via `sigstore-go` later. Prerequisite for #141. |
+The second questionnaire: cryptographic inventory, crypto agility, PQC migration, deprecated algorithms. #419 (library inventory from SBOMs) ships in 1.0 as the no-new-input answer; the CBOM-based block lands here. It is CycloneDX 1.6 — same pipeline, three new tables, all additive.
 
-**Exit criteria:** An external tool can discover new findings without polling, push VEX idempotently and see the result; multi-cluster/namespace views exist in the UI; vulnerability data exports to CSV; OSV works offline.
+| # | Issue | Migration | Notes |
+|---|-------|-----------|-------|
+| **#415** | Ingest CycloneDX 1.6 `cryptographic-asset` components → `crypto_assets` | `02x_create_crypto_assets` | Base. Today a CBOM is mis-filed as packages without PURL. |
+| **#416** | Cryptographic inventory — algorithms, protocols, certificates (expiry), keys per project/fleet | none | Fourth dimension next to packages/vulns/licenses. |
+| **#417** | `crypto-policy.json` + `crypto-exceptions.json` — deprecated/forbidden algorithms, key sizes, protocol versions; BSI TR-02102 / NIST SP 800-131A example profiles | `02x_create_crypto_compliance` | Exact precedent: license policy. |
+| **#418** | PQC readiness — `quantum_vulnerable` / `hybrid` / `pqc` classification, readiness % per project, migration list, trend | reuses `crypto_compliance` | Agility is reported as *indicators* only — see #420 for what is and is not claimed. |
+| **#420** | Umbrella: docs page, exports | — | Closes with #418. |
+
+**Exit criteria:** An external tool can discover new findings without polling, push VEX idempotently and see the result; cluster/namespace views exist in the UI; OSV/KEV/EPSS work offline; a CBOM ingested next to an SBOM yields an inventory, policy findings and a PQC readiness figure.
 
 ---
 
-## Phase 4: Analytics & Compliance (v1.2.0, 2027 H1)
+## Phase 4: Analytics (v1.2.0, due 2027-07-31)
 
-**Theme:** Regulatory readiness scoring and supply-chain intelligence on top of the mature data model.
+**Theme:** Supply-chain intelligence on top of the mature data model. CRA scoring left this phase for 1.0; what remains is prioritisation and dependency-health depth.
 
 | # | Issue | Rationale |
 |---|-------|-----------|
-| **#141** | CRA Compliance Dashboard | EU Cyber Resilience Act enforcement 2027. Needs #140, #143, #62. |
-| **#255** | Editable/enriched SBOMs + enriched download (+ companion VEX, in-toto re-sign) | Builds on #256 originals. Overlay table `ReplacingMergeTree` (latest wins); export re-signed with BOMHort as transforming instance. Additive → no major bump. |
-| **#254** | Evaluate protobom/storage relational schema for ClickHouse | Research issue. Informs #255's overlay design; **not** a rewrite of the analytical `sbom_packages` array model. |
+| **#255** | Editable/enriched SBOMs + enriched download (+ companion VEX, in-toto re-sign) | Builds on #256 originals. Overlay table `ReplacingMergeTree`. |
+| **#254** | Evaluate protobom/storage relational schema for ClickHouse | Research; informs #255's overlay; **not** a rewrite of `sbom_packages`. |
 | **#38** | SBOM Diff (tree divergence) | "What changed between v1.7.1 and v1.7.2?" |
 | **#56** | Dependency Tree View | Hierarchical visualization of transitive chains. |
 | **#63** | Blast Radius Search | Extends Package Search with version constraints, vuln context, direct/transitive. |
-| **#64** | EPSS Scores | Exploit probability > CVSS. Free daily bulk data; extends `cve-refresher`. |
 | **#61** | OpenSSF Scorecard | Upstream project health; extends `internal/github`. |
 | **#82** | Lottery Factor | Single-maintainer risk; extends `internal/github`. |
-| **#7** | CVE Fix Time (MTTR) | Key KPI for SOC2 / ISO 27001 audits. |
-| **#268** | Evaluate official ClickHouse operator (vs. Altinity) | Breaking `values.yaml` change → **requires a major bump and migration guide**; only if maturity gate is met. Candidate for v2.0. |
+| **#268** | Evaluate official ClickHouse operator (vs. Altinity) | Breaking `values.yaml` → **major bump**; candidate for v2.0. |
 
-**Exit criteria:** CRA readiness score per cluster, exploit-probability prioritisation, dependency-health metrics, SBOM diff, enriched export.
+**Exit criteria:** exploit-probability prioritisation is complemented by dependency-health metrics; SBOM diff and tree view exist; enriched export works.
 
 ---
 
 ## Schema Change Register
 
-Everything that touches `db/migrations/` or a frozen response shape, in one place. Rule: **`ORDER BY` or column-type changes are never allowed after 1.0** (MergeTree can't alter them in place). `ADD COLUMN … DEFAULT` and new tables are fine at any time.
+Everything that touches `db/migrations/` or a frozen response shape, in one place. Rule: **`ORDER BY` or column-type changes are never allowed after 1.0** (MergeTree can't alter them in place). `ADD COLUMN … DEFAULT` and new tables are fine at any time. "pre" below means *scheduled before the tag*; the "needs pre-1.0?" column is honest about which ones are there for contract reasons and which for market reasons.
 
-| Migration | Issue | Change | Pre/Post 1.0 |
-|-----------|-------|--------|:------------:|
-| `012_add_cluster_column` | #131 | `ADD COLUMN cluster` on core tables | ✅ shipped |
-| `013_create_registry_license_cache` | #330 | New table | ✅ shipped |
-| `014_create_document_store` | #256 | New table (reference + hash; blob store external) | **pre** |
-| `015_add_namespace_project_columns` | #138, #57 | `ADD COLUMN namespace`, `ADD COLUMN project` on core tables (+ `document_store`) | ✅ shipped (**pre**) |
-| `016_add_source_columns` ✅ | #332 | `ADD COLUMN source_repo, source_ref` on `sboms` + `ingestion_queue` | **pre** |
-| `017_add_vex_provenance` ✅ | #334 | `ADD COLUMN author, role, tooling, status_notes` on `vex_statements` | **pre** |
-| `018_add_vex_sbom_scope` ✅ | #350 | `ADD COLUMN sbom_id` on `vex_statements`, `ADD COLUMN target_sbom_id` on `ingestion_queue` — VEX statements scoped to the SBOM/product they describe | **pre** |
-| `019_add_vulnerability_aliases` ✅ | — | `ADD COLUMN aliases Array(String)` on `vulnerabilities` — OSV alias IDs (GHSA ↔ CVE); VEX suppression matches a statement by `vuln_id` **or** any alias | **pre** |
-| `020_add_vex_product_ref` ✅ | — | `ADD COLUMN product_ref` on `vex_statements` — persisted OpenVEX product `@id`; enables the post-ingest **VEX rescue** pass that scopes previously unresolvable statements | **pre** |
-| `021_add_document_version` ✅ | — | `ADD COLUMN document_version` on `sboms` — version of the described product (SPDX root `versionInfo`, CycloneDX `metadata.component.version`) | **pre** |
-| `022_add_sbom_tags` ✅ | #357 | `ADD COLUMN tags Array(String)` on `sboms` + `ingestion_queue` — grouping labels orthogonal to cluster/namespace/project, for catalogue instances that group projects without deploying them. Tags label projects, they do not replace them | **pre** |
-| — (query only) ✅ | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | **pre** (API contract) |
-| — (DTO only) | #177 | `cluster` in `SBOMListItem` | **pre** (API contract) |
-| — (query + DTO) | **#398** | De-duplicated `package_count`/`vuln_count` in `ProjectListItem`; project identity rule (`projectKeyExpr`) becomes contract; new `/projects/{name}` sub-resources | **pre** (API contract — row semantics) |
-| — (Helm values) | **#399** | New `mcp.*` values block; no schema change, read-only consumer | **pre** (values contract) |
-| — (Helm values) | **#397** | `licenseExceptions.existingConfigMap` + `licensePolicy.existingConfigMap`, mutually exclusive with `custom` | **pre** (values contract) |
-| — (Helm values) | **#391** | New `seedJob.enabled` gate + `activeDeadlineSeconds` (or removal of the Job) | **pre** (values contract) |
-| — (Helm values) | **#392** | ClickHouse image pin / supported version floor | **pre** (support policy) |
-| — (Helm values) | **#344**-I | ClickHouse `max_threads`, `max_memory_usage`, `max_execution_time` defaults | **pre** (values contract) |
-| — (parser only) | **#355** | `documentNamespace` fallback in `extractSourceRepo` — fixes 0 % population of the `016` columns | **pre** (makes #332 actually true) |
-| `02x_create_package_index_mv` | #344-C/D/E | MV + skip indexes for search/aggregation | post (additive, no contract) |
-| `02x_create_upload_jobs` | #336 | New table | post |
-| `02x_create_attestations` | #143 | New table | post |
-| `02x_*` | #64, #61, #82, #7, #255, #60 | New enrichment / overlay / mirror tables | post |
-| — | #268 | Operator swap (`values.yaml` breaking) | **v2.0** |
+| Migration | Issue | Change | Pre/Post 1.0 | Needs pre-1.0? |
+|-----------|-------|--------|:------------:|---|
+| `012`–`022` | #131 … #357 | see Phase 1 | ✅ shipped | contract |
+| — (query only) ✅ | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | ✅ | contract |
+| — (DTO only) ✅ | #177 | `cluster` in `SBOMListItem` | ✅ | contract |
+| — (query + DTO) ✅ | #398 | De-duplicated project counts; `projectKeyExpr` is contract | ✅ | contract |
+| — (Helm values) | #399 | New `mcp.*` block | **pre** (v0.8.0) | contract (values) |
+| — (Helm values) | #397, #391, #392, #344-I | `existingConfigMap`, `seedJob.enabled`, image pin, ClickHouse limits | **pre** (v0.8.0) | contract (values) |
+| — (parser only) | #355 | `documentNamespace` fallback in `extractSourceRepo` | **pre** (v0.8.0) | makes #332 true |
+| — (DTO + query) | #412 | `cve_id`, `aliases` on finding DTOs; lookups by alias | **pre** (v0.8.0) | market (additive) |
+| — (endpoint) | #266 | CSV export | **pre** (v0.8.0) | market (additive) |
+| `023_add_vulnerability_cvss_cwe` | #408, #409 | `ADD COLUMN cvss_score Float32, cvss_vector String, cvss_version LowCardinality(String), cwe_ids Array(String)` on `vulnerabilities` | **pre** (v0.9.0) | market (additive; backfill from `osv_json`) |
+| `024_create_kev_catalog` | #410 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
+| `025_create_epss_scores` | #64 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
+| `026_add_vex_action_statement_timestamp` | #413 | `ADD COLUMN action_statement_timestamp` on `vex_statements` | **pre** (v0.9.0) | market — *but* automated VEX producers won't re-send, so capture early |
+| — (query + config) | #411 | `remediation-policy.json`; derived fields, no storage | **pre** (v0.9.0) | market (values: `remediationPolicy.*`) |
+| — (endpoint + UI) | #141 | CRA readiness score | **pre** (v1.0.0) | market |
+| `027_create_vulnerability_resolutions` | #7 | New table | **pre** (v1.0.0, stretch) | market (additive) |
+| — (endpoint) | #62 | Report bundle (CSV + JSON + manifest) | **pre** (v1.0.0) | market |
+| `028_create_crypto_libraries` | #419 | New table (or MV over `sbom_packages`) | **pre** (v1.0.0) | market (additive; values: `cryptoLibraries.*`) |
+| `02x_create_package_index_mv` | #344-C/D/E | MV + skip indexes | post | additive |
+| `02x_create_upload_jobs` | #336 | New table | post | additive |
+| `02x_create_attestations` | #143 | New table | post | additive |
+| `02x_create_crypto_assets`, `02x_create_crypto_compliance` | #415, #417 | New tables | post (v1.1.0) | additive |
+| `02x_*` | #61, #82, #255, #60 | Enrichment / overlay / mirror tables | post | additive |
+| — | #268 | Operator swap (`values.yaml` breaking) | **v2.0** | breaking |
 
 ---
 
 ## Dependency Graph
 
 ```
-#256 (Fidelity capture / document_store) ──┬── #255 (Enriched SBOM export + re-sign)
-                                           ├── makes #138/#332/#334 back-fillable
-                                           └── follow-up hook in #135 (Upload)
+PRE-1.0 contract:
+#398 ✅ ──┬── #58 (Aggregated SBOM View)                        v0.8.0
+          └── #399 (MCP: get_project) ── post-1.0: write tools
 
-#332 (source_repo) ──┐
-#335 (latest VEX)  ──┼── #338 Epic (VEXViper) ── #336 (idempotent upload) ── #333 (since/cursor) ── #337 (webhooks)
-#334 (provenance)  ──┘                                                       └── #334 UI badge
+REGISTER (#414):
+#412 (cve_id/aliases) ── #410 (KEV, matched by alias) ──┐
+#408 (CVSS) ─────────────────────────────────────────────┼── #411 (SLA due date; KEV due date overrides) ──┐
+#409 (CWE) ──────────────────────────────────────────────┤                                                  ├── #141 (CRA score)  v1.0.0
+#64  (EPSS) ─────────────────────────────────────────────┤                                                  ├── #62  (report bundle)
+#413 (VEX action statement) ─────────────────────────────┘                                                  └── #7   (MTTR)
+#266 (CSV) ── grows with every row above ── #62
 
-#131 (Cluster) ── #132/#133 ── #177 (badge) ── #267 (query-param filter) ── #176 (Cluster Picker)
-              └── #138 (Namespace) ── #140 (Workload Summary) ──┐
-                                                                ├── #141 (CRA Dashboard)
-#143 (Witness) ─────────────────────────────────────────────────┤
-#266 (CSV) ── #62 (Auditor reports) ────────────────────────────┘
+CRYPTO (#420):
+#419 (library inventory, SBOM-only)                         v1.0.0
+#415 (CBOM ingest) ── #416 (inventory) ── #417 (policy) ── #418 (PQC)   v1.1.0
+                                                 └── #409 (CWE-327 filter on the register)
 
-PRE-1.0 project cluster:
-#57 (project column, 015) ──┐
-#357 (tags, 022)            ├── #398 (Project-centric read model) ──┬── #58 (Aggregated SBOM View)
-#021 (document_version)     ┘        │                              └── #399 (MCP: get_project)
-                                     └── locks projectKeyExpr as contract
-                                     └── post-1.0: #57 (policies) — needs #398's stable key
+VEXVIPER (#338):
+#355 ── #336 (idempotent upload) ── #333 (since/cursor) ── #337 (webhooks) ── #334 UI
 
-#399 (MCP server) ── read-only over the frozen REST surface
-                  └── post-1.0: write tools, agentic workflows
+FLEET:
+#131 ── #132/#133 ── #177 ── #267 ── #176
+     └── #138 ── #140 ──┐
+#143 (Witness) ─────────┴── additional #141 inputs (v1.1.0)
 
-#60 (OSV Mirror) ── standalone
-#64 (EPSS) ── extends cve-refresher
-#61 (Scorecard), #82 (Lottery) ── extend internal/github
-#254 (protobom schema eval) ── informs #255
-#268 (operator eval) ── v2.0 candidate
+#60 (OSV/KEV/EPSS mirror) ── standalone
+#61, #82 ── extend internal/github        #254 ── informs #255        #268 ── v2.0
 ```
 
 ---
 
 ## Prioritization Rationale
 
-### Why a single migration wave before 1.0?
+### Why does CRA move into 1.0 after the 2026-09-24 plan put it in 2027 H1?
 
-After the freeze we can still add columns and tables — but we can never recover data we didn't capture. #256 (original bytes) is the only truly irrecoverable one; the others (#138, #332, #334, #57) are cheap `ADD COLUMN`s whose *ingestion* side we want frozen so producers (CI pipelines, VEXViper) can rely on the contract. Landing them together minimises the number of times operators run migrations against production ClickHouse.
+The earlier plan reasoned from the CRA calendar: reporting obligations from September 2026, full conformity December 2027, so H1 2027 "still gives adopters ~9 months". Two things changed within a day of writing that. First, the reporting obligation is no longer upcoming — it is **in force** — and its 24-hour clock for *actively exploited* vulnerabilities is exactly what KEV status (#410) makes visible. Second, the first customer questionnaires arrived, and they do not ask for a score in H1 2027; they ask for a register **now**, column by column (#414). A supply-chain governance tool that answers "planned for v1.2" to "do you know your CVSS scores" has failed the question.
 
-### Why #398 (project-centric view) before 1.0, when it needs no migration?
+The old sequencing rule is not violated. Every register item is additive (new columns with defaults, new side tables, derived fields), so nothing *had* to be pre-1.0 for contract reasons — the schema register says "market" for each of them on purpose. They are pre-1.0 because 1.0 is the release adopters will evaluate against the CRA, and evaluating a register that is not there is a short evaluation.
 
-Because "no migration" is not the same as "no contract". Two things freeze with it:
+### Why split 1.0 into v0.8.0 / v0.9.0 / v1.0.0?
 
-1. **The numbers.** `ProjectListItem.package_count` and `vuln_count` currently sum per-SBOM
-   counts (`queries_projects.go`), so a project with five SBOMs that all contain `libcurl`
-   reports it five times. That is arguably a bug — but it is a *shipped* one, and operators
-   are already putting those numbers in reports. Correcting it post-1.0 changes every
-   dashboard silently, with no version signal. Correcting it pre-1.0 is just a fix.
-2. **What a project *is*.** `projectKeyExpr` resolves identity through three fallbacks
-   (explicit column → path derivation → `document_name`). #398 is precisely about that:
-   this yields `OpenTelemetry/subproject@v1.2.3` where users expect `OpenTelemetry`. Changing
-   the identity rule later re-shards every project in every installation — it is
-   forward-only in effect, even though no `ALTER TABLE` is involved.
+Because one milestone with 21 issues and a tag at the end is a milestone that slips. v0.8.0 is the 2026-09-24 scope with the same date it had, so no contract work is delayed by the register. v0.9.0 is the register, self-contained, with a hard exit criterion (the export column list). v1.0.0 then adds the score on top and gets a December soak on the CNCF instance — the register's numbers are compared against the questionnaire answers written by hand, which is the only test that matters for it. Two extra tags cost nothing; two extra months of an un-tagged 1.0 branch cost trust.
 
-#58 rides along because it is the same de-duplication expressed in the UI. Building it in
-Phase 3 against Phase-2 semantics would mean designing the aggregation twice.
+### Why do @jeefy's issues go first?
 
-### Why #399 (MCP server) before 1.0, when it's purely additive?
+#398 and #399 are the only issues filed by someone building *on* BOMHort rather than *in* it. #398 found that the frozen project numbers were wrong; #399 will find whatever else an agent trips over. Consumers find contract holes internal callers never hit — that is the argument for building the MCP server before the freeze, and it is the argument for scheduling it first inside v0.8.0 rather than last. The rule generalises: an issue from a consumer of the contract outranks an issue from a maintainer of it, in the same release.
 
-The component is additive; its **Helm values are not**. `values.yaml` stability is an
-explicit 1.0 criterion, so an `mcp.*` block added in 1.1 is either a breaking reshuffle
-or a schema we guessed once and live with for a major cycle.
+### Why #399 (MCP server) before the freeze, when it's purely additive?
 
-The second reason is cheaper to state than to discover later: an MCP server is a
-*consumer* of the REST contract, and consumers find contract holes that internal callers
-never hit. #398 exists because the UI can paper over bad aggregates with grouping logic in
-Angular; an agent calling `get_project` cannot. Building the consumer before the freeze is
-how we verify the freeze is worth freezing.
+The component is additive; its **Helm values are not**. `values.yaml` stability is an explicit 1.0 criterion, so an `mcp.*` block added in 1.1 is either a breaking reshuffle or a schema we guessed once and live with for a major cycle. The second reason: an MCP server is a *consumer* of the REST contract, and #398 exists because the UI could paper over bad aggregates with grouping logic in Angular while an agent calling `get_project` cannot. It stays read-only in 1.0 — write tools are additive.
 
-It stays read-only in 1.0 deliberately — write tools are additive (Phase 3) and keep the
-blast radius of an agent pointed at a compliance database at zero.
+**Dependency decision — approved 2026-09-24.** `github.com/modelcontextprotocol/go-sdk` is direct dependency **#6** (budget 5 → 6, `AGENTS.md:113` to update). **Minimum `v1.4.1`**: everything below carries four HIGH advisories that describe exactly the scenario a BOMHort MCP server runs in:
 
-### Why break the 5-dependency rule for #399?
+| Advisory | What it breaks |
+|----------|----------------|
+| CVE-2026-27896 | `encoding/json` case-insensitive key matching — a policy layer matching exact JSON-RPC field names can be walked past. Fixed in `v1.3.1`. |
+| GHSA-q382-vc8q-7jhj | The `v1.3.1` fix itself: trailing `NUL` / duplicate keys → last-key-wins. Needs `segmentio/encoding v0.5.4`, pulled in by `v1.4.1`. |
+| CVE-2026-33252 | Streamable-HTTP accepted cross-site `POST` without `Origin`/`Content-Type` validation. |
+| CVE-2026-34742 | DNS-rebinding protection off by default for localhost HTTP. On by default from `v1.4.0`. |
 
-The rule exists to limit supply-chain exposure in a supply-chain tool, so the instinct is
-to hand-roll JSON-RPC 2.0 — the MCP surface is small enough. The four HIGH advisories
-against `go-sdk < v1.4.1` are the argument *against* that instinct, not for it: three of
-them (case-folded JSON keys, `NUL`-terminated duplicate keys, cross-site POST without
-`Origin` validation) are exactly the class of bug a hand-rolled parser and handler would
-reproduce from scratch, with nobody auditing it. The SDK has already been through a
-Doyensec review and shipped the fixes; we would be starting at the pre-review state.
+Consequences, all `values.yaml` shape and therefore 1.0: pin `>= v1.4.1` and add to the CVE watch list; **stdio default**, HTTP opt-in and never without auth or an explicit allowed-origins list. Scope guard: read-only tools (`list_projects`, `get_project`, `search_packages`, `list_vulnerabilities`, `get_sbom`); no write tools, no LLM calls in-tree.
 
-Taking the dependency means we inherit those fixes *and* the future ones, on the condition
-that the version is pinned `>= v1.4.1` and tracked. That condition is the whole trade.
+### Why break the 5-dependency rule for #399 — and why not again for the register?
 
-### Why do five "housekeeping" issues block a freeze?
+The rule limits supply-chain exposure in a supply-chain tool. For MCP the hand-rolled alternative would reproduce the advisories above from scratch with nobody auditing it; taking the reviewed SDK on a pinned floor is the safer trade. The register needs **no** new dependency: KEV is one JSON file, EPSS one gzipped CSV, both stdlib; CVSS v3 is already computed in `osvutil`, v4 is a second small table of weights. #62's PDF is the only item that would need one, which is why PDF is gated on a separate decision and not a 1.0 blocker.
 
-Because four of the five add or change `values.yaml` keys (#397, #391, #392, #344-I), and
-values stability is one of the five things 1.0 promises. A key added in 1.1 is not free:
-it either ships with a shape we guessed under time pressure, or it gets reshaped and
-breaks the promise.
+### Why is the CBOM block (#415–#418) in 1.1 and not with the rest of the crypto questionnaire?
 
-The fifth, #355, is a different problem: the 1.0 criteria above *tick off* #332 source
-attribution, while on the most obvious real corpus — 500 published CNCF SBOMs — it
-populates the column for zero of them. Freezing a contract is a claim about what the
-software does. A ticked box with 0 % real-world coverage makes that claim false, and
-#338/VEXViper is built on the assumption that it is true.
+Three reasons. It is not CRA-critical — Annex I asks for state-of-the-art encryption, not for a CBOM. It needs input almost nobody produces yet (CBOM generators are young), so shipping it in 1.0 would ship empty pages; #419 covers the same question from SBOMs everyone already has. And it is three new tables that are additive by construction — the exact profile the sequencing rule pushes past the freeze. Doing it in 1.1 also means the policy engine can reuse #411's derived-status pattern instead of inventing a third.
 
-### Why VEXViper before analytics?
+### Why did five "housekeeping" issues block a freeze — and still do?
 
-Automated VEX turns a wall of CVEs into a triaged queue. Every analytics feature (EPSS, CRA score, MTTR) is more useful once `not_affected` noise is gone. The sidecar exists today; BOMHort-side gaps (#332–#337) are the bottleneck.
+Four of them add or change `values.yaml` keys (#397, #391, #392, #344-I); the fifth, #355, is the 1.0 criteria ticking off a feature with 0 % real-world coverage. Nothing about that changed; they keep their October date in v0.8.0.
 
-### Why CRA compliance in 2027 H1, not Q4 2026?
+### Why VEXViper before analytics, but after the register?
 
-The EU CRA reporting obligations start September 2026 for vulnerabilities; full conformity obligations December 2027. #141 needs #140, #143 and #62 first — they're Phase 3. Shipping #141 in H1 2027 still gives adopters ~9 months before the full obligations.
-
-### Why enrichment features (EPSS/Scorecard/Lottery) as a batch?
-
-Same pattern: fetch external data → ClickHouse table → API → UI. Implementing together maximises reuse.
+Automated VEX turns a wall of CVEs into a triaged queue, and every analytics feature is more useful once `not_affected` noise is gone — that reasoning stands, and #338 stays first in Phase 3. It comes *after* the register because the register is what VEX statements are written *against*: #413 fixes what a statement records, #411 defines what "open" means, #410/#64 define what to triage first. A sidecar generating VEX before those exist would be optimising a queue whose order is not yet defined.
 
 ### Cluster vs. project vs. namespace
 
@@ -443,36 +340,42 @@ Three orthogonal low-cardinality dimensions:
 | `namespace` | Which tenant/team boundary inside the cluster? | `payments` | 10–500 | Platform / team |
 | `project` | What is it / who owns it? | `payment-service` | 50–5000 | Dev teams |
 
-All three are `LowCardinality(String) DEFAULT ''` columns; none is in `ORDER BY`. Filtering is by `WHERE`, which is fine for the data volumes involved.
+All three are `LowCardinality(String) DEFAULT ''` columns; none is in `ORDER BY`. Filtering is by `WHERE`. `tags` (`022`) label projects across these dimensions; they do not replace them.
 
 ---
 
 ## Success Metrics
 
-| Phase | Metric | Target |
-|-------|--------|--------|
-| Phase 2 | Round-trip fidelity | 100 % of SBOMs ingested post-1.0 downloadable byte-identical (`sha256` match) |
-| Phase 2 | Project aggregation (#398) | A component present in N SBOMs of one project is counted **once**; `GET /projects/{name}` answers in < 500 ms at 15 000 SBOMs |
-| Phase 2 | MCP surface (#399) | All five read tools callable from a stock MCP client; SDK pinned `>= v1.4.1`; stdio default, HTTP opt-in and never unauthenticated |
-| Phase 2 | Source attribution (#355) | `source_repo` populated for **> 90 %** of the 500-SBOM CNCF corpus (today: 0 %) |
-| Phase 2 | Chart honesty (#391, #392, #397) | `helm template` with our own `values-production.yaml` renders nothing that hangs; chart and CI pin the same ClickHouse version |
-| Phase 2 | UI latency (#344-E) | Projects page stops full-scanning `sbom_packages` + `vulnerabilities` for every project |
-| Phase 3 | Automated triage | VEXViper `watch` pass over 15 000 SBOMs < 60 s; 0 duplicate VEX rows |
-| Phase 3 | Fleet views | Cluster + namespace filter on all list pages |
-| Phase 4 | CRA readiness | All 5 CRA conditions evaluable, score > 80 % for managed clusters |
+| Release | Metric | Target |
+|---------|--------|--------|
+| v0.8.0 | MCP surface (#399) | All five read tools callable from a stock MCP client; SDK pinned `>= v1.4.1`; stdio default, HTTP never unauthenticated |
+| v0.8.0 | Source attribution (#355) | `source_repo` populated for **> 90 %** of the 500-SBOM CNCF corpus (today: 0 %) |
+| v0.8.0 | Chart honesty (#391, #392, #397) | `helm template` with our own `values-production.yaml` renders nothing that hangs; chart and CI pin the same ClickHouse version |
+| v0.8.0 | UI latency (#344-E) | Projects page stops full-scanning `sbom_packages` + `vulnerabilities` for every project |
+| v0.9.0 | Register completeness (#414) | On the CNCF corpus: `cvss_score` present for > 95 % of findings, `cve_id` for > 98 %, `cwe_ids` for > 80 %; every KEV-listed CVE in the corpus carries `kev_listed=true` |
+| v0.9.0 | Register freshness | `last_refreshed_at` < 24 h on every export; KEV/EPSS feeds refreshed daily |
+| v1.0.0 | CRA readiness (#141) | Score computed for every project with ≥ 1 SBOM; score > 80 % for the managed CNCF instance |
+| v1.0.0 | Round-trip fidelity | 100 % of SBOMs ingested post-1.0 downloadable byte-identical |
+| v1.0.0 | Questionnaire test | Both customer questionnaires (#414, #420 minus CBOM) answerable from the UI/export without a spreadsheet |
+| v1.1.0 | Automated triage | VEXViper `watch` pass over 15 000 SBOMs < 60 s; 0 duplicate VEX rows |
+| v1.1.0 | Cryptography | A cbomkit CBOM ingested next to its SBOM yields inventory, findings and a PQC figure |
+| v1.2.0 | Prioritisation depth | Scorecard + Lottery Factor on every resolved upstream repo |
 
 ---
 
 ## Non-Goals (Explicitly Out of Scope)
 
 - **Custom Kubernetes Operator**: Helm + ClickHouse Operator. No custom CRDs.
-- **In-tree VEX generation / LLM calls**: stays in the VEXViper sidecar. The MCP server (#399) is a *transport* — it exposes read tools to whatever agent the operator runs. BOMHort never calls an LLM itself, and MCP is not a plugin surface.
+- **In-tree VEX generation / LLM calls**: stays in the VEXViper sidecar. The MCP server (#399) is a *transport*. BOMHort never calls an LLM itself.
 - **MCP write tools in 1.0**: read-only by design. Mutation tools are additive → Phase 3.
-- **Write APIs for license exceptions**: Frontend is public. Policy changes require config file updates.
+- **Write APIs for policies or exceptions** (license, remediation, crypto): the frontend is public. Policy changes are config-file changes.
+- **Per-finding manual status or due dates**: remediation status comes from VEX, due dates from policy (#411). Ticketing stays in the ticket system.
+- **CBOM generation / crypto scanning of code or containers** (#420): BOMHort consumes CBOMs; `cbomkit`, `sonar-cryptography`, `cdxgen` produce them.
+- **CRA reporting to ENISA/CSIRTs**: #141 tells you *what* to report and *when* the clock started (KEV, #410); filing the report is the manufacturer's process.
 - **Multi-repo split**: Monorepo is a hard constraint for AI-assisted development.
 - **Real-time streaming**: Batch ingestion (CronJob + queue) plus outbound webhooks (#337) is sufficient.
 - **RBAC/multi-tenancy**: Auth is binary. Fine-grained RBAC is beyond this roadmap.
 - **Full OIDC in BOMHort**: User authentication is the upstream proxy's responsibility.
-- **Relational rewrite of the dependency model** (#254): protobom/storage's normalized schema is evaluated for the *overlay* only; the analytical `sbom_packages` array model stays.
-- **A second project hierarchy** (#398): projects are grouped by `tags` (migration `022`), not by a new org/sub-project table. Tags label projects, they do not replace them.
+- **Relational rewrite of the dependency model** (#254): protobom/storage's schema is evaluated for the *overlay* only.
+- **A second project hierarchy** (#398): projects are grouped by `tags`, not by a new org/sub-project table.
 

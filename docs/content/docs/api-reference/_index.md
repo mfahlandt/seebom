@@ -11,6 +11,10 @@ description: >
 The BOMHort API is primarily **read-only** (GET endpoints). One write endpoint exists — [`POST /api/v1/sboms/upload`](#post-apiv1sbomsupload) for push-model CI/CD ingestion — and it is disabled unless `AUTH_ENABLED=true`, regardless of the global auth default.
 {{% /alert %}}
 
+{{% alert title="Asking these questions from an AI agent" color="info" %}}
+The [MCP server](/docs/mcp/) wraps a subset of these endpoints as Model Context Protocol tools, so an agent can query a BOMHort instance without a REST integration being written first. It is read-only, and it adds no endpoints — it *calls* the ones documented here.
+{{% /alert %}}
+
 ## Base URL
 
 ```

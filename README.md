@@ -378,6 +378,16 @@ sboms/*.spdx.json + *.openvex.json
 │                         │  OnPush change detection, dark mode,
 │                         │  CSS custom properties theming
 └─────────────────────────┘
+
+        ┌─────────────────────────┐
+        │   MCP Server (optional) │  5 read-only MCP tools for AI agents.
+        │   (Go binary)           │  Calls the API Gateway like any external
+        │                         │  consumer — no database credentials.
+        │                         │  stdio by default; HTTP opt-in and
+        │                         │  refused without token + origin list.
+        └─────────────────────────┘
+                    │
+                    └──────────────► API Gateway
 ```
 
 ### Parsing Pipeline

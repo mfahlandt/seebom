@@ -134,7 +134,42 @@ type Config struct {
 	OriginalStoreS3Bucket string
 	OriginalStoreS3Prefix string
 	OriginalStoreFSPath   string
+
+	// MCP server (#399). The MCP server is a *consumer* of the REST contract,
+	// not a second reader of ClickHouse: it holds no database credentials and
+	// can therefore only expose what the API already exposes.
+	//
+	//   MCPTransport:      "stdio" (default) | "http". stdio is the default on
+	//                      purpose — an MCP server reachable over the network
+	//                      is a remote tool-execution surface, so it has to be
+	//                      asked for explicitly.
+	//   MCPHTTPAddr:       listen address for the http transport. Defaults to
+	//                      loopback, not 0.0.0.0.
+	//   MCPHTTPToken:      bearer token clients must present (http only).
+	//   MCPAllowedOrigins: explicit Origin allow-list (http only). "*" is
+	//                      rejected; see cmd/mcp-server for why.
+	//   MCPAPIBaseURL:     base URL of the BOMHort API gateway.
+	//   MCPAPIKey /
+	//   MCPServiceToken:   credentials sent *to* the API gateway when it runs
+	//                      with AUTH_ENABLED. Default to the instance-wide
+	//                      SERVICE_TOKEN / first API_KEYS entry, because the
+	//                      chart mounts one secret for the whole release.
+	//   MCPRequestTimeout: per-upstream-request timeout, in seconds.
+	MCPTransport      string
+	MCPHTTPAddr       string
+	MCPHTTPToken      string
+	MCPAllowedOrigins []string
+	MCPAPIBaseURL     string
+	MCPAPIKey         string
+	MCPServiceToken   string
+	MCPRequestTimeout int
 }
+
+// MCP transport identifiers.
+const (
+	MCPTransportStdio = "stdio"
+	MCPTransportHTTP  = "http"
+)
 
 // Original-store backend identifiers (mirrors internal/docstore constants so
 // config does not import docstore).
@@ -182,6 +217,31 @@ func Load() (*Config, error) {
 		OriginalStoreS3Bucket: getEnv("ORIGINAL_STORE_S3_BUCKET", ""),
 		OriginalStoreS3Prefix: getEnv("ORIGINAL_STORE_S3_PREFIX", "_bomhort/originals/"),
 		OriginalStoreFSPath:   getEnv("ORIGINAL_STORE_FS_PATH", ""),
+
+		MCPTransport:      strings.ToLower(strings.TrimSpace(getEnv("MCP_TRANSPORT", MCPTransportStdio))),
+		MCPHTTPAddr:       getEnv("MCP_HTTP_ADDR", "127.0.0.1:8081"),
+		MCPHTTPToken:      getEnv("MCP_HTTP_TOKEN", ""),
+		MCPAllowedOrigins: parseCSV(getEnv("MCP_ALLOWED_ORIGINS", "")),
+		MCPAPIBaseURL:     getEnv("MCP_API_BASE_URL", "http://localhost:8080"),
+		MCPAPIKey:         getEnv("MCP_API_KEY", ""),
+		MCPServiceToken:   getEnv("MCP_SERVICE_TOKEN", ""),
+		MCPRequestTimeout: getEnvInt("MCP_REQUEST_TIMEOUT_SECONDS", 30),
+	}
+
+	switch cfg.MCPTransport {
+	case MCPTransportStdio, MCPTransportHTTP:
+	default:
+		return nil, fmt.Errorf("invalid MCP_TRANSPORT %q (want stdio|http)", cfg.MCPTransport)
+	}
+
+	// The release ships one secret for every component, so an operator who set
+	// SERVICE_TOKEN/API_KEYS for the gateway should not have to repeat them
+	// under a second name just to let the MCP server through its own auth.
+	if cfg.MCPServiceToken == "" {
+		cfg.MCPServiceToken = cfg.ServiceToken
+	}
+	if cfg.MCPAPIKey == "" && len(cfg.APIKeys) > 0 {
+		cfg.MCPAPIKey = cfg.APIKeys[0]
 	}
 
 	switch cfg.OriginalStoreBackend {
@@ -409,7 +469,13 @@ func boolPtr(v bool) *bool { return &v }
 
 // parseAPIKeys splits a comma-separated list of API keys, trimming whitespace
 // and filtering out empty entries.
-func parseAPIKeys(raw string) []string {
+func parseAPIKeys(raw string) []string { return parseCSV(raw) }
+
+// parseCSV splits a comma-separated env var into non-empty, trimmed entries.
+// Returns nil (not an empty slice) when nothing is left, so callers can test
+// for "unset" with len() == 0 regardless of whether the variable was absent or
+// contained only separators.
+func parseCSV(raw string) []string {
 	if raw == "" {
 		return nil
 	}

@@ -906,6 +906,31 @@ This is ideal for:
 
 ---
 
+## 10a. MCP Server (Optional)
+
+The MCP server (#399) exposes BOMHort's read-only data as [Model Context Protocol](https://modelcontextprotocol.io) tools, so an AI agent can ask `get_project` instead of someone writing a REST client first. It ships disabled.
+
+**Most people do not deploy it.** An MCP client on a laptop starts the binary itself and speaks stdio — no port, no token, no origin list, because nothing is listening. See the [MCP Server page](/docs/mcp/) for that setup.
+
+Deploy it in-cluster only when agents *outside* your machine need to reach the instance:
+
+```yaml
+mcp:
+  enabled: true
+  transport: http
+  httpToken: "change-me"          # or existingSecret
+  allowedOrigins:
+    - https://agent.example.com
+```
+
+`helm template` **fails** if `httpToken` is missing, `allowedOrigins` is empty, or it contains `*`. That is intentional and not configurable: the HTTP transport is a remote tool-execution endpoint, and `*` re-opens the cross-site hole described by CVE-2026-33252. A CLI client sends no `Origin` at all and is unaffected by the list — it exists to stop a browser page from driving the server.
+
+When `apiGateway.auth.enabled: true`, the MCP server reads the release's `SERVICE_TOKEN` from the same Secret; there is no second token to keep in sync.
+
+The pod mounts neither the release ConfigMap nor its Secret: it talks to the API Gateway like any external consumer and holds no database credentials. A chart test asserts this, so it stays true.
+
+---
+
 ## 11. Ingress – Exposing the API Externally
 
 BOMHort includes an optional Ingress resource to expose the API Gateway (and optionally the UI) outside the cluster. The template is controller-agnostic — it works with any Ingress controller that implements the Kubernetes Ingress spec (Envoy Gateway, Contour, AWS ALB, etc.).

@@ -24,14 +24,18 @@ bomhort/
 │   ├── ARCHITECTURE_PLAN.md
 │   └── DEPLOYMENT_GUIDE.md
 ├── backend/
-│   ├── Dockerfile                  # Multi-stage, multi-target (4 binaries)
+│   ├── Dockerfile                  # Multi-stage, multi-target (5 binaries)
 │   ├── .dockerignore
 │   ├── go.mod / go.sum
 │   ├── cmd/
 │   │   ├── ingestion-watcher/main.go   # K8s CronJob
 │   │   ├── parsing-worker/main.go      # SBOM + VEX processor
 │   │   ├── api-gateway/main.go         # REST API (29 endpoints)
-│   │   └── cve-refresher/main.go       # Background CVE Refresh CronJob
+│   │   ├── cve-refresher/main.go       # Background CVE Refresh CronJob
+│   │   └── mcp-server/                 # Read-only MCP tool surface (#399)
+│   │       ├── main.go                 #   transports: stdio (default) | http
+│   │       ├── tools.go                #   the five read-only tools
+│   │       └── http.go                 #   bearer + Origin allow-list guard
 │   ├── internal/
 │   │   ├── spdx/              # SPDX JSON streaming parser
 │   │   ├── cyclonedx/         # CycloneDX JSON parser
@@ -105,6 +109,7 @@ bomhort/
         ├── secret.yaml
         ├── deployment-api-gateway.yaml
         ├── deployment-parsing-worker.yaml  # git-sync initContainer
+        ├── deployment-mcp-server.yaml      # Optional MCP server (#399), off by default
         ├── deployment-ui.yaml              # Optional custom-theme + ui-config volumes
         ├── cronjob-ingestion-watcher.yaml  # git-sync initContainer
         ├── cronjob-cve-refresher.yaml      # Daily CVE refresh (configurable)
@@ -112,6 +117,7 @@ bomhort/
         ├── job-seed-sboms.yaml             # Git-clone seed job for large SBOM repos
         ├── pvc-sbom-data.yaml              # PVC for SBOM storage
         ├── service-api-gateway.yaml
+        ├── service-mcp-server.yaml         # Only rendered for mcp.transport=http
         ├── service-ui.yaml
         └── clickhouse-installation.yaml
 ```
@@ -417,6 +423,35 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 6. Write refresh log to `cve_refresh_log`
 
 **Shared Helpers:** `internal/osvutil` package (extracted from parsing-worker) for `ClassifySeverity`, `ExtractFixedVersion`, `ExtractAffectedVersions`.
+
+## 9a. MCP Server (#399)
+
+**Problem:** Every new consumer of BOMHort's data writes its own REST client first. For an AI agent that cost is prohibitive, so the data stays unreachable from the place people increasingly ask questions.
+
+**Solution:** A fifth binary, `cmd/mcp-server`, speaking the [Model Context Protocol](https://modelcontextprotocol.io) over the existing REST API.
+
+**Why it calls the API instead of ClickHouse.** It would be one import to give it a database client. It does not get one, for three reasons:
+
+1. **It cannot leak what the API does not expose.** A read-only tool surface over a public frontend is auditable by reading the route list; a tool surface over SQL is not.
+2. **It exercises the contract 1.0 freezes.** #398 exists because the UI could paper over wrong aggregates with grouping logic in Angular. An agent calling `get_project` cannot — and that is exactly the property that makes an external consumer worth having *before* the freeze, not after.
+3. **It holds no credentials.** The Deployment mounts neither the release ConfigMap nor its Secret; a Helm test asserts this, so the claim cannot rot.
+
+**The five tools** — `list_projects`, `get_project`, `search_packages`, `list_vulnerabilities`, `get_sbom` — are annotated read-only, idempotent and closed-world. There are no write tools in 1.0, and BOMHort never calls a language model itself: the server is a transport, automated reasoning lives in the VEXViper sidecar (#338).
+
+**Transports:**
+
+| | stdio (default) | Streamable HTTP (opt-in) |
+|---|---|---|
+| Who starts it | the MCP client, as a subprocess | Kubernetes |
+| Listening | nothing | `mcp.port`, behind a Service |
+| Auth | not applicable | bearer token, constant-time compare |
+| Cross-origin | not applicable | explicit allow-list, `*` rejected |
+
+The HTTP transport is remote tool execution, so both guards are mandatory rather than recommended: the binary refuses to start without them, and `helm template` refuses to render. The reference is CVE-2026-33252 — a Streamable HTTP transport that accepted cross-site `POST`s without validating `Origin`. The SDK fixed its half; the token and the allow-list are ours, because only the operator knows which origins are legitimate.
+
+**Paging asymmetry worth knowing:** `list_vulnerabilities` pages server-side instance-wide, but *in the MCP server* when scoped to a project — the project endpoint answers with the project's distinct findings in one response, because de-duplication across versions cannot be done a page at a time. A `severity` filter is therefore only accepted together with `project`; filtering one server-paginated page and calling the result a count would be a lie, so the tool returns an error instead.
+
+**Dependency:** `github.com/modelcontextprotocol/go-sdk`, direct dependency #6 of 6, pinned `>= v1.4.1` (shipped on `v1.8.0`). The four advisories that set that floor are listed in `AGENTS.md`.
 
 **Dashboard Integration:** Banner shows last refresh timestamp + number of new vulnerabilities.
 

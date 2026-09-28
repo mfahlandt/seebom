@@ -264,6 +264,9 @@ ingest: ## Run Ingestion Watcher once locally (needs ClickHouse)
 worker: ## Run Parsing Worker locally (needs ClickHouse)
 	cd backend && go run ./cmd/parsing-worker/
 
+mcp: ## Run the MCP server locally on stdio (needs a running API gateway)
+	cd backend && go run ./cmd/mcp-server/
+
 # ─── Angular UI ──────────────────────────────────────────────────────────────
 ui-dev: ## Start Angular dev server (hot-reload, proxies to localhost:8080)
 	cd ui && npx ng serve --proxy-config proxy.conf.json
@@ -277,16 +280,18 @@ images: ## Build all container images locally (TAG=dev)
 	docker build -t $(REGISTRY)/$(REPO)/parsing-worker:$(TAG)    --target parsing-worker    backend/
 	docker build -t $(REGISTRY)/$(REPO)/api-gateway:$(TAG)       --target api-gateway       backend/
 	docker build -t $(REGISTRY)/$(REPO)/cve-refresher:$(TAG)     --target cve-refresher     backend/
+	docker build -t $(REGISTRY)/$(REPO)/mcp-server:$(TAG)        --target mcp-server        --build-arg VERSION=$(TAG) backend/
 	docker build -t $(REGISTRY)/$(REPO)/ui:$(TAG) ui/
-	@echo "✅ Built 5 images with tag $(TAG)"
+	@echo "✅ Built 6 images with tag $(TAG)"
 
 images-push: images ## Build and push all images to GHCR (TAG=dev)
 	docker push $(REGISTRY)/$(REPO)/ingestion-watcher:$(TAG)
 	docker push $(REGISTRY)/$(REPO)/parsing-worker:$(TAG)
 	docker push $(REGISTRY)/$(REPO)/api-gateway:$(TAG)
 	docker push $(REGISTRY)/$(REPO)/cve-refresher:$(TAG)
+	docker push $(REGISTRY)/$(REPO)/mcp-server:$(TAG)
 	docker push $(REGISTRY)/$(REPO)/ui:$(TAG)
-	@echo "✅ Pushed 5 images to $(REGISTRY)/$(REPO) with tag $(TAG)"
+	@echo "✅ Pushed 6 images to $(REGISTRY)/$(REPO) with tag $(TAG)"
 
 
 # ─── Kind (local Kubernetes) ─────────────────────────────────────────────────
@@ -336,8 +341,9 @@ kind-build: images ## Build dev images and load them into the Kind cluster
 	kind load docker-image $(REGISTRY)/$(REPO)/parsing-worker:$(TAG)    --name bomhort
 	kind load docker-image $(REGISTRY)/$(REPO)/api-gateway:$(TAG)       --name bomhort
 	kind load docker-image $(REGISTRY)/$(REPO)/cve-refresher:$(TAG)     --name bomhort
+	kind load docker-image $(REGISTRY)/$(REPO)/mcp-server:$(TAG)        --name bomhort
 	kind load docker-image $(REGISTRY)/$(REPO)/ui:$(TAG)                --name bomhort
-	@echo "✅ Loaded 5 images into Kind (tag: $(TAG))"
+	@echo "✅ Loaded 6 images into Kind (tag: $(TAG))"
 
 kind-deploy: kind-build ## Build images, load into Kind, and upgrade Helm release
 	@source local/secrets.env 2>/dev/null; \

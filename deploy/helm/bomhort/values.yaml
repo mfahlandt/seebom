@@ -393,6 +393,70 @@ ui:
         enabled: false
         text: ""
 
+# MCP Server (#399) — read-only Model Context Protocol tool surface over the
+# REST API, so an AI agent can ask BOMHort questions.
+#
+# Disabled by default. Two things to understand before enabling it:
+#
+#   1. It is a *consumer* of the REST API, not a second database reader. It
+#      needs no ClickHouse credentials; it needs to reach the API Gateway.
+#   2. Its in-cluster transport is Streamable HTTP, which is a remote
+#      tool-execution endpoint. The server therefore refuses to start unless
+#      both `httpToken` and a non-wildcard `allowedOrigins` list are set.
+#      That is not configurable strictness — an unauthenticated MCP endpoint
+#      is an open door, and "*" re-opens the cross-site hole the pinned SDK
+#      version closes (CVE-2026-33252).
+#
+# For a laptop client, do not deploy this at all: run the `mcp-server` binary
+# (or its image) locally on the default stdio transport and point
+# `apiBaseURL` at your instance. stdio needs no port, no token and no origin
+# list, because nothing is listening.
+#
+# The tool surface is read-only by design and frozen for 1.0: list_projects,
+# get_project, search_packages, list_vulnerabilities, get_sbom. There are no
+# write tools, and BOMHort never calls an LLM itself.
+mcp:
+  enabled: false
+  replicas: 1
+  # "stdio" | "http". The in-cluster Deployment only makes sense with "http";
+  # the default is kept at the binary's own default so that a values file that
+  # merely flips `enabled` does not silently open a port.
+  transport: http
+  port: 8081
+  # Bearer token clients must present (Authorization: Bearer / X-API-Key).
+  # Required for transport=http. Prefer existingSecret in production.
+  httpToken: ""
+  existingSecret:
+    enabled: false
+    secretName: ""
+    httpTokenKey: "MCP_HTTP_TOKEN"
+  # Explicit Origin allow-list. Required for transport=http; "*" is rejected.
+  # A CLI client sends no Origin at all and is unaffected by this list; it
+  # exists to stop a browser page from driving the server.
+  # Example: ["https://agent.example.com"]
+  allowedOrigins: []
+  # Where the API Gateway lives. Empty means the in-cluster Service of this
+  # release, which is what you want unless the MCP server talks to a different
+  # instance.
+  apiBaseURL: ""
+  # Credentials sent *to* the API Gateway. Leave empty to inherit
+  # apiGateway.auth.serviceToken / apiKeys from the same Secret — the usual
+  # case, since it is the same release.
+  serviceToken: ""
+  apiKey: ""
+  # Per-upstream-request timeout in seconds.
+  requestTimeoutSeconds: 30
+  service:
+    type: ClusterIP
+    port: 80
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
+
 # CVE Refresher (CronJob) – checks all known PURLs for newly disclosed CVEs.
 cveRefresher:
   enabled: true

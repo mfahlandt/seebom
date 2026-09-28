@@ -1,10 +1,12 @@
-import { TestBed } from '@angular/core/testing';
+import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { SbomListComponent } from './sbom-list.component';
 
 describe('SbomListComponent', () => {
+  let httpMock: HttpTestingController;
+
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [SbomListComponent],
@@ -14,12 +16,24 @@ describe('SbomListComponent', () => {
         provideRouter([]),
       ],
     }).compileComponents();
+    httpMock = TestBed.inject(HttpTestingController);
   });
+
+  /**
+   * ngOnInit loads the flat list. Tests that go on to assert something else
+   * answer that request with an empty page first, so it never leaks into
+   * their expectations.
+   */
+  function initFlat(fixture: ComponentFixture<SbomListComponent>): void {
+    fixture.detectChanges();
+    httpMock
+      .expectOne((r) => r.url.endsWith('/sboms'))
+      .flush({ data: [], total: 0, page: 1, page_size: 100 });
+  }
 
   it('should create', () => {
     const fixture = TestBed.createComponent(SbomListComponent);
-    const component = fixture.componentInstance;
-    expect(component).toBeTruthy();
+    expect(fixture.componentInstance).toBeTruthy();
   });
 
   it('should have a virtual scroll viewport', () => {
@@ -64,4 +78,110 @@ describe('SbomListComponent', () => {
     expect(component.sboms[1].namespace).toBeUndefined();
     expect(component.sboms[1].project).toBeUndefined();
   });
+
+  // ── View mode (#58) ──────────────────────────────────────────────────────
+  //
+  // The grouped rows themselves live in ProjectGroupListComponent and are
+  // tested there. What belongs here is which mode is active, what it loads,
+  // and what it tells the user it is searching.
+
+  it('defaults to the flat document list', () => {
+    const fixture = TestBed.createComponent(SbomListComponent);
+    initFlat(fixture);
+
+    expect(fixture.componentInstance.viewMode).toBe('flat');
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('app-project-group-list')).toBeFalsy();
+    expect(compiled.querySelector('.view-toggle')).toBeTruthy();
+  });
+
+  it('hands the project page to the grouped list when grouped', () => {
+    const fixture = TestBed.createComponent(SbomListComponent);
+    const component = fixture.componentInstance;
+    initFlat(fixture);
+
+    component.viewMode = 'grouped';
+    component.projects = [{ project_name: 'payment-service', sbom_count: 11, package_count: 420, vuln_count: 7, latest_ingested: '', latest_sbom_id: '', tags: [] }] as any;
+    component.total = 1;
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('app-project-group-list')).toBeTruthy();
+    expect(compiled.querySelector('cdk-virtual-scroll-viewport')).toBeFalsy();
+    expect(compiled.querySelector('.project-row')?.textContent).toContain('payment-service');
+  });
+
+  it('loads projects, not documents, while grouped', () => {
+    const fixture = TestBed.createComponent(SbomListComponent);
+    const component = fixture.componentInstance;
+    initFlat(fixture);
+
+    component.viewMode = 'grouped';
+    component.loadMore();
+
+    const req = httpMock.expectOne((r) => r.url.endsWith('/projects'));
+    expect(req.request.params.get('page')).toBe('2');
+    req.flush({ data: [{ project_name: 'p', sbom_count: 1, package_count: 1, vuln_count: 0, latest_ingested: '', latest_sbom_id: '', tags: [] }], total: 1, page: 2, page_size: 100 });
+    expect(component.projects.length).toBe(1);
+  });
+
+  it('counts the right rows for the load-more control in each mode', () => {
+    const fixture = TestBed.createComponent(SbomListComponent);
+    const component = fixture.componentInstance;
+
+    component.sboms = [{ sbom_id: 'a' }, { sbom_id: 'b' }] as any;
+    component.projects = [{ project_name: 'p' }] as any;
+
+    component.viewMode = 'flat';
+    expect(component.loadedCount).toBe(2);
+    component.viewMode = 'grouped';
+    expect(component.loadedCount).toBe(1);
+  });
+
+  it('says what the search box actually searches in each mode', () => {
+    const fixture = TestBed.createComponent(SbomListComponent);
+    const component = fixture.componentInstance;
+
+    // The two modes search different things because they list different
+    // things: documents by name or path, projects by name.
+    component.viewMode = 'flat';
+    expect(component.searchPlaceholder).toContain('path');
+    component.viewMode = 'grouped';
+    expect(component.searchPlaceholder).toContain('projects');
+
+    // Inside a project scope the box searches that project's documents,
+    // whatever the mode was.
+    component.projectScope = 'payment-service';
+    expect(component.searchPlaceholder).toContain('payment-service');
+  });
+
+  it('hides the view toggle inside a project scope', () => {
+    const fixture = TestBed.createComponent(SbomListComponent);
+    const component = fixture.componentInstance;
+    initFlat(fixture);
+
+    // A project scope is already one project's versions; grouping it would
+    // collapse the page into the row that was clicked to open it.
+    component.projectScope = 'payment-service';
+    fixture.detectChanges();
+
+    const compiled = fixture.nativeElement as HTMLElement;
+    expect(compiled.querySelector('.view-toggle')).toBeFalsy();
+    expect(compiled.querySelector('.scope-banner')).toBeTruthy();
+  });
+
+  it('drops the loaded rows when the filters change', () => {
+    const fixture = TestBed.createComponent(SbomListComponent);
+    const component = fixture.componentInstance;
+    initFlat(fixture);
+
+    component.projects = [{ project_name: 'p' }] as any;
+    component.sboms = [{ sbom_id: 'a' }] as any;
+
+    (component as any).resetRows();
+
+    expect(component.projects).toEqual([]);
+    expect(component.sboms).toEqual([]);
+  });
 });
+

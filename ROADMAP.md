@@ -72,7 +72,7 @@ Everything that was blocking 1.0 on 2026-09-24, minus the tag. Order within the 
 |---|-------|------|----------|
 | **#399** | **BOMHort MCP server** — read-only tool surface over the REST API (`cmd/mcp-server`), SDK `>= v1.4.1`, stdio default | New component + new `values.yaml` block (`mcp.*`) | **First in line** (consumer-side issue, @jeefy). First external consumer of the frozen REST contract; its `values.yaml` block freezes with 1.0. Full reasoning and the SDK advisory table are in [Prioritization Rationale](#why-399-mcp-server-before-the-freeze-when-its-purely-additive). |
 | **#58** | Aggregated SBOM View — N versions of one project as one expandable row | UI + query | UI half of #398 (✅); same de-dup semantics. |
-| **#355** | `source_repo` extraction yields 0 % on real SBOMs — `documentNamespace` fallback | Parser | #332 is ticked in the 1.0 criteria while populating **zero** of 500 CNCF SBOMs. #338/VEXViper depends on it. |
+| ~~#355~~ | ~~`source_repo` extraction yields 0 % on real SBOMs — `documentNamespace` fallback~~ | Parser | ✅ `documentNamespace` last-resort fallback (strict: forge host or forge path shape only), release/tag/commit URL handling in `sourcerepo`, CycloneDX `distribution` counterpart. Existing rows need a re-parse to pick it up. |
 | **#397** | `licenseExceptions.existingConfigMap` + `licensePolicy.existingConfigMap` | Helm values | Values shape; GitOps users otherwise inline ~180 KB into an Argo `Application` (cncf/automation#703). |
 | **#391** | Seed job never seeds — gate (`seedJob.enabled`) or remove | Helm values | Ships broken since March, rendered by our own `values-production.yaml`. |
 | **#392** | Chart ships ClickHouse 24.8, CI tests 24.12 — decide the supported floor | Helm values + CI matrix | Support policy starts at 1.0; the floor must be a written decision. |
@@ -128,7 +128,7 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 - [x] ~~Schema wave `014`–`022`~~ (#256, #138, #332, #334, #57 column, #350, #357)
 - [x] ~~One row per `(vuln_id, purl)` — latest VEX wins (#335)~~ · ~~`cluster` in `SBOMListItem` (#177)~~
 - [x] ~~Project-centric read model + de-duplicated counts (#398)~~
-- [ ] **v0.8.0:** MCP server + `mcp.*` (#399) · Aggregated SBOM View (#58) · `source_repo` fallback (#355) · `existingConfigMap` (#397) · seed job (#391) · ClickHouse floor (#392) · perf E + I (#344) · CVE id/aliases (#412) · CSV export (#266)
+- [ ] **v0.8.0:** MCP server + `mcp.*` (#399) · Aggregated SBOM View (#58) · ~~`source_repo` fallback (#355)~~ ✅ · `existingConfigMap` (#397) · seed job (#391) · ClickHouse floor (#392) · perf E + I (#344) · CVE id/aliases (#412) · CSV export (#266)
 - [ ] **v0.9.0:** CVSS (#408) · CWE (#409) · KEV (#410) · EPSS (#64) · remediation record (#413) · SLA due dates (#411) · register docs (#414)
 - [ ] **v1.0.0:** CRA dashboard (#141) · MTTR (#7, stretch) · report bundle (#62) · crypto-library inventory (#419) · versioned docs (#145) · migration guide + values review
 
@@ -161,7 +161,7 @@ Every open issue carries a milestone — "no milestone" is not a valid state.
 
 | # | Issue | Type | Notes |
 |---|-------|------|-------|
-| ~~#332~~ / ~~#335~~ / **#355** | Correctness blockers | — | #332/#335 landed; #355 lands in v0.8.0. |
+| ~~#332~~ / ~~#335~~ / ~~#355~~ | Correctness blockers | — | All landed; #355 in v0.8.0. |
 | **#336** | Idempotent VEX upload + `GET /api/v1/uploads/{job_id}` (applied / matched / unmatched) | New table `upload_jobs` (additive) + content-hash dedupe | Unblocks scale; surfaces PURL/vuln-id mismatches. |
 | **#333** | Incremental listing (`since`/`cursor`) + `vex_status=missing` filter | Query-only, additive params | Cuts a 15 000-SBOM sweep from >25 min to seconds. |
 | **#334** | VEX provenance UI: automated vs. human badge, `status_notes`, `?vex_source=` | Frontend + query (columns from `017`) | Auditors see *who/what* decided; #413 already shows the action statement. |
@@ -228,7 +228,7 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | — (query + DTO) ✅ | #398 | De-duplicated project counts; `projectKeyExpr` is contract | ✅ | contract |
 | — (Helm values) | #399 | New `mcp.*` block | **pre** (v0.8.0) | contract (values) |
 | — (Helm values) | #397, #391, #392, #344-I | `existingConfigMap`, `seedJob.enabled`, image pin, ClickHouse limits | **pre** (v0.8.0) | contract (values) |
-| — (parser only) | #355 | `documentNamespace` fallback in `extractSourceRepo` | **pre** (v0.8.0) | makes #332 true |
+| — (parser only) ✅ | #355 | `documentNamespace` fallback in `extractSourceRepo` | **pre** (v0.8.0) | makes #332 true |
 | — (DTO + query) | #412 | `cve_id`, `aliases` on finding DTOs; lookups by alias | **pre** (v0.8.0) | market (additive) |
 | — (endpoint) | #266 | CSV export | **pre** (v0.8.0) | market (additive) |
 | `023_add_vulnerability_cvss_cwe` | #408, #409 | `ADD COLUMN cvss_score Float32, cvss_vector String, cvss_version LowCardinality(String), cwe_ids Array(String)` on `vulnerabilities` | **pre** (v0.9.0) | market (additive; backfill from `osv_json`) |

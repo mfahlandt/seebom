@@ -1,26 +1,57 @@
-import { Component, OnInit, OnDestroy, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ScrollingModule } from '@angular/cdk/scrolling';
-import { RouterModule, ActivatedRoute } from '@angular/router';
+import { RouterModule, ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
-import { SBOMListItem } from '../../core/api.models';
+import { SBOMListItem, ProjectListItem } from '../../core/api.models';
+import { ProjectGroupListComponent } from './project-group-list.component';
+
+/** Flat lists one row per document; grouped lists one row per project (#58). */
+export type SbomViewMode = 'flat' | 'grouped';
 
 @Component({
   selector: 'app-sbom-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule],
+  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, ProjectGroupListComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sbom-list">
       <div class="list-header">
         <h1>SBOM Explorer</h1>
         <span class="result-count" *ngIf="total > 0">
-          {{ sboms.length | number }} of {{ total | number }} SBOMs
+          <ng-container *ngIf="viewMode === 'flat'">
+            {{ sboms.length | number }} of {{ total | number }} SBOMs
+          </ng-container>
+          <ng-container *ngIf="viewMode === 'grouped'">
+            {{ projects.length | number }} of {{ total | number }} projects
+          </ng-container>
           <span *ngIf="searchTerm" class="search-hint">matching "{{ searchTerm }}"</span>
         </span>
+
+        <!--
+          #58. The toggle is hidden inside a project scope: there the list is
+          already one project's versions, so grouping it into a single row
+          would collapse the page into the thing you clicked to get here.
+        -->
+        <div class="view-toggle" *ngIf="!projectScope" role="group" aria-label="View mode">
+          <button
+            type="button"
+            class="toggle-btn"
+            [class.active]="viewMode === 'flat'"
+            [attr.aria-pressed]="viewMode === 'flat'"
+            (click)="setViewMode('flat')"
+          >Documents</button>
+          <button
+            type="button"
+            class="toggle-btn"
+            [class.active]="viewMode === 'grouped'"
+            [attr.aria-pressed]="viewMode === 'grouped'"
+            (click)="setViewMode('grouped')"
+          >By project</button>
+        </div>
       </div>
 
       <!--
@@ -40,14 +71,30 @@ import { SBOMListItem } from '../../core/api.models';
           type="text"
           [(ngModel)]="searchTerm"
           (ngModelChange)="onSearchChange($event)"
-          [placeholder]="projectScope ? 'Search within ' + projectScope + '…' : 'Search SBOMs by document name or path…'"
+          [placeholder]="searchPlaceholder"
           class="search-input"
         />
         <span class="search-loading" *ngIf="loading">⏳</span>
         <button *ngIf="searchTerm && !loading" class="clear-btn" (click)="clearSearch()">✕</button>
       </div>
 
-      <cdk-virtual-scroll-viewport itemSize="56" class="viewport" (scrolledIndexChange)="onScroll()">
+      <!--
+        The two modes search different things, because they list different
+        things: documents are matched on name or path, projects on the project
+        name. Saying so is cheaper than explaining why a path fragment finds
+        nothing here.
+      -->
+      <div class="mode-hint" *ngIf="viewMode === 'grouped' && searchTerm">
+        Matching project names. Switch to <strong>Documents</strong> to search by file path.
+      </div>
+
+      <!-- Flat: one row per document -->
+      <cdk-virtual-scroll-viewport
+        *ngIf="viewMode === 'flat'"
+        itemSize="56"
+        class="viewport"
+        (scrolledIndexChange)="onScroll()"
+      >
         <div *cdkVirtualFor="let sbom of sboms; trackBy: trackBySbom" class="sbom-row">
           <a [routerLink]="['/sboms', sbom.sbom_id]" class="sbom-link">
             <span class="name">{{ sbom.document_name || sbom.source_file }}</span>
@@ -73,14 +120,26 @@ import { SBOMListItem } from '../../core/api.models';
         </div>
       </cdk-virtual-scroll-viewport>
 
-      <div *ngIf="!loading && total > 0 && sboms.length < total" class="load-more">
+      <!--
+        Grouped: one expandable row per project (#58), in its own component.
+
+        Not virtual-scrolled, unlike the flat list. An expanded row is taller
+        than a collapsed one, and cdk-virtual-scroll-viewport's fixed itemSize
+        cannot represent that — it would place rows at the wrong offsets the
+        moment one opens. The list is bounded instead: one page is 100
+        projects, and projects are the low-cardinality dimension (50-5000 per
+        instance) rather than the document count.
+      -->
+      <app-project-group-list *ngIf="viewMode === 'grouped'" [projects]="projects" />
+
+      <div *ngIf="!loading && total > 0 && loadedCount < total" class="load-more">
         <button (click)="loadMore()" class="load-more-btn">
-          Load more ({{ sboms.length | number }} / {{ total | number }})
+          Load more ({{ loadedCount | number }} / {{ total | number }})
         </button>
       </div>
 
       <div *ngIf="!loading && total === 0 && searchTerm" class="empty-search">
-        No SBOMs matching "{{ searchTerm }}"<span *ngIf="projectScope"> in {{ projectScope }}</span>
+        No {{ viewMode === 'grouped' ? 'projects' : 'SBOMs' }} matching "{{ searchTerm }}"<span *ngIf="projectScope"> in {{ projectScope }}</span>
       </div>
       <div *ngIf="!loading && total === 0 && !searchTerm && projectScope" class="empty-search">
         No SBOMs resolve to project "{{ projectScope }}"
@@ -93,36 +152,44 @@ import { SBOMListItem } from '../../core/api.models';
     h1 { margin: 0; font-size: 1.1rem; font-weight: 700; letter-spacing: -0.02em; }
     .result-count { font-size: 0.75rem; color: var(--text-muted); }
     .search-hint { font-style: italic; }
+    .mode-hint { font-size: 0.72rem; color: var(--text-muted); margin: -6px 0 10px 2px; }
+
+    .view-toggle { margin-left: auto; display: flex; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+    .toggle-btn, .load-more-btn {
+      background: var(--surface); border: none; cursor: pointer; font-family: inherit;
+      padding: 5px 12px; font-size: 0.74rem; color: var(--text-secondary); transition: all 0.12s;
+    }
+    .toggle-btn + .toggle-btn { border-left: 1px solid var(--border); }
+    .toggle-btn:hover { color: var(--text); }
+    .toggle-btn.active { background: var(--accent); color: var(--surface); font-weight: 600; }
+
     .scope-banner {
       display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px;
       padding: 8px 12px; font-size: 0.78rem; color: var(--text-secondary);
       background: var(--status-info-bg); border: 1px solid var(--accent); border-radius: 4px;
     }
     .scope-link { font-weight: 700; color: var(--accent-hover); text-decoration: none; }
-    .scope-link:hover { text-decoration: underline; }
     .scope-clear { margin-left: auto; color: var(--text-muted); text-decoration: none; font-size: 0.72rem; }
     .scope-clear:hover { color: var(--text); }
+    .scope-link:hover, .all-versions-link:hover { text-decoration: underline; }
 
     .search-bar { position: relative; margin-bottom: 12px; }
     .search-input {
-      width: 100%; padding: 8px 36px 8px 12px; font-size: 0.82rem;
-      border: 1px solid var(--border); border-radius: 4px;
-      background: var(--surface); color: var(--text);
-      font-family: inherit; outline: none; transition: border-color 0.15s;
-      box-sizing: border-box;
+      width: 100%; padding: 8px 36px 8px 12px; font-size: 0.82rem; box-sizing: border-box;
+      border: 1px solid var(--border); border-radius: 4px; outline: none;
+      background: var(--surface); color: var(--text); font-family: inherit; transition: border-color 0.15s;
     }
     .search-input::placeholder { color: var(--text-muted); }
     .search-input:focus { border-color: var(--accent); }
-    .search-loading {
-      position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
-      font-size: 0.8rem; line-height: 1;
-    }
-    .clear-btn {
-      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-      background: none; border: none; color: var(--text-muted); cursor: pointer;
+    .search-loading { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); font-size: 0.8rem; line-height: 1; }
+    .clear-btn { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); }
+    .clear-btn, .expander {
+      background: none; border: none; cursor: pointer; color: var(--text-muted);
       font-size: 0.8rem; padding: 4px; line-height: 1;
     }
     .clear-btn:hover { color: var(--text); }
+    .expander:hover { color: var(--accent); }
+    .expander { width: 28px; flex-shrink: 0; }
 
     .viewport { flex: 1; min-height: 400px; }
     .sbom-row { height: 52px; display: flex; align-items: center; border-bottom: 1px solid var(--border); }
@@ -132,19 +199,19 @@ import { SBOMListItem } from '../../core/api.models';
     }
     .sbom-link:hover { background: var(--surface-alt); }
     .download-btn {
-      background: none; border: 1px solid var(--border); border-radius: 4px;
-      cursor: pointer; padding: 4px 8px; font-size: 0.75rem; color: var(--text-secondary);
-      margin-right: 12px; flex-shrink: 0; transition: all 0.15s;
+      background: none; border: 1px solid var(--border); border-radius: 4px; cursor: pointer;
+      padding: 4px 8px; font-size: 0.75rem; color: var(--text-secondary); margin-right: 12px;
+      flex-shrink: 0; transition: all 0.15s;
     }
-    .download-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .download-btn:hover, .load-more-btn:hover { border-color: var(--accent); color: var(--accent); }
     .name { flex: 1; font-weight: 500; font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .badge { background: var(--bg); color: var(--text-secondary); padding: 2px 6px; border-radius: 2px; font-size: 0.7rem; font-weight: 500; }
     .product-version { color: var(--text-secondary); font-size: 0.8rem; font-weight: 600; }
     .owner-badge {
-      background: var(--surface-alt); color: var(--text-secondary);
+      background: var(--surface-alt); color: var(--text-secondary); cursor: help;
       border: 1px solid var(--border); padding: 1px 6px; border-radius: 2px;
       font-size: 0.65rem; font-weight: 500; white-space: nowrap; flex-shrink: 0;
-      max-width: 140px; overflow: hidden; text-overflow: ellipsis; cursor: help;
+      max-width: 140px; overflow: hidden; text-overflow: ellipsis;
     }
     .owner-badge.cluster-badge { background: var(--status-info-bg); color: var(--accent-hover); border-color: transparent; }
     .packages { color: var(--text-secondary); font-size: 0.8rem; width: 110px; }
@@ -152,28 +219,23 @@ import { SBOMListItem } from '../../core/api.models';
     .has-vulns { color: var(--severity-critical); font-weight: 600; }
     .date { color: var(--text-muted); font-size: 0.75rem; width: 110px; }
 
-    .load-more {
-      padding: 12px; text-align: center;
-    }
-    .load-more-btn {
-      padding: 8px 24px; background: var(--surface); border: 1px solid var(--border);
-      border-radius: 4px; cursor: pointer; font-size: 0.8rem; font-family: inherit;
-      color: var(--text-secondary); transition: all 0.15s;
-    }
-    .load-more-btn:hover { border-color: var(--accent); color: var(--accent); }
-
-    .empty-search {
-      padding: 32px; text-align: center; color: var(--text-muted); font-size: 0.85rem;
-    }
+    .load-more { padding: 12px; text-align: center; }
+    .load-more-btn { padding: 8px 24px; border: 1px solid var(--border); border-radius: 4px; font-size: 0.8rem; }
+    .empty-search { padding: 32px; text-align: center; color: var(--text-muted); font-size: 0.85rem; }
   `],
 })
 export class SbomListComponent implements OnInit, OnDestroy {
+  @ViewChild(ProjectGroupListComponent) private groupList?: ProjectGroupListComponent;
+
   sboms: SBOMListItem[] = [];
+  projects: ProjectListItem[] = [];
   total = 0;
   searchTerm = '';
   loading = false;
   /** Exact project identity from ?project= (#398); '' = unscoped. */
   projectScope = '';
+  /** #58. Linkable via ?view=grouped so a grouped list can be shared. */
+  viewMode: SbomViewMode = 'flat';
 
   private page = 1;
   private loadedOnce = false;
@@ -185,6 +247,7 @@ export class SbomListComponent implements OnInit, OnDestroy {
     private readonly api: ApiService,
     private readonly cdr: ChangeDetectorRef,
     private readonly route: ActivatedRoute,
+    private readonly router: Router,
   ) {}
 
   ngOnInit(): void {
@@ -193,36 +256,67 @@ export class SbomListComponent implements OnInit, OnDestroy {
       distinctUntilChanged(),
       takeUntil(this.destroy$),
     ).subscribe((term) => {
-      this.page = 1;
-      this.sboms = [];
-      this.loadSboms(term);
+      this.resetRows();
+      this.load(term);
     });
 
-    // The URL carries both filters. Subscribed rather than snapshotted so a
-    // navigation from one project scope to another (or to none) reloads.
-    // Rows are only discarded on an actual filter change — the first emit
-    // must not blank out rows a caller has already placed.
+    // The URL carries all three filters. Subscribed rather than snapshotted so
+    // a navigation from one project scope to another (or to none), or a view
+    // switch, reloads. Rows are only discarded on an actual filter change —
+    // the first emit must not blank out rows a caller has already placed.
     this.route.queryParamMap.pipe(takeUntil(this.destroy$)).subscribe((params) => {
       const project = params.get('project') || '';
       const search = params.get('search') || '';
-      const changed = project !== this.projectScope || search !== this.searchTerm;
+      // A project scope is a list of that project's versions; grouping it
+      // would collapse the page into the row that was clicked to open it.
+      const view: SbomViewMode = !project && params.get('view') === 'grouped' ? 'grouped' : 'flat';
+
+      const changed = project !== this.projectScope || search !== this.searchTerm || view !== this.viewMode;
       if (this.loadedOnce && !changed) {
         return;
       }
       if (changed) {
-        this.page = 1;
-        this.sboms = [];
+        this.resetRows();
       }
       this.projectScope = project;
       this.searchTerm = search;
+      this.viewMode = view;
       this.loadedOnce = true;
-      this.loadSboms(search);
+      this.load(search);
     });
   }
 
   ngOnDestroy(): void {
     this.destroy$.next();
     this.destroy$.complete();
+  }
+
+  get searchPlaceholder(): string {
+    if (this.projectScope) {
+      return `Search within ${this.projectScope}…`;
+    }
+    return this.viewMode === 'grouped'
+      ? 'Search projects by name…'
+      : 'Search SBOMs by document name or path…';
+  }
+
+  /** Rows currently held, for the "load more" counter of either mode. */
+  get loadedCount(): number {
+    return this.viewMode === 'grouped' ? this.projects.length : this.sboms.length;
+  }
+
+  setViewMode(mode: SbomViewMode): void {
+    if (mode === this.viewMode) {
+      return;
+    }
+    // Through the URL rather than by assignment, so the mode survives a
+    // reload and can be linked to. The queryParamMap subscription does the
+    // actual reload.
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { view: mode === 'grouped' ? 'grouped' : null },
+      queryParamsHandling: 'merge',
+    });
   }
 
   onSearchChange(term: string): void {
@@ -236,23 +330,40 @@ export class SbomListComponent implements OnInit, OnDestroy {
 
   loadMore(): void {
     this.page++;
-    this.loadSboms(this.searchTerm, true);
+    this.load(this.searchTerm, true);
   }
 
   onScroll(): void {
     // Could implement infinite scroll here in the future
   }
 
-  private loadSboms(search: string, append = false): void {
+  // Loading
+
+  private resetRows(): void {
+    this.page = 1;
+    this.sboms = [];
+    this.projects = [];
+    // The grouped child owns its expansion state; a new listing invalidates
+    // it, otherwise a panel stays open under a project that left the page.
+    this.groupList?.reset();
+  }
+
+  private load(search: string, append = false): void {
     this.loading = true;
     this.cdr.markForCheck();
 
+    if (this.viewMode === 'grouped') {
+      this.api.getProjects(this.page, this.pageSize, search).subscribe((response) => {
+        this.projects = append ? [...this.projects, ...response.data] : response.data;
+        this.total = response.total;
+        this.loading = false;
+        this.cdr.markForCheck();
+      });
+      return;
+    }
+
     this.api.getSboms(this.page, this.pageSize, search, this.projectScope).subscribe((response) => {
-      if (append) {
-        this.sboms = [...this.sboms, ...response.data];
-      } else {
-        this.sboms = response.data;
-      }
+      this.sboms = append ? [...this.sboms, ...response.data] : response.data;
       this.total = response.total;
       this.loading = false;
       this.cdr.markForCheck();
@@ -275,3 +386,14 @@ export class SbomListComponent implements OnInit, OnDestroy {
     document.body.removeChild(a);
   }
 }
+
+
+
+
+
+
+
+
+
+
+

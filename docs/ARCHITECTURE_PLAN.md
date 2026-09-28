@@ -383,7 +383,7 @@ Moved to Section 10 for comprehensive coverage including exemptions and visual r
 |-------|-----------|-------------|
 | `/` | DashboardComponent | KPI cards (incl. VEX, exempted), 3 donut charts, 2 bar charts, CVE refresh banner, quick links |
 | `/fleet` | FleetViewComponent | **Ownership tree** cluster → namespace → project (one `GET /api/v1/fleet` call), per-scope detail panel with severity + license breakdown, `(unassigned)` rendered explicitly as a misconfiguration signal |
-| `/sboms` | SbomListComponent | **Full-text search** (project name, file path, version), virtual scroll, package/vuln count |
+| `/sboms` | SbomListComponent | **Full-text search** (project name, file path, version), virtual scroll, package/vuln count. Two modes (#58): *Documents* (one row per SBOM, virtual-scrolled) and *By project* (`?view=grouped`, one expandable row per project, rendered by `ProjectGroupListComponent`). Grouped rows show the read model's de-duplicated counts and fetch their versions from `GET /projects/{name}/sboms` — grouping the loaded page client-side would miscount a project whose versions span pages. |
 | `/sboms/:id` | SbomDetailComponent | **3 tabs:** Vulnerabilities (VEX badges), Licenses (exemption status + package list), Dependencies (tree, exempted=orange, **archived=badge**) |
 | `/vulnerabilities` | VulnerabilityListComponent | Virtual scroll, VEX status badges, all/effective toggle |
 | `/cve-impact` | CVEImpactComponent | **CVE search field** → affected projects with DIRECT/TRANSITIVE badge |

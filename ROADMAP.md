@@ -2,7 +2,9 @@
 
 > Last updated: 2026-09-25
 > Project Board: https://github.com/orgs/seebom-labs/projects/1
-> Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) · [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) · [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) · [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) · [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3) · [v2.0.0](https://github.com/seebom-labs/BOMHort/milestone/4)
+> Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5)  [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6)  [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1)  [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2)  [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3)  [v2.0.0](https://github.com/seebom-labs/BOMHort/milestone/4)
+
+> ℹ️ **This file is updated when a release is cut, not in feature PRs.** Do not tick your own entry — every PR that does edits the same criteria line and the same milestone row, so two open PRs conflict on a checklist, and resolving that by picking a side silently un-ticks an issue that is already merged. See the release checklist in [`docs/RELEASE.md`](docs/RELEASE.md).
 
 ## Executive Summary
 

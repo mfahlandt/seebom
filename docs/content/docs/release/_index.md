@@ -110,7 +110,7 @@ git push origin release/v1.3
 - [ ] All planned features for this milestone merged to `main`
 - [ ] CI passes on `main`
 - [ ] `govulncheck ./...` (backend), `npm audit` (ui + docs) clean
-- [ ] **`ROADMAP.md` updated**: move completed items to "Done", adjust phase timelines if needed
+- [ ] **`ROADMAP.md` reconciled**: feature PRs do not tick their own entry, so this happens **once, here**. For every issue that landed since the last tag, update all four places it appears — register row, release criteria checklist, milestone map, dependency graph — and move anything that slipped to the next milestone rather than dropping it. (Why not per PR: two PRs editing the same checklist line conflict by construction, and resolving that by picking a side silently un-ticks an already-merged issue.)
 - [ ] `docs/ARCHITECTURE_PLAN.md` reflects any new services or schema changes
 - [ ] Tag created (`vX.Y.0`) and pushed
 - [ ] Release branch created (`release/vX.Y`) and pushed

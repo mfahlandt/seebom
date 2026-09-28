@@ -40,14 +40,33 @@ cd docs && npm audit fix
 
 Fix any reported vulnerabilities before proceeding. Check all three ecosystems (Go, UI npm, docs npm).
 
-### 2. Tag the release
+### 2. Reconcile `ROADMAP.md`
+
+Feature PRs deliberately **do not** tick their own roadmap entry — see `AGENTS.md`. Two PRs that both edit the v0.8.0 criteria line conflict on a checklist, and resolving such a conflict by picking a side silently un-ticks an issue that is already merged. So the roadmap is reconciled once, here, by one author who can see the whole set.
+
+List what actually landed since the previous tag:
+
+```bash
+git log v0.6.0..HEAD --oneline | grep -oE '#[0-9]+' | sort -u
+```
+
+Then, for each merged issue, update **all four** places it appears — missing one leaves the roadmap self-contradicting:
+
+1. the register table row (`| #58 | … |` → `| ~~#58~~ | … | ✅ what shipped |`),
+2. the release criteria checklist (`- [ ] **v0.8.0:** …`),
+3. the milestone map row,
+4. the dependency graph at the bottom.
+
+Tick the release's own `- [ ]` box only when every item on that line is done. If items slipped, move them to the next milestone rather than quietly dropping them — the roadmap is the thing people read to find out what BOMHort promised.
+
+### 3. Tag the release
 
 ```bash
 git tag v0.7.0
 git push origin v0.7.0
 ```
 
-### 3. What happens automatically
+### 4. What happens automatically
 
 The GitHub Actions workflow (`.github/workflows/release.yml`) triggers on any `v*` tag and:
 
@@ -71,7 +90,7 @@ Release notes are grouped by PR labels (see `.github/release.yml`):
 - 🔧 Maintenance (`chore`, `dependencies`, `ci`)
 - 🔒 Security (`security`)
 
-### 4. Verify the release
+### 5. Verify the release
 
 ```bash
 # Check images exist

@@ -13,7 +13,7 @@ This page contains the full architecture blueprint for BOMHort.
 
 ## TL;DR
 
-Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (CronJob Ingestion-Watcher, scalable Parsing-Workers, stateless API-Gateway, background CVE-Refresher). ClickHouse as the analytical database with MergeTree tables and array-based dependency storage. Angular frontend with virtual scrolling, OnPush change detection, full-text search, dark-mode toggle, and custom CSS theming.
+Kubernetes-native SBOM platform as a monorepo. Go backend with five binaries (CronJob Ingestion-Watcher, scalable Parsing-Workers, stateless API-Gateway, background CVE-Refresher, and an optional read-only [MCP server](/docs/mcp/) that consumes the REST API rather than the database). ClickHouse as the analytical database with MergeTree tables and array-based dependency storage. Angular frontend with virtual scrolling, OnPush change detection, full-text search, dark-mode toggle, and custom CSS theming.
 
 ## Components
 

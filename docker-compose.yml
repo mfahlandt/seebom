@@ -236,6 +236,34 @@ services:
       clickhouse:
         condition: service_healthy
 
+  # Read-only MCP tool surface (#399). Opt-in:
+  #   docker compose --profile mcp up mcp-server
+  #
+  # Note that this is the *http* transport, which is the less common way to
+  # run it: an MCP client on your machine normally starts the binary itself
+  # and speaks stdio (`make mcp`), needing no port, no token and no origin
+  # list. The service exists so the HTTP path can be exercised locally — and
+  # it shows the shape of that path honestly, including the fact that the
+  # server will not start without a token and an explicit origin list.
+  mcp-server:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: mcp-server
+    profiles: ["mcp"]
+    ports:
+      - "8081:8081"
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HTTP_ADDR: "0.0.0.0:8081"
+      MCP_HTTP_TOKEN: ${MCP_HTTP_TOKEN:-dev-token}
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-http://localhost:4200}
+      MCP_API_BASE_URL: http://api-gateway:8080
+      MCP_SERVICE_TOKEN: ${SERVICE_TOKEN:-}
+      MCP_API_KEY: ${MCP_API_KEY:-}
+    depends_on:
+      - api-gateway
+
 volumes:
   clickhouse_data:
   originals_data:

@@ -4,7 +4,7 @@ You are an expert Senior Software Engineer and Architect specializing in Go, Ang
 We are building BOMHort: a standalone, Kubernetes-native Software Bill of Materials (SBOM) visualization and governance platform. It autonomously ingests massive amounts of SPDX and CycloneDX documents (by default from S3-compatible buckets, with local filesystem as alternative), stores them for infinite historical retention, cross-references vulnerabilities via the OSV API, checks license compliance natively with externalized policy and exception files, supports VEX (Vulnerability Exploitability eXchange) via OpenVEX, and displays the results in a high-performance UI.
 
 # Architecture Overview
-The platform consists of **4 Go binaries**, an **Angular UI**, and a **ClickHouse** database:
+The platform consists of **5 Go binaries**, an **Angular UI**, and a **ClickHouse** database:
 
 | Binary | Type | Purpose |
 |--------|------|---------|
@@ -12,6 +12,7 @@ The platform consists of **4 Go binaries**, an **Angular UI**, and a **ClickHous
 | `parsing-worker` | Deployment (N replicas) | Processes SBOMs (SPDX→ClickHouse), VEX files, OSV lookups, license checks |
 | `api-gateway` | Deployment | Stateless REST API (29 endpoints) |
 | `cve-refresher` | K8s CronJob (daily) | Checks all known PURLs for newly disclosed CVEs without re-scanning SBOMs |
+| `mcp-server` | stdio process / optional Deployment | Read-only MCP tool surface over the REST API (#399). Holds **no** database credentials: it is a consumer of the API like any external client. stdio by default, Streamable HTTP opt-in and refused without a bearer token plus an explicit, non-wildcard Origin allow-list. |
 
 Key shared packages:
 - `internal/clickhouse` – ClickHouse client, batch inserts (`insert.go`), queue operations (`queue.go`), and all query logic split across `queries.go`, `queries_projects.go`, `queries_cluster.go`, `queries_namespace.go` (namespace drill-down + the `cluster → namespace → project` fleet tree), `queries_search.go`, `queries_refresh.go`, `queries_github_cache.go`
@@ -29,6 +30,7 @@ Key shared packages:
 - `internal/protobomparser` – Parser backend using [protobom](https://github.com/protobom/protobom) for maximum format coverage (SPDX 2.3 + CycloneDX 1.0–1.7). Opt-in alternative to built-in parsers.
 - `internal/vex` – OpenVEX parser with URL normalization
 - `internal/docstore` – Original-document store (fs or S3 backend) for the bytes captured at ingest (#256). Reads are **reference-driven** (`multistore.go`): a stored `fs://…`/`s3://…` reference is resolved by its scheme against whichever backend can read it, not against the reading process's configured backend — so the API gateway can serve originals written by a worker with a different `ORIGINAL_STORE_BACKEND`, and fs↔s3 migrations don't orphan old captures. Writes still go to the single configured primary backend.
+- `internal/apiclient` – Read-only HTTP client for BOMHort's own REST API, used by `cmd/mcp-server` (#399). GET only, by design — there is no write path in it. Exists so the MCP server consumes the frozen contract instead of reaching around it into ClickHouse; the cost is one HTTP hop, the benefit is that an agent can only ever see what the API exposes, and that contract holes surface here rather than in a consumer's integration.
 
 Data layer (`pkg/`):
 - `pkg/models` – ClickHouse data models (SBOM, SBOMPackages, Vulnerability, LicenseCompliance, IngestionJob, VEXStatement)
@@ -80,6 +82,7 @@ make ch-migrate      # Run migrations against running ClickHouse
 make api             # Run API Gateway locally (needs ClickHouse)
 make ingest          # Run Ingestion Watcher once locally
 make worker          # Run Parsing Worker locally
+make mcp             # Run the MCP server locally on stdio (needs a running API gateway)
 make ui-dev          # Start Angular dev server (hot-reload, proxies to localhost:8080)
 ```
 
@@ -111,8 +114,9 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 - Use standard idiomatic Go. Handle errors explicitly; never swallow them.
 - HTTP routing uses Go 1.22+ stdlib `net/http` with method-pattern registration (e.g., `mux.HandleFunc("GET /api/v1/sboms", ...)`). No web framework.
 - Only 6 direct dependencies: `clickhouse-go/v2`, `goccy/go-json`, `google/uuid`, `minio/minio-go/v7`, `protobom/protobom`, `modelcontextprotocol/go-sdk`. Keep it minimal — adding a 7th is a maintainer decision, not an implementation detail.
-- `modelcontextprotocol/go-sdk` must stay pinned **`>= v1.4.1`** (approved 2026-09-24 for the MCP server, #399). Everything below it carries four HIGH advisories: CVE-2026-27896 and GHSA-q382-vc8q-7jhj (JSON key confusion — case folding, then `NUL`-terminated duplicate keys), CVE-2026-33252 (cross-site tool execution: no `Origin`/`Content-Type` validation on Streamable HTTP) and CVE-2026-34742 (DNS-rebinding protection off by default on localhost). `v1.4.1` requires Go 1.25+. Never downgrade this pin to resolve a build conflict.
-- Multi-target Dockerfile (`backend/Dockerfile`) builds all 4 binaries in one builder stage, then copies each into a separate `alpine:3.21` runtime stage. (Becomes 5 with `cmd/mcp-server`, #399.)
+- `modelcontextprotocol/go-sdk` must stay pinned **`>= v1.4.1`** (approved 2026-09-24 for the MCP server, #399; shipped on `v1.8.0`). Everything below it carries four HIGH advisories: CVE-2026-27896 and GHSA-q382-vc8q-7jhj (JSON key confusion — case folding, then `NUL`-terminated duplicate keys), CVE-2026-33252 (cross-site tool execution: no `Origin`/`Content-Type` validation on Streamable HTTP) and CVE-2026-34742 (DNS-rebinding protection off by default on localhost). `v1.4.1` requires Go 1.25+. Never downgrade this pin to resolve a build conflict.
+- **The MCP server never gets a write tool or a ClickHouse connection.** Both would be small changes and both would break the reason it exists: it is the external consumer that proves the REST contract is usable, and a read-only surface over a public frontend is the only surface it can legitimately have. Mutation tools are a post-1.0, explicitly-decided addition, not an implementation detail.
+- Multi-target Dockerfile (`backend/Dockerfile`) builds all 5 binaries in one builder stage, then copies each into a separate `alpine:3.24` runtime stage. The `mcp-server` stage declares no `EXPOSE`: its default transport is stdio, and declaring a port would suggest otherwise. `VERSION` is stamped into `mcp-server` only — it is the one binary whose version an external client sees (the MCP `initialize` handshake).
 - Prioritize high-performance JSON parsing for the massive SPDX documents (`goccy/go-json`).
 - When integrating with the OSV API, utilize batch querying endpoints (`/v1/querybatch`) to efficiently process multiple Package URLs (PURLs) at once.
 - Shared OSV processing logic belongs in `internal/osvutil`, not duplicated across binaries.

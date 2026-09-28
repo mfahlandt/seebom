@@ -70,7 +70,7 @@ Everything that was blocking 1.0 on 2026-09-24, minus the tag. Order within the 
 
 | # | Issue | Type | Why here |
 |---|-------|------|----------|
-| **#399** | **BOMHort MCP server** — read-only tool surface over the REST API (`cmd/mcp-server`), SDK `>= v1.4.1`, stdio default | New component + new `values.yaml` block (`mcp.*`) | **First in line** (consumer-side issue, @jeefy). First external consumer of the frozen REST contract; its `values.yaml` block freezes with 1.0. Full reasoning and the SDK advisory table are in [Prioritization Rationale](#why-399-mcp-server-before-the-freeze-when-its-purely-additive). |
+| ~~#399~~ | ~~**BOMHort MCP server** — read-only tool surface over the REST API (`cmd/mcp-server`), SDK `>= v1.4.1`, stdio default~~ | New component + new `values.yaml` block (`mcp.*`) | ✅ Five read-only tools (`list_projects`, `get_project`, `search_packages`, `list_vulnerabilities`, `get_sbom`) over `internal/apiclient` — a REST consumer, no ClickHouse credentials. SDK on `v1.8.0`. stdio default; Streamable HTTP refuses to start (and `helm template` refuses to render) without a bearer token and a non-wildcard Origin allow-list. Full reasoning and the SDK advisory table are in [Prioritization Rationale](#why-399-mcp-server-before-the-freeze-when-its-purely-additive). |
 | **#58** | Aggregated SBOM View — N versions of one project as one expandable row | UI + query | UI half of #398 (✅); same de-dup semantics. |
 | ~~#355~~ | ~~`source_repo` extraction yields 0 % on real SBOMs — `documentNamespace` fallback~~ | Parser | ✅ `documentNamespace` last-resort fallback (strict: forge host or forge path shape only), release/tag/commit URL handling in `sourcerepo`, CycloneDX `distribution` counterpart. Existing rows need a re-parse to pick it up. |
 | **#397** | `licenseExceptions.existingConfigMap` + `licensePolicy.existingConfigMap` | Helm values | Values shape; GitOps users otherwise inline ~180 KB into an Argo `Application` (cncf/automation#703). |
@@ -128,7 +128,7 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 - [x] ~~Schema wave `014`–`022`~~ (#256, #138, #332, #334, #57 column, #350, #357)
 - [x] ~~One row per `(vuln_id, purl)` — latest VEX wins (#335)~~ · ~~`cluster` in `SBOMListItem` (#177)~~
 - [x] ~~Project-centric read model + de-duplicated counts (#398)~~
-- [ ] **v0.8.0:** MCP server + `mcp.*` (#399) · Aggregated SBOM View (#58) · ~~`source_repo` fallback (#355)~~ ✅ · `existingConfigMap` (#397) · seed job (#391) · ClickHouse floor (#392) · perf E + I (#344) · CVE id/aliases (#412) · CSV export (#266)
+- [ ] **v0.8.0:** ~~MCP server + `mcp.*` (#399)~~ ✅ · Aggregated SBOM View (#58) · ~~`source_repo` fallback (#355)~~ ✅ · `existingConfigMap` (#397) · seed job (#391) · ClickHouse floor (#392) · perf E + I (#344) · CVE id/aliases (#412) · CSV export (#266)
 - [ ] **v0.9.0:** CVSS (#408) · CWE (#409) · KEV (#410) · EPSS (#64) · remediation record (#413) · SLA due dates (#411) · register docs (#414)
 - [ ] **v1.0.0:** CRA dashboard (#141) · MTTR (#7, stretch) · report bundle (#62) · crypto-library inventory (#419) · versioned docs (#145) · migration guide + values review
 
@@ -138,7 +138,7 @@ Every open issue carries a milestone — "no milestone" is not a valid state.
 
 | Milestone | Due | Theme | Open issues |
 |-----------|-----|-------|-------------|
-| [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | 2026-10-31 | Contract | #399, #58, #355, #397, #391, #392, #344, #412, #266 |
+| [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | 2026-10-31 | Contract | ~~#399~~, #58, ~~#355~~, #397, #391, #392, #344, #412, #266 |
 | [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) | 2026-11-30 | Vulnerability register | #408, #409, #410, #64, #413, #411, #414 |
 | [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) | 2027-01-31 | Freeze + CRA dashboard | #141, #7, #62, #419, #145 |
 | [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) | 2027-04-30 | Automation, fleet & cryptography | #338, #336, #333, #337, #334 (UI), #138 (API/UI), #267, #176, #140, #57, #136, #60, #143, #420, #415, #416, #417, #418 |
@@ -226,7 +226,7 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | — (query only) ✅ | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | ✅ | contract |
 | — (DTO only) ✅ | #177 | `cluster` in `SBOMListItem` | ✅ | contract |
 | — (query + DTO) ✅ | #398 | De-duplicated project counts; `projectKeyExpr` is contract | ✅ | contract |
-| — (Helm values) | #399 | New `mcp.*` block | **pre** (v0.8.0) | contract (values) |
+| — (Helm values) ✅ | #399 | New `mcp.*` block | **pre** (v0.8.0) | contract (values) |
 | — (Helm values) | #397, #391, #392, #344-I | `existingConfigMap`, `seedJob.enabled`, image pin, ClickHouse limits | **pre** (v0.8.0) | contract (values) |
 | — (parser only) ✅ | #355 | `documentNamespace` fallback in `extractSourceRepo` | **pre** (v0.8.0) | makes #332 true |
 | — (DTO + query) | #412 | `cve_id`, `aliases` on finding DTOs; lookups by alias | **pre** (v0.8.0) | market (additive) |
@@ -254,7 +254,7 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 ```
 PRE-1.0 contract:
 #398 ✅ ──┬── #58 (Aggregated SBOM View)                        v0.8.0
-          └── #399 (MCP: get_project) ── post-1.0: write tools
+          └── #399 ✅ (MCP: get_project) ── post-1.0: write tools
 
 REGISTER (#414):
 #412 (cve_id/aliases) ── #410 (KEV, matched by alias) ──┐

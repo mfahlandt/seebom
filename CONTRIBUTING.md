@@ -120,7 +120,7 @@ has a `/remove-<command> <value>` form.
 | Command | Who | Effect |
 |---|---|---|
 | `/lgtm`, `/lgtm cancel` | OWNERS reviewers/approvers (not the author) | Adds/removes `lgtm` |
-| `/approve`, `/approve cancel` | OWNERS approvers | Marks the changed files as approved; `approved` is set once every file is covered. A GitHub approving review counts too |
+| `/approve`, `/approve cancel` | OWNERS approvers | Marks the changed files as approved; `approved` is set once every file is covered. A GitHub approving review counts too — and is the preferred way, because it also satisfies the required review (see [Merge gate](#merge-gate-on-main-and-release-branches)) |
 | `/hold`, `/hold cancel` (`/unhold`) | anyone | Adds/removes `do-not-merge/hold` |
 | `/assign [@user]`, `/unassign`, `/cc [@user]`, `/uncc` | anyone | Assignees / review requests |
 | `/priority <critical\|high\|medium\|low>` | org members | Exclusive `priority/*` label |
@@ -149,33 +149,47 @@ Component labels come from the `labels:` list in `OWNERS` files, not from glob r
 - Every label used in `OWNERS` must be listed under `labels.labels` in `.github/prow.yaml` so
   that label-sync creates it with color and description.
 
-### Merge gate on `main`
+### Merge gate on `main` and release branches
 
-Prow **is** the review gate. Since 2026-09-25 branch protection on `main` requires the status
-checks `Backend (Go)`, `Frontend (Angular)`, `Helm Lint` and **`prow/lgtm`**, with "require
-branches to be up to date" — and no GitHub review. Who may approve what is decided by the
-`OWNERS` files, not by a review count:
+Prow **is** the review gate; GitHub enforces the floor. The repository ruleset *Release and Main*
+(since 2026-10-01; it applies to `main` and `release/**`) requires a pull request, the status
+checks `Backend (Go)`, `Frontend (Angular)`, `Helm Lint` and **`prow/lgtm`** on an up-to-date
+branch, and **one approving GitHub review** whose approval covers the latest push. Who may
+approve what is still decided by the `OWNERS` files:
 
 - `/lgtm` from an OWNERS reviewer writes the `prow/lgtm` commit status for the reviewed commit.
   Without it the PR cannot be merged at all — not by Tide, not by the merge button.
-- `/approve` from an OWNERS approver (or a GitHub approving review, which counts the same) sets
-  `approved` once every changed file is covered. Tide requires both labels; a human pressing
-  "Merge" is only stopped by `prow/lgtm`, so do not press it without `approved`.
+- **Approvers approve with GitHub's *Review changes → Approve*.** Prow counts that review exactly
+  like `/approve` (it sets `approved` once every changed file is covered), and the same click
+  satisfies the required review — one action, both gates. A `/approve` *comment* still sets
+  `approved`, but GitHub then shows "Review required" and Tide waits until someone submits an
+  approving review.
+- Tide merges once the PR has `lgtm` + `approved` and GitHub reports it mergeable. A human
+  pressing "Merge" is stopped by `prow/lgtm` and the required review, but not by a missing
+  `approved` — do not press it without `approved`.
 - The merge is a regular GitHub merge API call with the workflow's `GITHUB_TOKEN`. GitHub still
   rejects it until every required check is green and the branch is up to date; Prow retries on
   every PR/review/check event and hourly.
 - Prow does not rebase or update branches. If `main` moved, update the branch (button in the PR
-  or `git rebase`); this drops `lgtm` (bound to the commit), which must be given again.
+  or `git rebase`); this drops `lgtm` (bound to the commit) and — because the latest push must be
+  approved by someone other than its pusher — the approval, both of which must be given again.
+- The author's own review never counts, matching `require_self_approval` in `.github/prow.yaml`.
 - The `Prow` *workflow* itself must not be a required status check (it runs on
   `pull_request_target` and would gate itself); `prow/lgtm` is a commit *status* the workflow
   writes, which is why it can be required.
 - [`.github/CODEOWNERS`](.github/CODEOWNERS) still drives GitHub's automatic review requests and
-  is kept in sync with the `approvers:` in `OWNERS`; it no longer blocks merges.
+  is kept in sync with the `approvers:` in `OWNERS`; it does not block merges.
+- Release tags `v*` are protected by the ruleset *Release tags*: they can be created, never moved
+  or deleted (repository admins can bypass, e.g. to remove a tag the release workflow rejected).
 
-Why not a required GitHub review on top? `/approve` is a comment, not a review, and on
-repositories with OWNERS files prow-github-actions deliberately submits no bot review (a bot
-review would satisfy the requirement by itself). Requiring both meant every PR needed the same
-person to approve twice, and Tide waited on a gate it could never pass.
+Why a required GitHub review on top of Prow? Without one, [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/seebom-labs/BOMHort)
+rates branch protection 3/10, because "requires approvers" is the gate to every higher tier.
+prow-github-actions deliberately submits no bot review on repositories with OWNERS files (a bot
+review would satisfy the requirement by itself), so the review has to come from a human — and
+since Prow counts a human approving review as `/approve`, it costs no extra step as long as
+approvers use the GitHub review instead of the comment. This is the setup the
+[prow-github-actions docs](https://github.com/cncf/prow-github-actions/blob/main/docs/automatic-merging.md)
+recommend: "let a human's review, which the plugin also counts, satisfy the protection".
 
 ## What to Contribute
 

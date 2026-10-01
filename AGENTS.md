@@ -101,11 +101,13 @@ make kind-deploy-release VERSION=0.8.0-rc.1   # Upgrade Kind to a published rele
 
 ## Releases
 ```
-make release-rc VERSION=0.8.0 DRY_RUN=1   # Preview the next release candidate tag (v0.8.0-rc.N)
+make release-rc VERSION=0.8.0 DRY_RUN=1   # Preview the next RC; the first one also cuts release/v0.8 from main
 make release-rc VERSION=0.8.0             # Tag + push it → release.yml publishes images, chart, pre-release
-make release    VERSION=0.8.0             # Final release (warns if untested commits since the last RC)
+make release    VERSION=0.8.0             # Final release from release/v0.8 (patches: VERSION=0.8.1)
+make cherry-pick PR=431 BRANCH=0.8        # Backport a PR merged on main → PR against release/v0.8
+make release-branch VERSION=0.7           # Create a branch for a minor released before release branches
 ```
-Tags are pushed to the `seebom-labs` remote — only with explicit approval (see Boundaries). Details: `docs/RELEASE.md`.
+Release tags live on release branches `release/vX.Y` only (release.yml rejects others). Tags and branches are pushed to the `seebom-labs` remote — only with explicit approval (see Boundaries). Details: `docs/RELEASE.md`.
 
 ## Build & Test
 ```
@@ -157,6 +159,7 @@ Frontend Test:   cd ui && npx ng test            # uses Vitest
 - **Workflow for every feature/fix:** (1) Write code, (2) Write tests for all new functionality, (3) Update API docs (`docs/content/docs/api-reference/_index.md`) for new/changed endpoints, (4) Update general docs (ARCHITECTURE_PLAN, deployment guide) — **but not `ROADMAP.md`**, see below, (5) Verify build + tests pass, (6) Push branch — **stop here**. Do NOT open a PR unless explicitly asked.
 - **`ROADMAP.md` is a release-time file, not a per-PR file.** Feature PRs must not tick their own entry. Every PR that does touches the same v0.8.0 criteria line, the same milestone-map row and the same dependency graph, so two open PRs conflict on a checklist by construction — and the conflict is the dangerous kind: each side holds a tick the other lacks, so resolving it by picking a side silently un-ticks an issue that is already merged, in a file no reviewer reads line by line. Three PRs in a row (#423, #424, #431) hit exactly this. The roadmap is updated once when the release is cut, where the full set of merged items is known and a single author reconciles it; see `docs/RELEASE.md`.
 - **Ask first:** Before adding new third-party dependencies (npm or Go modules), modifying the ClickHouse schema, changing Kubernetes manifest structures, or creating/merging pull requests.
+- **Release branches (`release/vX.Y`):** branch features and fixes from `main` and target `main` — never a release branch. A fix that a released minor needs is backported *after* it merged to `main`, with `make cherry-pick PR=<n> BRANCH=X.Y` (a PR against the release branch). Never commit to a release branch directly, never backport features. Do not cut tags or create release branches unless explicitly asked.
 - **Never do:** Never commit secrets or API keys. Never use a relational database (like PostgreSQL) for the core SBOM dependency trees. Never split the codebase into multiple repositories. Never add write APIs for license exceptions (frontend is public). Never use `bypassSecurityTrustHtml` in Angular — use `sanitizer.sanitize(SecurityContext.HTML, ...)` instead. Never invent or guess SHA hashes for pinned GitHub Actions — always verify against the GitHub API. Never push changes to upstream without explicit approval. Never bump the major version without a migration guide and 3-month advance notice via roadmap.
 
 # Major Version Policy

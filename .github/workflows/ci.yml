@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'release/**']
   pull_request:
-    branches: [main]
+    branches: [main, 'release/**']
 
 permissions:
   contents: read
@@ -138,4 +138,16 @@ jobs:
       # documents a file git does not have.
       - name: Every documented demo SBOM is tracked, every tracked one documented
         run: .github/scripts/check-demo-sboms.sh
+
+  release-tooling:
+    name: Release tooling
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # hack/cut-release.sh and hack/cherry-pick.sh against throwaway local git
+      # repositories: branch cut, RC numbering, tags only on release branches,
+      # backports. Nothing touches GitHub.
+      - name: Test release scripts
+        run: python3 -B -m unittest discover -s hack/tests -v
 

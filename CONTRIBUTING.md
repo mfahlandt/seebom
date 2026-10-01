@@ -80,6 +80,19 @@ fixture:
    git commit -s -m "feat: add new feature"
    ```
 
+### Release branches and backports
+
+Every minor version has a release branch `release/vX.Y`, cut from `main` at its first release candidate; all release tags of that minor come from it (see [docs/RELEASE.md](docs/RELEASE.md#release-branches)).
+
+- **Always open your PR against `main`** — also for a fix a released version needs.
+- If the fix should ship in a release, say so in the PR (e.g. "needs backport to 0.8"). After it merged, a maintainer — or you — backports it:
+  ```bash
+  make cherry-pick PR=<number> BRANCH=0.8   # picks the merged commit onto release/v0.8 (git cherry-pick -x),
+                                            # pushes a branch to your fork, prints the PR link
+  ```
+  Title the backport PR `[release/v0.8] <original title>`. It runs the full CI and is reviewed and merged like any other PR. On a conflict the script stops and tells you how to finish.
+- Only fixes are backported — bugs, security issues, CVE-driven dependency bumps, documentation corrections. Never features.
+
 ## Labels and Chat-Ops
 
 Labeling, review routing and merging are automated with

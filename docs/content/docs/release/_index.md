@@ -86,20 +86,30 @@ BOMHort plans for **one major version bump every 2–3 years**, driven by accumu
 
 ## How to Release
 
+### Release Branches
+
+Every minor version has a release branch `release/vX.Y`. **All release tags — RCs, the final release and every patch — are cut from it**; the release workflow rejects a tag that is not on its release branch.
+
+- **Branch cut**: the first `make release-rc VERSION=X.Y.0` creates `release/vX.Y` from `main` and tags `-rc.1` on it. From then on `main` is open for the next minor; nothing merged there reaches X.Y by itself.
+- **Fixes land on `main` first**, then are backported as a pull request against the release branch: `make cherry-pick PR=<n> BRANCH=X.Y`. Never commit to a release branch directly.
+- **Only fixes are backported** — bugs, security, CVE-driven dependency bumps, doc corrections. Never features.
+- Backport PRs run the full CI (CI, CodeQL and fuzz trigger on `release/**`) and are reviewed and merged like any other PR. `release/**` is branch-protected like `main`.
+
 ### Minor / Major Release
 
 Every minor or major release goes through at least one **release candidate**. An RC runs the same pipeline as the final release — same images, signing, provenance and Helm chart — so packaging problems surface on the RC, not on the release.
 
 ```bash
 # 1. Ensure main is clean and CI passes
-git checkout main && git pull
 
-# 2. Cut a release candidate (tags the remote's main, not your checkout)
+# 2. Cut the release branch + first release candidate
 make release-rc VERSION=1.3.0 DRY_RUN=1   # preview
-make release-rc VERSION=1.3.0             # → v1.3.0-rc.1, next time -rc.2, ...
+make release-rc VERSION=1.3.0             # → release/v1.3 from main, v1.3.0-rc.1 on it
 
 # 3. Install and test the RC (see "Installing a Release Candidate" below).
-#    Problems? Fix on main, cut the next RC.
+#    Problems? Fix on main, backport, cut the next RC:
+make cherry-pick PR=512 BRANCH=1.3        # → PR against release/v1.3; review + merge it
+make release-rc VERSION=1.3.0             # → v1.3.0-rc.2 from release/v1.3
 
 # 4. Cut the final release — ideally from the commit that was tested
 make release VERSION=1.3.0 REF=v1.3.0-rc.2
@@ -111,13 +121,9 @@ make release VERSION=1.3.0 REF=v1.3.0-rc.2
 #    - Packages and pushes the Helm chart
 #    - Creates the GitHub (pre-)release with SBOM + changelog since the last final release
 #    Only final releases move the `latest` image tag.
-
-# 5. Create release branch for future patches
-git checkout -b release/v1.3 v1.3.0
-git push origin release/v1.3
 ```
 
-`make release` warns when no RC exists for the version, or when `main` has moved past the last RC (those commits were never tested as a candidate). `DRY_RUN=1` previews, `YES=1` skips the confirmation, `REMOTE=` / `REF=` override the remote and the commit to tag. The script is [`hack/cut-release.sh`](https://github.com/seebom-labs/BOMHort/blob/main/hack/cut-release.sh).
+The scripts work on the remote's branches only, never on your local checkout. `make release` warns when no RC exists for the version, or when the release branch has moved past the last RC (those commits were never tested as a candidate). `DRY_RUN=1` previews, `YES=1` skips the confirmation, `REMOTE=` / `REF=` override the remote and the commit to tag (it must be on the release branch). Scripts: [`hack/cut-release.sh`](https://github.com/seebom-labs/BOMHort/blob/main/hack/cut-release.sh), [`hack/cherry-pick.sh`](https://github.com/seebom-labs/BOMHort/blob/main/hack/cherry-pick.sh).
 
 ### Minor Release Checklist
 
@@ -126,38 +132,36 @@ git push origin release/v1.3
 - [ ] `govulncheck ./...` (backend), `npm audit` (ui + docs) clean
 - [ ] **`ROADMAP.md` reconciled**: feature PRs do not tick their own entry, so this happens **once, here**. For every issue that landed since the last tag, update all four places it appears — register row, release criteria checklist, milestone map, dependency graph — and move anything that slipped to the next milestone rather than dropping it. (Why not per PR: two PRs editing the same checklist line conflict by construction, and resolving that by picking a side silently un-ticks an already-merged issue.)
 - [ ] `docs/ARCHITECTURE_PLAN.md` reflects any new services or schema changes
-- [ ] Release candidate cut (`make release-rc VERSION=X.Y.0`), installed and tested
+- [ ] Release branch cut + first RC (`make release-rc VERSION=X.Y.0`)
+- [ ] RC installed and tested; fixes backported, further RCs cut as needed
 - [ ] Final tag created (`make release VERSION=X.Y.0`) — from the tested RC commit
-- [ ] Release branch created (`release/vX.Y`) and pushed
 - [ ] Release notes written (features, breaking changes, upgrade notes)
 - [ ] Helm chart version matches Git tag
 
 ### Patch Release
 
-Patches are cherry-picked onto the release branch:
+Patches are cut from the release branch, after the fixes are backported:
 
 ```bash
-# 1. Fix the bug on main first (always)
-git checkout main
-# ... make fix, get PR merged ...
+# 1. Fix the bug on main first (always) — PR, review, merge
 
-# 2. Cherry-pick to release branch
-git checkout release/v1.2
-git cherry-pick <commit-sha>
-git push origin release/v1.2
+# 2. Backport: opens a PR against release/v1.2 from your fork; review + merge it
+make cherry-pick PR=<n> BRANCH=1.2
 
-# 3. Tag the patch (uses release/v1.2 automatically once that branch exists)
+# 3. Tag the patch from release/v1.2
+make release VERSION=1.2.4 DRY_RUN=1
 make release VERSION=1.2.4
 
 # CI builds and publishes automatically
 ```
 
+Minors released before release branches existed (≤ 0.7) have no branch yet. Create it from the latest release first: `make release-branch VERSION=0.7` — then backport and release as above.
+
 ### Patch Release Checklist
 
 - [ ] Fix merged to `main` first (never patch-only)
-- [ ] Cherry-picked cleanly to `release/vX.Y` branch
+- [ ] Backported to `release/vX.Y` via `make cherry-pick` PR, CI green, merged
 - [ ] No new features included (patches are bug/security fixes only)
-- [ ] CI passes on the release branch
 - [ ] Tag follows existing sequence (v1.2.3 → v1.2.4)
 - [ ] Release notes mention the fix and affected versions
 
@@ -176,7 +180,7 @@ docs.bomhort.dev/v1.0/      ← v1.0.x docs (frozen)
 
 ### When releasing a new minor version:
 
-1. Create `release/vX.Y` branch (docs freeze point)
+1. `release/vX.Y` is created at the branch cut (first RC) — the docs freeze point
 2. Update `docs/hugo.toml` on the release branch: add versioned `baseURL`
 3. Add new version to `params.versions` on both `main` and release branch
 4. Mark the oldest supported version's docs with "unsupported" banner
@@ -184,8 +188,8 @@ docs.bomhort.dev/v1.0/      ← v1.0.x docs (frozen)
 ### Doc fixes for patches:
 
 - Fix docs on `main` first
-- Cherry-pick to the release branch if the fix is relevant for that version
-- Deploy triggers automatically on push to release branches
+- Backport to the release branch (`make cherry-pick`) if the fix is relevant for that version
+- Until versioned docs land (#145), the site deploys from `main` only; pushes to release branches do not publish docs
 
 See [#145](https://github.com/seebom-labs/BOMHort/issues/145) for the full versioned docs implementation plan.
 

@@ -22,6 +22,29 @@ Images are built for **linux/amd64** and **linux/arm64**.
 
 ---
 
+## Release Branches
+
+Every minor version gets a release branch `release/vX.Y`. **All release tags — RCs, the final release and every patch — are cut from it**; the release workflow rejects a tag that is not on its release branch.
+
+```
+main           ●──●──●──●──●──●──●──●──●──●──●──▶   next minor continues here
+               │        │           │        │
+          branch cut  fix #501    fix #507  fix #512   merged on main first,
+               │        ↓           ↓        ↓         then make cherry-pick
+release/v0.8   ●────────●───────────●────────●──▶
+            v0.8.0-rc.1 rc.2      v0.8.0   v0.8.1
+```
+
+- **Branch cut** — the first `make release-rc VERSION=X.Y.0` creates `release/vX.Y` from `main` and tags `-rc.1` on it. From that moment `main` is open for the next minor; nothing merged there reaches X.Y by itself.
+- **Fixes land on `main` first**, always — then are backported to the release branch as a pull request: `make cherry-pick PR=<n> BRANCH=X.Y`. Never commit to a release branch directly; a fix only on the branch is lost again in the next minor.
+- **Only fixes are backported**: bug fixes, security fixes, dependency bumps for CVEs, docs corrections. No features.
+- Backport PRs run the full CI (CI, CodeQL, fuzz trigger on `release/**`) and go through review and merge like any other PR.
+- **Minors released before release branches existed** (≤ 0.7) have no branch. To patch one, create it from its latest release, backport, then release: `make release-branch VERSION=0.7`, `make cherry-pick ...`, `make release VERSION=0.7.2`.
+
+> **Repository settings (once, by an admin):** protect `release/**` like `main` — require pull requests, the CI status checks and review; disallow force pushes and deletion. The release scripts only *create* the branch; everything after that arrives through pull requests. Dependabot only targets `main`; security updates reach release branches by cherry-pick.
+
+---
+
 ## How to Release
 
 ### 1. Scan for vulnerabilities and update dependencies
@@ -65,17 +88,19 @@ Tick the release's own `- [ ]` box only when every item on that line is done. If
 Every minor release goes through at least one release candidate. An RC runs the **same** pipeline as the final release — same images, signing, provenance, Helm chart — so whatever breaks in packaging breaks on the RC, not on the release.
 
 ```bash
-make release-rc VERSION=0.8.0 DRY_RUN=1   # preview: tag, commit, remote, #commits since last release
-make release-rc VERSION=0.8.0             # tags + pushes v0.8.0-rc.1 (next time: -rc.2, ...)
+make release-rc VERSION=0.8.0 DRY_RUN=1   # preview: tag, branch, commit, #commits since last release
+make release-rc VERSION=0.8.0             # first run: cuts release/v0.8 from main + tags v0.8.0-rc.1
 ```
 
 The script ([`hack/cut-release.sh`](../hack/cut-release.sh)):
 
-- tags the **remote's** `main` (never your local checkout, so unpushed commits cannot slip in); patch versions use `release/vX.Y` once that branch exists. Override with `REF=<commit-ish>`.
+- works on the **remote's** branches only (never your local checkout, so unpushed commits cannot slip in),
+- cuts `release/vX.Y` from `main` if it does not exist yet, and pushes branch and tag in one atomic push,
+- otherwise tags the head of `release/vX.Y`; refuses when nothing changed since the last RC,
 - picks the next RC number from the existing tags (`-rc.N`, numeric — `rc.10` sorts after `rc.9`),
 - pushes to the remote pointing at `seebom-labs/*` (override with `REMOTE=...`), and asks before pushing (`YES=1` skips the prompt).
 
-Then **install the RC and test it** (see [Installing a release candidate](#installing-a-release-candidate)). If something is wrong, fix it on `main` and cut the next RC.
+Then **install the RC and test it** (see [Installing a release candidate](#installing-a-release-candidate)). If something is wrong: fix it on `main`, backport it (`make cherry-pick PR=<n> BRANCH=0.8`), merge the backport PR, cut the next RC (`make release-rc VERSION=0.8.0` → `-rc.2`).
 
 ### 4. Cut the final release
 
@@ -84,19 +109,28 @@ make release VERSION=0.8.0 DRY_RUN=1
 make release VERSION=0.8.0
 ```
 
-The script warns if no RC exists for this version, or if `main` has moved past the last RC — the final release would then ship commits nobody tested as a candidate. To release exactly what was tested, tag the RC's commit:
+The script warns if no RC exists for this version, or if `release/v0.8` has moved past the last RC — the final release would then ship commits nobody tested as a candidate. To release exactly what was tested, tag the RC's commit:
 
 ```bash
 make release VERSION=0.8.0 REF=v0.8.0-rc.2
 ```
 
-Pushing the tag by hand (`git tag -a v0.8.0 -m "BOMHort v0.8.0" && git push upstream v0.8.0`) still works — the script only adds the checks.
+### Patch releases
+
+Backport the fixes to `release/vX.Y` (above), then:
+
+```bash
+make release VERSION=0.8.1 DRY_RUN=1
+make release VERSION=0.8.1           # or first make release-rc VERSION=0.8.1 for a risky patch
+```
+
+The script refuses when nothing was backported since the last release of that minor.
 
 ### 5. What happens automatically
 
 The GitHub Actions workflow (`.github/workflows/release.yml`) triggers on any `v*` tag and:
 
-1. **Validates the version**: `X.Y.Z` or `X.Y.Z-rc.N` (also `-alpha.N`, `-beta.N`). Anything else fails the run before anything is published.
+1. **Validates the version**: `X.Y.Z` or `X.Y.Z-rc.N` (also `-alpha.N`, `-beta.N`), and that the tagged commit is on `release/vX.Y`. Anything else fails the run before anything is published.
 2. **Builds all 6 container images** (multi-arch: amd64 + arm64), signs them with cosign and attests SLSA provenance
 3. **Pushes them to ghcr.io**:
    - `ghcr.io/seebom-labs/bomhort/<component>:0.8.0` (version) — always

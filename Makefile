@@ -6,7 +6,7 @@
 .PHONY: ui-build ui-dev
 .PHONY: ingest worker api
 .PHONY: images images-push
-.PHONY: release-rc release kind-deploy-release
+.PHONY: release-rc release release-branch cherry-pick kind-deploy-release
 .PHONY: check-demo-sboms
 .PHONY: kind-up kind-down kind-reingest kind-build kind-deploy kind-stop kind-start kind-status
 .PHONY: docs-serve docs-build docs-deps
@@ -296,18 +296,29 @@ images-push: images ## Build and push all images to GHCR (TAG=dev)
 
 
 # ─── Releases ────────────────────────────────────────────────────────────────
-# Tagging triggers .github/workflows/release.yml, which builds, signs and
-# publishes images + Helm chart. See docs/RELEASE.md.
-#   make release-rc VERSION=0.8.0            → v0.8.0-rc.1, then -rc.2, ...
-#   make release    VERSION=0.8.0            → v0.8.0
+# Releases are cut from release branches release/vX.Y. Tagging triggers
+# .github/workflows/release.yml, which builds, signs and publishes images + Helm
+# chart, and rejects tags that are not on their release branch. See docs/RELEASE.md.
+#   make release-rc VERSION=0.8.0     → first time: cuts release/v0.8 from main + v0.8.0-rc.1
+#                                       then:       v0.8.0-rc.2, ... from release/v0.8
+#   make release    VERSION=0.8.0     → v0.8.0 from release/v0.8 (patches: VERSION=0.8.1)
+#   make cherry-pick PR=431 BRANCH=0.8 → backport a merged fix as a PR against release/v0.8
 #   DRY_RUN=1 / YES=1 / REMOTE=upstream / REF=<commit-ish> are passed through.
-release-rc: ## Tag + push the next release candidate vX.Y.Z-rc.N (VERSION=X.Y.Z, DRY_RUN=1 to preview)
+release-rc: ## Tag + push the next release candidate vX.Y.Z-rc.N; cuts release/vX.Y at the first (VERSION=X.Y.Z)
 	@test -n "$(VERSION)" || { echo "❌ Usage: make release-rc VERSION=0.8.0 [DRY_RUN=1]"; exit 1; }
 	@./hack/cut-release.sh rc "$(VERSION)"
 
-release: ## Tag + push the final release vX.Y.Z (VERSION=X.Y.Z, DRY_RUN=1 to preview)
+release: ## Tag + push the final release vX.Y.Z from release/vX.Y (VERSION=X.Y.Z, DRY_RUN=1 to preview)
 	@test -n "$(VERSION)" || { echo "❌ Usage: make release VERSION=0.8.0 [DRY_RUN=1]"; exit 1; }
 	@./hack/cut-release.sh final "$(VERSION)"
+
+release-branch: ## Create release/vX.Y only, e.g. to patch a minor released before branches (VERSION=X.Y)
+	@test -n "$(VERSION)" || { echo "❌ Usage: make release-branch VERSION=0.7 [DRY_RUN=1]"; exit 1; }
+	@./hack/cut-release.sh branch "$(VERSION)"
+
+cherry-pick: ## Backport a PR merged on main to a release branch, as a PR (PR=431 BRANCH=0.8)
+	@test -n "$(PR)" -a -n "$(BRANCH)" || { echo "❌ Usage: make cherry-pick PR=431 BRANCH=0.8 [DRY_RUN=1]"; exit 1; }
+	@./hack/cherry-pick.sh "$(PR)" "$(BRANCH)"
 
 
 # ─── Kind (local Kubernetes) ─────────────────────────────────────────────────

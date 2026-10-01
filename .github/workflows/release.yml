@@ -9,7 +9,9 @@ name: Release
 #   RC from a branch   Run workflow (manual)  same as a release candidate, built from the selected
 #                      version=X.Y.Z-rc.N     branch; the tag is created at the built commit
 #
-# Cut tags with `make release-rc VERSION=X.Y.Z` / `make release VERSION=X.Y.Z`
+# Tags must be on their release branch (v0.8.* on release/v0.8); the prepare
+# job rejects anything else. Cut tags — and the branch, at the first RC — with
+# `make release-rc VERSION=X.Y.Z` / `make release VERSION=X.Y.Z`
 # (hack/cut-release.sh). See docs/RELEASE.md.
 
 on:
@@ -43,6 +45,11 @@ jobs:
       prerelease: ${{ steps.resolve.outputs.prerelease }}
       repo: ${{ steps.resolve.outputs.repo }}
     steps:
+      # Full history + all branches, to check that the tag is on its release branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
       - name: Resolve and validate version
         id: resolve
         env:
@@ -77,6 +84,23 @@ jobs:
             # The tag is created at the end of this run; refuse to reuse one.
             if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
               echo "::error::Tag v$VERSION already exists. Pick the next RC number."
+              exit 1
+            fi
+          else
+            # Releases are cut from release branches: v0.8.0-rc.1, v0.8.0 and
+            # v0.8.1 must all be on release/v0.8. A tag on main would ship
+            # whatever merged since the branch cut, untested and unreviewed for
+            # this release. (Manual runs above are the deliberate exception:
+            # an installable RC of an unmerged branch.)
+            BASE="${VERSION%%-*}"
+            BRANCH="release/v${BASE%.*}"
+            COMMIT=$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")
+            if ! git rev-parse --verify --quiet "refs/remotes/origin/$BRANCH" >/dev/null; then
+              echo "::error::$BRANCH does not exist. Tags are cut from release branches — use make release-rc / make release (hack/cut-release.sh), which creates the branch."
+              exit 1
+            fi
+            if ! git merge-base --is-ancestor "$COMMIT" "refs/remotes/origin/$BRANCH"; then
+              echo "::error::$GITHUB_REF_NAME ($COMMIT) is not on $BRANCH. Delete the tag, backport the change (make cherry-pick) and tag the release branch."
               exit 1
             fi
           fi
@@ -360,4 +384,6 @@ jobs:
             bomhort-${{ env.VERSION }}.spdx.json.intoto.jsonl
           draft: false
           prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+
+
 

@@ -79,7 +79,28 @@ class ReleaseWorkflowTest(unittest.TestCase):
         self.assertIn("workflow_dispatch:", text)
         self.assertIn("Manual runs publish pre-releases only", text)
 
+    def test_tags_must_be_on_their_release_branch(self):
+        text = WORKFLOW.read_text()
+        self.assertIn('BRANCH="release/v${BASE%.*}"', text)
+        self.assertIn('git merge-base --is-ancestor "$COMMIT" "refs/remotes/origin/$BRANCH"', text)
+        # The check needs every branch, not a shallow clone of the tag.
+        prepare = text.split("  images:", 1)[0]
+        self.assertIn("fetch-depth: 0", prepare)
+
+    def test_ci_runs_on_release_branches(self):
+        # Backport PRs target release/vX.Y; without these triggers they would
+        # merge with no checks at all.
+        for name, events in (("ci.yml", ("push", "pull_request")),
+                             ("codeql.yml", ("push", "pull_request")),
+                             ("fuzz.yml", ("pull_request",))):
+            text = (ROOT / ".github/workflows" / name).read_text()
+            for event in events:
+                block = re.search(rf"^  {event}:\n    branches: \[(.*?)\]", text, re.M)
+                self.assertIsNotNone(block, f"{name}: no branch filter for {event}")
+                self.assertIn("'release/**'", block.group(1), f"{name}: {event} skips release branches")
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

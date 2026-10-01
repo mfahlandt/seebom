@@ -25,6 +25,14 @@
 
 <!-- Link related issues: Fixes #123, Relates to #456 -->
 
+## Backport
+
+<!-- PRs target main. Bug and security fixes that a released minor needs are backported to
+     its release branch after merge (make cherry-pick PR=<n> BRANCH=X.Y). Features never are.
+     Backport PRs themselves: title "[release/vX.Y] <original title>", link the original PR. -->
+
+- [ ] Needs backport to: <!-- e.g. release/v0.8 — leave unchecked if not -->
+
 ## How Has This Been Tested?
 
 <!-- Describe the tests that you ran. -->

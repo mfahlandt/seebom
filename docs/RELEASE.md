@@ -36,7 +36,7 @@ release/v0.8   ●────────●───────────�
 ```
 
 - **Branch cut** — the first `make release-rc VERSION=X.Y.0` creates `release/vX.Y` from `main` and tags `-rc.1` on it. From that moment `main` is open for the next minor; nothing merged there reaches X.Y by itself.
-- **Fixes land on `main` first**, always — then are backported to the release branch as a pull request: `make cherry-pick PR=<n> BRANCH=X.Y`. Never commit to a release branch directly; a fix only on the branch is lost again in the next minor.
+- **Fixes land on `main` first**, always — then are backported to the release branch as a pull request: `make cherry-pick PR=<n> BRANCH=X.Y`. Never commit to a release branch directly; a fix only on the branch is lost again in the next minor. PRs are rebase-merged, so the script asks GitHub which commits on `main` belong to the PR and picks all of them; this needs the [GitHub CLI](https://cli.github.com/) (`gh`, or `GH=/path/to/gh`).
 - **Only fixes are backported**: bug fixes, security fixes, dependency bumps for CVEs, docs corrections. No features.
 - Backport PRs run the full CI (CI, CodeQL, fuzz trigger on `release/**`) and go through review and merge like any other PR.
 - **Minors released before release branches existed** (≤ 0.7) have no branch. To patch one, create it from its latest release, backport, then release: `make release-branch VERSION=0.7`, `make cherry-pick ...`, `make release VERSION=0.7.2`.

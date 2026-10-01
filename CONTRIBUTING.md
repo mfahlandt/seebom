@@ -107,7 +107,7 @@ Labeling, review routing and merging are automated with
   `documentation`, `ci`, `examples`, `security`) from the `OWNERS` files covering the changed
   files and requests a review from one of their reviewers.
 - New issues get `needs-triage` until a maintainer applies a `triage/*` label.
-- A PR is merged (squash) automatically once it carries `lgtm` and `approved`, has no
+- A PR is merged (rebase) automatically once it carries `lgtm` and `approved`, has no
   `do-not-merge/*` or `hold` label, and all required checks pass. `lgtm` is bound to the
   reviewed commit; a new push removes it.
 

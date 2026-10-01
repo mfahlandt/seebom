@@ -142,7 +142,7 @@ require_matching_label:
 tide:
   labels: [lgtm, approved]
   missing_labels: [do-not-merge/*, needs-rebase, hold]
-  merge_method: squash
+  merge_method: rebase
   merge_on_events: true
 
 hold:

@@ -51,6 +51,7 @@ describe('ProjectDetailComponent', () => {
     clusters: [],
     namespaces: [],
     license_breakdown: {},
+    children: [],
     ...over,
   });
 
@@ -104,6 +105,41 @@ describe('ProjectDetailComponent', () => {
 
     const tabs = Array.from(harness.routeNativeElement!.querySelectorAll('.tabs button')).map((b) => b.textContent?.trim());
     expect(tabs.some((t) => t?.startsWith('Sub-projects (6)'))).toBe(true);
+  });
+
+  it('should show the resolved parent with how it was resolved', async () => {
+    const { harness } = await open('argo-cd/argo-workflows');
+    flushInitial('argo-cd/argo-workflows', detail({
+      project_name: 'argo-cd/argo-workflows', tags: [], parents: [],
+      parent: 'argo', parent_source: 'repo', parent_owner: 'argoproj',
+    }));
+    harness.detectChanges();
+
+    const parent = harness.routeNativeElement!.querySelector('a.ctx-chip.parent.resolved') as HTMLAnchorElement;
+    expect(parent).toBeTruthy();
+    expect(parent.getAttribute('href')).toBe('/projects/argo');
+    expect(parent.getAttribute('title')).toContain('repository owner "argoproj"');
+  });
+
+  it('should not repeat a resolved parent the tag hierarchy already shows', async () => {
+    const { harness } = await open('kubernetes-mcp-server');
+    flushInitial('kubernetes-mcp-server', detail({ parent: 'podman', parent_source: 'tag' }));
+    harness.detectChanges();
+
+    expect(harness.routeNativeElement!.querySelectorAll('a.ctx-chip.parent').length).toBe(1);
+  });
+
+  it('should list the resolved subprojects as links down', async () => {
+    const { harness } = await open('argo');
+    flushInitial('argo', detail({
+      project_name: 'argo', tags: [], parents: [],
+      children: ['argo-cd/argo-rollouts', 'argo-cd/argo-workflows'],
+    }));
+    harness.detectChanges();
+
+    const links = Array.from(harness.routeNativeElement!.querySelectorAll('a.ctx-chip.children')) as HTMLAnchorElement[];
+    expect(links.map((a) => a.textContent?.trim())).toEqual(['↓ argo-cd/argo-rollouts', '↓ argo-cd/argo-workflows']);
+    expect(links[1].getAttribute('href')).toBe('/projects/argo-cd%2Fargo-workflows');
   });
 
   it('should not render a sub-projects tab for a leaf project', async () => {
@@ -185,6 +221,9 @@ describe('ProjectDetailComponent', () => {
     expect(el.querySelectorAll('app-donut-chart').length).toBe(3);
   });
 });
+
+
+
 
 
 

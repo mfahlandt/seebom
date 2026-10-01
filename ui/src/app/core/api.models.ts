@@ -300,6 +300,41 @@ export interface ProjectListItem {
    * the groupings those SBOMs arrived with.
    */
   tags: string[];
+  /**
+   * The product this project belongs to, resolved by the API (explicit
+   * config first, then repository owner, document name, purl, supplier).
+   * Omitted when it has none.
+   */
+  parent?: string;
+  /** How parent was resolved: config, explicit, tag, repo, document, purl, supplier. */
+  parent_source?: ParentSource;
+}
+
+export type ParentSource = 'config' | 'explicit' | 'tag' | 'repo' | 'document' | 'purl' | 'supplier';
+
+/**
+ * One row of GET /api/v1/projects?group_by=parent: a parent with its member
+ * projects, or a project that belongs to no parent (a group of one).
+ *
+ * package_count and vuln_count are de-duplicated across all SBOMs of all
+ * members, so they are not the sum of the members' counts.
+ */
+export interface ProjectGroupItem {
+  name: string;
+  /** The parent is itself a project (has its own SBOMs), not only a label. */
+  is_project: boolean;
+  project_count: number;
+  sbom_count: number;
+  package_count: number;
+  vuln_count: number;
+  latest_ingested: string;
+  tags: string[];
+  /** Distinct parent_source values of the members: why they were grouped. */
+  sources: ParentSource[];
+  /** The owner the automatic grouping used, e.g. "argoproj". */
+  owner?: string;
+  /** The parent project first when it is one, then the others by name. */
+  members: ProjectListItem[];
 }
 
 /**
@@ -335,6 +370,14 @@ export interface ProjectDetail {
   clusters: string[];
   namespaces: string[];
   license_breakdown: Record<string, number>;
+
+  /** The resolved parent (product) of this project; see ProjectListItem. */
+  parent?: string;
+  parent_source?: ParentSource;
+  /** The owner the automatic grouping used, e.g. "argoproj". */
+  parent_owner?: string;
+  /** Projects whose resolved parent is this project. */
+  children: string[];
 }
 
 /** One distinct component across a project's SBOMs (#398). */

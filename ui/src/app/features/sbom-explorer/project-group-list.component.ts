@@ -23,7 +23,7 @@ import { SBOMListItem, ProjectListItem } from '../../core/api.models';
   imports: [CommonModule, RouterModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <div class="project-list">
+    <div class="project-list" [class.embedded]="embedded">
       <div *ngFor="let project of projects; trackBy: trackByProject" class="project-group">
         <div class="project-row">
           <button
@@ -92,6 +92,8 @@ import { SBOMListItem, ProjectListItem } from '../../core/api.models';
   `,
   styles: [`
     .project-list { flex: 1; min-height: 400px; overflow-y: auto; }
+    /* Nested inside a parent group: the outer list scrolls, not this one. */
+    .project-list.embedded { flex: none; min-height: 0; overflow: visible; }
     .project-row, .version-row { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
     .project-row { height: 52px; }
     .version-row { height: 46px; padding-left: 28px; }
@@ -135,6 +137,13 @@ export class ProjectGroupListComponent implements OnDestroy {
    * recomputes them.
    */
   @Input() projects: ProjectListItem[] = [];
+
+  /**
+   * Rendered inside a parent group (ParentGroupListComponent): no own scroll
+   * container and no minimum height, so a group of two projects is two rows
+   * tall instead of 400px.
+   */
+  @Input() embedded = false;
 
   private readonly expanded = new Set<string>();
   private readonly versions = new Map<string, SBOMListItem[]>();

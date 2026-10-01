@@ -134,6 +134,68 @@ single unnamed cluster and gets no Fleet tab at all, rather than a link into a
 tree whose only root has no name. Ingest one SBOM carrying a cluster label and
 the tab appears by itself, with no configuration change.
 
+## Parent projects
+
+Projects can belong to a **parent** (a product). The CNCF subproject
+`argo-cd/argo-workflows` belongs to `argo`, an internal service to the product
+it is part of. The SBOM Explorer's **By project** view shows three levels —
+parent → project → version — and every project page names its parent and its
+subprojects.
+
+Folder names cannot tie parent and subproject together: they differ between
+sources (`argo/` in one bucket, `argo-cd/` in the other), and many setups have
+no folder hierarchy, no GitHub and no repository at all. So the parent is
+resolved from configuration first and from what the SBOMs themselves say
+second. First match wins:
+
+| # | Source | Configure / comes from |
+|---|---|---|
+| 1 | Mapping file | `PROJECT_GROUPS_FILE` (Compose: `sboms/project-groups.json`; Helm: `projectGroups.groups` or `projectGroups.existingConfigMap`) |
+| 2 | Explicit at ingest | S3 bucket `"parent"`, the `parent` token in `pathLayout`, `?parent=` on upload, `PARENT` |
+| 3 | Tag | A tag that is the name of another project (`pathLayout: tag/project`) |
+| 4 | Repository owner | `source_repo` on any forge: `github.com/argoproj/…` → `argoproj`, GitLab subgroups (`payments/core`) and Azure DevOps (`org/project`) kept |
+| 5 | Document name | `argoproj/argo-workflows v3.7.16` → `argoproj` |
+| 6 | Package namespace | Root component purl: `pkg:maven/com.acme.payments/…` → `com.acme.payments`, `pkg:npm/@acme/…` → `acme`, Go module owner |
+| 7 | Supplier | CycloneDX manufacturer / supplier, SPDX root package supplier / originator |
+
+Sources 4–7 are **automatic and conservative**. Projects sharing an owner form a
+family. If exactly one of them is a top-level project (no `/` in its name), it
+becomes the parent of the others. Without one, the family is grouped under the
+owner's name, but only from two members on. With several, nothing is grouped:
+a shared owner like `kubernetes-sigs` or a vendor with many unrelated products
+would otherwise be lumped together. Nothing is ever grouped by similar names.
+
+The UI says why a project is where it is ("Grouped by repository owner
+`argoproj`"). When the automatic answer is wrong or missing, the mapping file
+decides:
+
+```json
+{
+  "version": "1.0.0",
+  "groups": [
+    { "parent": "argo", "match": { "projects": ["argo-cd/*"] } },
+    { "parent": "Payments Platform",
+      "match": { "owners": ["com.acme.payments"], "suppliers": ["ACME Corp"] } },
+    { "standalone": true, "match": { "owners": ["kubernetes-sigs"] },
+      "reason": "shared org, the projects are unrelated" }
+  ]
+}
+```
+
+Each entry needs a `parent` or `standalone: true` and a `match`. The match
+values are alternatives: `projects` and `repos` are globs (`*` spans `/`),
+`owners` and `suppliers` compare exactly; all case-insensitive. `standalone`
+keeps matching projects out of every group, including the automatic ones.
+
+Resolution runs when the API is queried, so editing the file or a bucket's
+`parent` applies without re-ingesting; the gateway picks up a changed file on
+the next request. The hierarchy is one level deep: a project that heads a group
+stays at the top even if it has a parent of its own.
+
+Nothing about tags changes: a project tagged with another project's name is
+still listed under that tag (`/projects?tag=…`) and its page still shows the
+tag parent; the tag simply also counts as an explicit parent (source 3).
+
 ## What the views look like
 
 ### In the UI
@@ -230,6 +292,11 @@ Rules:
     (`k2s.spdx.json` → `k2s`). Must be the **last** token and excludes
     `project`. For layouts where the file is named after the project and the
     directories carry review metadata.
+  * `parent` names the project's [parent](#parent-projects) from a directory
+    level: `{product}/{project}/{version}/f.json` with `parent/project` yields
+    `parent=product, project=project`. Only when the folder name *is* the
+    parent's name — where it is not (`argo-cd/` for `argo`), leave it to the
+    automatic grouping or the mapping file.
 * A duplicate or unknown token is a **startup error**, not a silent fallback.
 * A path shallower than the layout fills what it can; a deeper path is matched
   from the left. One oddly-placed file must never fail an ingestion run.
@@ -391,7 +458,7 @@ with migration `015` (#138, #57). All three are
 | Every SBOM has `cluster=<bucket prefix>` | Prefix not stripped — a stale BOMHort version | Upgrade; the prefix is stripped before the layout is applied |
 | Namespace numbers look too high | Aggregated across clusters | Add `?cluster=` or look at `cluster_count` |
 | Labels do not change after editing the config | The labels are written at ingest, not at query time | Re-ingest; `make re-scan` (Compose) or `make kind-reingest` (Kind) |
-| Container startup fails with `invalid INGEST_PATH_LAYOUT` | Duplicate or unknown segment, or `file` not last | Valid tokens are `cluster`, `namespace`, `project`, `tag`, `file`, `_` |
+| Container startup fails with `invalid INGEST_PATH_LAYOUT` | Duplicate or unknown segment, or `file` not last | Valid tokens are `cluster`, `namespace`, `project`, `parent`, `tag`, `file`, `_` |
 
 ## See also
 

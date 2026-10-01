@@ -134,6 +134,13 @@ spec:
               subPath: license-policy.json
               readOnly: true
             {{- end }}
+            {{- if (.Values.projectGroups | default dict).enabled }}
+            # A directory, not a subPath: subPath mounts never see ConfigMap
+            # updates, and the gateway re-reads the file when it changes.
+            - name: project-groups
+              mountPath: {{ .Values.projectGroups.mountDir | default "/data/config/project-groups" }}
+              readOnly: true
+            {{- end }}
             {{- if .Values.originalStore.fs.enabled }}
             - name: originals
               mountPath: {{ .Values.originalStore.fs.mountPath }}
@@ -161,5 +168,13 @@ spec:
         - name: license-policy
           configMap:
             name: {{ .Release.Name }}-license-policy
+        {{- end }}
+        {{- if (.Values.projectGroups | default dict).enabled }}
+        - name: project-groups
+          configMap:
+            name: {{ .Values.projectGroups.existingConfigMap | default (printf "%s-project-groups" .Release.Name) }}
+            # A missing optional ConfigMap mounts an empty directory: no
+            # explicit rules, the automatic grouping still applies.
+            optional: true
         {{- end }}
 

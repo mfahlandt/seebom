@@ -15,6 +15,7 @@ data:
   CLUSTER_NAME: {{ .cluster | default "" | quote }}
   NAMESPACE: {{ .namespace | default "" | quote }}
   PROJECT: {{ .project | default "" | quote }}
+  PARENT: {{ .parent | default "" | quote }}
   INGEST_PATH_LAYOUT: {{ .pathLayout | default "" | quote }}
   {{- end }}
   {{- /*
@@ -32,6 +33,15 @@ data:
   SKIP_NUGET_RESOLVE: {{ .Values.parsingWorker.skipNuGetResolve | default false | quote }}
   SBOM_LIMIT: {{ .Values.ingestionWatcher.sbomLimit | quote }}
   EXCEPTIONS_FILE: {{ .Values.licenseExceptions.mountPath | quote }}
+  {{- /* projectGroups may be absent on `helm upgrade --reuse-values` from a
+       chart that predates it; treat that as disabled (automatic grouping
+       still works without a mapping file). */}}
+  {{- $pg := .Values.projectGroups | default dict }}
+  {{- if $pg.enabled }}
+  PROJECT_GROUPS_FILE: {{ printf "%s/project-groups.json" (trimSuffix "/" ($pg.mountDir | default "/data/config/project-groups")) | quote }}
+  {{- else }}
+  PROJECT_GROUPS_FILE: ""
+  {{- end }}
   LICENSE_POLICY_FILE: {{ .Values.licensePolicy.mountPath | quote }}
   {{- with .Values.licensePolicy.expressionMode }}
   {{- if not (has . (list "strict" "permissive-wins" "off")) }}

@@ -100,6 +100,8 @@ None of them is part of `ORDER BY`: MergeTree cannot alter a sort key in place, 
 
 `sboms` and `ingestion_queue` also carry `tags` (`Array(String) DEFAULT []`, migration `022`, #357): free-form grouping labels that sit *orthogonal* to the ownership triple. Where `cluster`/`namespace`/`project` answer "where does this run and who owns it", tags answer "which grouping does this project belong to" — the dimension a catalogue instance (foundation, vendor, internal platform team) needs when nothing runs in a cluster at all. Tags group projects, they do not replace them: a project keeps its identity and may carry several tags. Values are normalised at ingest (lowercase, trimmed, deduplicated, sorted) and — unlike the ownership triple — instance-wide, per-bucket and per-upload tags are **merged** rather than overridden. The distinct set is read back data-driven via `GET /api/v1/tags`; `GET /api/v1/projects?tag=<tag>` narrows the project list. `Array(String)` over `LowCardinality`: a document carries n tags, and ClickHouse's `has()` on a small string array is cheap at these cardinalities.
 
+**Parent projects** (migration `023`): `sboms` and `ingestion_queue` carry `parent` (`LowCardinality(String) DEFAULT ''`), an explicit parent assigned at ingest (bucket `parent`, the `parent` path-layout token, `?parent=`, `PARENT`); `sboms` additionally stores `root_purl` and `supplier` (`String DEFAULT ''`), parsed from the described root component (SPDX root package purl / supplier / originator; CycloneDX `metadata.component.purl`, `metadata.manufacturer`/`manufacture`/`supplier`). These are only *inputs*: the parent itself is resolved at query time in the gateway (`internal/projectgroup`) from one row of signals per project — mapping file (`PROJECT_GROUPS_FILE`), explicit assignment, tag, then automatically by repository owner, `owner/repo` document name, purl namespace and supplier, with an ambiguity guard (several top-level projects sharing an owner group nothing). Resolving late means a changed mapping file or bucket config applies without re-ingesting; the result is cached for 30 s and invalidated when the mapping file changes. `GET /api/v1/projects?group_by=parent` lists the groups with counts de-duplicated across all members' SBOMs. See [Parent projects]({{< relref "/docs/ownership" >}}#parent-projects).
+
 ## Ownership Data Model
 
 BOMHort tags all ingested data with three orthogonal ownership dimensions — **cluster** (#131), **namespace** (#138) and **project** (#57). This is fully optional: every dimension defaults to `""`, and single-instance deployments work without any configuration.
@@ -190,7 +192,7 @@ Segments map positionally onto the leading path segments, relative to the ingest
 | GET | `/api/v1/vulnerabilities?page=&page_size=` | Paginated vulnerabilities |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | CVE impact across projects |
 | GET | `/api/v1/licenses/compliance` | Global license compliance |
-| GET | `/api/v1/projects?page=&page_size=&search=` | Grouped project listing |
+| GET | `/api/v1/projects?page=&page_size=&search=&tag=&group_by=parent` | Grouped project listing; `group_by=parent` groups projects under their resolved parent |
 | GET | `/api/v1/projects/license-compliance` | Projects with license violations |
 | GET | `/api/v1/license-exceptions` | Active license exceptions |
 | GET | `/api/v1/license-policy` | Active license policy |
@@ -264,7 +266,7 @@ BOMHort supports **multiple SBOM formats** through a format-detection dispatch l
 
 **File extensions recognized:** `.spdx.json`, `.cdx.json`, `.json` (any JSON file — format auto-detected at parse time)
 
-Files starting with a configurable prefix (`SBOM_IGNORE_PREFIX`, default `_`) are skipped during local filesystem scanning. Config files (`license-policy.json`, `license-exceptions.json`) are always excluded.
+Files starting with a configurable prefix (`SBOM_IGNORE_PREFIX`, default `_`) are skipped during local filesystem scanning. Config files (`license-policy.json`, `license-exceptions.json`, `project-groups.json`) are always excluded.
 
 Two parser backends are available:
 

@@ -373,6 +373,7 @@ not end up with `cluster=k3s-io`). The filename itself is never consumed.
 | Segment | Meaning |
 |---------|---------|
 | `cluster` / `namespace` / `project` | Assign this path level to that dimension |
+| `parent` | Assign this path level as the project's parent (product); see [Parent projects]({{< relref "/docs/ownership" >}}#parent-projects) |
 | `_` | Skip this level (it carries no meaning) |
 
 ```yaml

@@ -35,6 +35,11 @@ ownership:
   cluster: ""
   namespace: ""
   project: ""
+  # Default parent (product) for every ingested SBOM (PARENT). Usually left
+  # empty: per-bucket "parent", the "parent" pathLayout token, ?parent= on
+  # upload and the automatic grouping are the normal sources. See
+  # projectGroups below.
+  parent: ""
 
   # Grouping labels (#357), stamped onto every ingested SBOM.
   #
@@ -262,6 +267,39 @@ licensePolicy:
   # Changing this only affects newly processed SBOMs; re-process to update
   # stored compliance results.
   expressionMode: ""
+
+# Project groups – which parent (product) a project belongs to.
+#
+# The API groups projects under a parent automatically when the SBOMs say so
+# unambiguously: by repository owner (any forge, GitLab subgroups and Azure
+# DevOps included), the owner in a document name "owner/repo version", the
+# namespace of the root package URL (maven groupId, npm scope, Go module
+# owner), or the supplier. A shared owner with several top-level projects
+# (e.g. kubernetes-sigs) groups nothing. This file assigns or overrides
+# explicitly; it wins over every automatic rule.
+#
+# Mounted as a directory (no subPath), so an edited ConfigMap reaches the
+# running API gateway without a restart and applies on the next request.
+projectGroups:
+  enabled: true
+  mountDir: /data/config/project-groups
+  # Name of a ConfigMap you manage yourself, holding a key
+  # "project-groups.json". When set, groups below is ignored.
+  existingConfigMap: ""
+  # Evaluated in order; the first matching entry wins. Each entry needs
+  # either a parent or standalone: true, and a non-empty match. Match values
+  # are alternatives: projects and repos are globs ("*" spans "/"), owners and
+  # suppliers compare exactly; all case-insensitive.
+  #
+  #   groups:
+  #     - parent: argo
+  #       match: { projects: ["argo-cd/*"] }
+  #     - parent: Payments Platform
+  #       match: { owners: ["com.acme.payments"], suppliers: ["ACME Corp"] }
+  #     - standalone: true
+  #       match: { owners: ["kubernetes-sigs"] }
+  #       reason: shared org, the projects are unrelated
+  groups: []
 
 # Ingestion Watcher (CronJob)
 ingestionWatcher:

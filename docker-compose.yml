@@ -56,6 +56,7 @@ services:
       CLUSTER_NAME: ${CLUSTER_NAME:-}
       NAMESPACE: ${NAMESPACE:-}
       PROJECT: ${PROJECT:-}
+      PARENT: ${PARENT:-}
       INGEST_PATH_LAYOUT: ${INGEST_PATH_LAYOUT:-}
       # TAGS (#357) are deployment-neutral grouping labels applied to every
       # ingested document, e.g. TAGS=sandbox-applications. They group projects
@@ -63,6 +64,7 @@ services:
       # instances that have no cluster at all.
       TAGS: ${TAGS:-}
       EXCEPTIONS_FILE: /data/config/license-exceptions.json
+      PROJECT_GROUPS_FILE: /data/config/project-groups.json
       LICENSE_POLICY_FILE: /data/config/license-policy.json
       # strict (default) | permissive-wins | off — how compound SPDX expressions
       # ("Apache-2.0 AND MIT") are classified. Overrides the policy file.
@@ -90,6 +92,7 @@ services:
     volumes:
       - ${SBOM_SOURCE_DIR:-./sboms}:/data/sboms:ro
       - ./sboms/license-exceptions.json:/data/config/license-exceptions.json:ro
+      - ./sboms/project-groups.json:/data/config/project-groups.json:ro
       - ./sboms/license-policy.json:/data/config/license-policy.json:ro
       - originals_data:/data/originals:ro
     depends_on:
@@ -117,6 +120,7 @@ services:
       CLUSTER_NAME: ${CLUSTER_NAME:-}
       NAMESPACE: ${NAMESPACE:-}
       PROJECT: ${PROJECT:-}
+      PARENT: ${PARENT:-}
       INGEST_PATH_LAYOUT: ${INGEST_PATH_LAYOUT:-}
       # TAGS (#357) are deployment-neutral grouping labels applied to every
       # ingested document, e.g. TAGS=sandbox-applications. They group projects

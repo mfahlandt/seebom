@@ -15,6 +15,7 @@ import {
 } from '../../core/api.models';
 import { DonutChartComponent, DonutSegment } from '../../shared/charts/donut-chart.component';
 import { HorizontalBarChartComponent, BarItem } from '../../shared/charts/horizontal-bar-chart.component';
+import { parentSourceLabel } from '../../shared/parent-source';
 
 type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
 
@@ -53,10 +54,21 @@ type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
         with this name — that listing already exists as /projects?tag=.
         Plain groupings (tier, org) are shown as filter links.
       -->
-      <div class="context-row" *ngIf="detail.parents.length || detail.related_project_count || otherTags.length">
-        <ng-container *ngIf="detail.parents.length">
+      <div class="context-row" *ngIf="detail.parents.length || detail.related_project_count || otherTags.length || resolvedParent || children.length">
+        <ng-container *ngIf="detail.parents.length || resolvedParent">
           <span class="ctx-label">Part of</span>
           <a *ngFor="let p of detail.parents" [routerLink]="['/projects', p]" class="ctx-chip parent" [title]="'Open parent project ' + p">↑ {{ p }}</a>
+          <!--
+            The resolved parent (repository owner, mapping file, bucket
+            config…). Only shown when the tag hierarchy above does not
+            already name it; the title says how it was resolved.
+          -->
+          <a *ngIf="resolvedParent" [routerLink]="['/projects', resolvedParent]" class="ctx-chip parent resolved"
+             [title]="parentSourceLabel(detail.parent_source, detail.parent_owner)">↑ {{ resolvedParent }}</a>
+        </ng-container>
+        <ng-container *ngIf="children.length">
+          <span class="ctx-label">Subprojects</span>
+          <a *ngFor="let c of children" [routerLink]="['/projects', c]" class="ctx-chip children" [title]="'Open subproject ' + c">↓ {{ c }}</a>
         </ng-container>
         <ng-container *ngIf="detail.related_project_count">
           <span class="ctx-label">Has</span>
@@ -589,6 +601,23 @@ export class ProjectDetailComponent implements OnInit, OnDestroy {
     const parents = new Set(this.detail.parents);
     return this.detail.tags.filter((t) => !parents.has(t));
   }
+
+  /**
+   * The resolved parent, unless the tag hierarchy already shows it as a
+   * "Part of" chip — the same parent twice would read as two parents.
+   */
+  get resolvedParent(): string {
+    const p = this.detail?.parent;
+    if (!p || this.detail!.parents.includes(p)) return '';
+    return p;
+  }
+
+  /** Subprojects resolved by the API (repository owner, mapping file, …). */
+  get children(): string[] {
+    return this.detail?.children ?? [];
+  }
+
+  parentSourceLabel = parentSourceLabel;
 
   isUrl(s: string): boolean {
     return /^https?:\/\//i.test(s);

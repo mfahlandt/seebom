@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { SbomListComponent } from './sbom-list.component';
+import { ProjectGroupItem } from '../../core/api.models';
 
 describe('SbomListComponent', () => {
   let httpMock: HttpTestingController;
@@ -101,17 +102,18 @@ describe('SbomListComponent', () => {
     initFlat(fixture);
 
     component.viewMode = 'grouped';
-    component.projects = [{ project_name: 'payment-service', sbom_count: 11, package_count: 420, vuln_count: 7, latest_ingested: '', latest_sbom_id: '', tags: [] }] as any;
+    component.groups = [singleGroup('payment-service')];
     component.total = 1;
     fixture.detectChanges();
 
     const compiled = fixture.nativeElement as HTMLElement;
-    expect(compiled.querySelector('app-project-group-list')).toBeTruthy();
+    expect(compiled.querySelector('app-parent-group-list')).toBeTruthy();
     expect(compiled.querySelector('cdk-virtual-scroll-viewport')).toBeFalsy();
+    // A parentless project is rendered as its plain project row.
     expect(compiled.querySelector('.project-row')?.textContent).toContain('payment-service');
   });
 
-  it('loads projects, not documents, while grouped', () => {
+  it('loads parent groups, not documents, while grouped', () => {
     const fixture = TestBed.createComponent(SbomListComponent);
     const component = fixture.componentInstance;
     initFlat(fixture);
@@ -121,8 +123,9 @@ describe('SbomListComponent', () => {
 
     const req = httpMock.expectOne((r) => r.url.endsWith('/projects'));
     expect(req.request.params.get('page')).toBe('2');
-    req.flush({ data: [{ project_name: 'p', sbom_count: 1, package_count: 1, vuln_count: 0, latest_ingested: '', latest_sbom_id: '', tags: [] }], total: 1, page: 2, page_size: 100 });
-    expect(component.projects.length).toBe(1);
+    expect(req.request.params.get('group_by')).toBe('parent');
+    req.flush({ data: [singleGroup('p')], total: 1, page: 2, page_size: 100 });
+    expect(component.groups.length).toBe(1);
   });
 
   it('counts the right rows for the load-more control in each mode', () => {
@@ -130,7 +133,7 @@ describe('SbomListComponent', () => {
     const component = fixture.componentInstance;
 
     component.sboms = [{ sbom_id: 'a' }, { sbom_id: 'b' }] as any;
-    component.projects = [{ project_name: 'p' }] as any;
+    component.groups = [singleGroup('p')];
 
     component.viewMode = 'flat';
     expect(component.loadedCount).toBe(2);
@@ -175,13 +178,29 @@ describe('SbomListComponent', () => {
     const component = fixture.componentInstance;
     initFlat(fixture);
 
-    component.projects = [{ project_name: 'p' }] as any;
+    component.groups = [singleGroup('p')];
     component.sboms = [{ sbom_id: 'a' }] as any;
 
     (component as any).resetRows();
 
-    expect(component.projects).toEqual([]);
+    expect(component.groups).toEqual([]);
     expect(component.sboms).toEqual([]);
   });
 });
+
+/** A project without a parent: the API returns it as a group of one. */
+function singleGroup(name: string): ProjectGroupItem {
+  return {
+    name,
+    is_project: true,
+    project_count: 1,
+    sbom_count: 11,
+    package_count: 420,
+    vuln_count: 7,
+    latest_ingested: '',
+    tags: [],
+    sources: [],
+    members: [{ project_name: name, sbom_count: 11, package_count: 420, vuln_count: 7, latest_ingested: '', latest_sbom_id: '', tags: [] }],
+  };
+}
 

@@ -20,6 +20,7 @@ import {
   LicenseExceptionsFile,
   ArchivedPackageInfo,
   ProjectListItem,
+  ProjectGroupItem,
   ProjectDetail,
   ProjectPackageItem,
   TagListItem,
@@ -175,6 +176,24 @@ export class ApiService {
       params = params.set('tag', tag);
     }
     return this.http.get<PaginatedResponse<ProjectListItem>>(`${this.baseUrl}/projects`, { params });
+  }
+
+  /**
+   * Projects grouped by their resolved parent (product), paged by group.
+   * search matches the group or any member; tag restricts the members.
+   */
+  getProjectGroups(page = 1, pageSize = 50, search = '', tag = ''): Observable<PaginatedResponse<ProjectGroupItem>> {
+    let params = new HttpParams()
+      .set('group_by', 'parent')
+      .set('page', page.toString())
+      .set('page_size', pageSize.toString());
+    if (search) {
+      params = params.set('search', search);
+    }
+    if (tag) {
+      params = params.set('tag', tag);
+    }
+    return this.http.get<PaginatedResponse<ProjectGroupItem>>(`${this.baseUrl}/projects`, { params });
   }
   /**
    * Grouping labels in use on this instance.

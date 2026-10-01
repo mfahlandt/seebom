@@ -6,8 +6,8 @@ import { RouterModule, ActivatedRoute, Router } from '@angular/router';
 import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged, takeUntil } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
-import { SBOMListItem, ProjectListItem } from '../../core/api.models';
-import { ProjectGroupListComponent } from './project-group-list.component';
+import { SBOMListItem, ProjectGroupItem } from '../../core/api.models';
+import { ParentGroupListComponent } from './parent-group-list.component';
 
 /** Flat lists one row per document; grouped lists one row per project (#58). */
 export type SbomViewMode = 'flat' | 'grouped';
@@ -15,7 +15,7 @@ export type SbomViewMode = 'flat' | 'grouped';
 @Component({
   selector: 'app-sbom-list',
   standalone: true,
-  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, ProjectGroupListComponent],
+  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, ParentGroupListComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sbom-list">
@@ -26,7 +26,7 @@ export type SbomViewMode = 'flat' | 'grouped';
             {{ sboms.length | number }} of {{ total | number }} SBOMs
           </ng-container>
           <ng-container *ngIf="viewMode === 'grouped'">
-            {{ projects.length | number }} of {{ total | number }} projects
+            {{ groups.length | number }} of {{ total | number }} {{ total === 1 ? 'entry' : 'entries' }}
           </ng-container>
           <span *ngIf="searchTerm" class="search-hint">matching "{{ searchTerm }}"</span>
         </span>
@@ -85,7 +85,7 @@ export type SbomViewMode = 'flat' | 'grouped';
         nothing here.
       -->
       <div class="mode-hint" *ngIf="viewMode === 'grouped' && searchTerm">
-        Matching project names. Switch to <strong>Documents</strong> to search by file path.
+        Matching project and parent names. Switch to <strong>Documents</strong> to search by file path.
       </div>
 
       <!-- Flat: one row per document -->
@@ -121,16 +121,19 @@ export type SbomViewMode = 'flat' | 'grouped';
       </cdk-virtual-scroll-viewport>
 
       <!--
-        Grouped: one expandable row per project (#58), in its own component.
+        Grouped: parents (products) → projects → versions (#58), in their own
+        components. Projects are grouped under the parent the API resolved
+        (mapping file, bucket config, repository owner, …); a project without
+        a parent is a plain row.
 
         Not virtual-scrolled, unlike the flat list. An expanded row is taller
         than a collapsed one, and cdk-virtual-scroll-viewport's fixed itemSize
         cannot represent that — it would place rows at the wrong offsets the
         moment one opens. The list is bounded instead: one page is 100
-        projects, and projects are the low-cardinality dimension (50-5000 per
+        entries, and projects are the low-cardinality dimension (50-5000 per
         instance) rather than the document count.
       -->
-      <app-project-group-list *ngIf="viewMode === 'grouped'" [projects]="projects" />
+      <app-parent-group-list *ngIf="viewMode === 'grouped'" [groups]="groups" />
 
       <div *ngIf="!loading && total > 0 && loadedCount < total" class="load-more">
         <button (click)="loadMore()" class="load-more-btn">
@@ -225,10 +228,11 @@ export type SbomViewMode = 'flat' | 'grouped';
   `],
 })
 export class SbomListComponent implements OnInit, OnDestroy {
-  @ViewChild(ProjectGroupListComponent) private groupList?: ProjectGroupListComponent;
+  @ViewChild(ParentGroupListComponent) private groupList?: ParentGroupListComponent;
 
   sboms: SBOMListItem[] = [];
-  projects: ProjectListItem[] = [];
+  /** Grouped mode: parents with their projects, and parentless projects. */
+  groups: ProjectGroupItem[] = [];
   total = 0;
   searchTerm = '';
   loading = false;
@@ -296,13 +300,13 @@ export class SbomListComponent implements OnInit, OnDestroy {
       return `Search within ${this.projectScope}…`;
     }
     return this.viewMode === 'grouped'
-      ? 'Search projects by name…'
+      ? 'Search projects and parents by name…'
       : 'Search SBOMs by document name or path…';
   }
 
   /** Rows currently held, for the "load more" counter of either mode. */
   get loadedCount(): number {
-    return this.viewMode === 'grouped' ? this.projects.length : this.sboms.length;
+    return this.viewMode === 'grouped' ? this.groups.length : this.sboms.length;
   }
 
   setViewMode(mode: SbomViewMode): void {
@@ -342,7 +346,7 @@ export class SbomListComponent implements OnInit, OnDestroy {
   private resetRows(): void {
     this.page = 1;
     this.sboms = [];
-    this.projects = [];
+    this.groups = [];
     // The grouped child owns its expansion state; a new listing invalidates
     // it, otherwise a panel stays open under a project that left the page.
     this.groupList?.reset();
@@ -353,8 +357,8 @@ export class SbomListComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
 
     if (this.viewMode === 'grouped') {
-      this.api.getProjects(this.page, this.pageSize, search).subscribe((response) => {
-        this.projects = append ? [...this.projects, ...response.data] : response.data;
+      this.api.getProjectGroups(this.page, this.pageSize, search).subscribe((response) => {
+        this.groups = append ? [...this.groups, ...response.data] : response.data;
         this.total = response.total;
         this.loading = false;
         this.cdr.markForCheck();

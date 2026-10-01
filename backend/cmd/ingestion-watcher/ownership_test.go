@@ -42,7 +42,7 @@ func TestStripPrefix(t *testing.T) {
 func TestOwnership_ResolveWithLayout(t *testing.T) {
 	own := ownership{layout: mustLayout(t, "cluster/namespace/project")}
 
-	cluster, namespace, project, _ := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
+	cluster, namespace, project, _, _ := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
 	if cluster != "prod-eu" || namespace != "payments" || project != "payment-service" {
 		t.Errorf("resolve() = (%q, %q, %q), want (prod-eu, payments, payment-service)", cluster, namespace, project)
 	}
@@ -57,7 +57,7 @@ func TestOwnership_ResolveStripsBucketPrefix(t *testing.T) {
 		layout: mustLayout(t, "cluster/namespace"),
 	}
 
-	cluster, namespace, _, _ := own.resolve("k3s-io/prod-eu/payments/sbom.spdx.json")
+	cluster, namespace, _, _, _ := own.resolve("k3s-io/prod-eu/payments/sbom.spdx.json")
 	if cluster != "prod-eu" {
 		t.Errorf("cluster = %q, want prod-eu (the prefix must not be read as a segment)", cluster)
 	}
@@ -74,7 +74,7 @@ func TestOwnership_ExplicitConfigOutranksPath(t *testing.T) {
 		layout:  mustLayout(t, "cluster/namespace/project"),
 	}
 
-	cluster, namespace, project, _ := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
+	cluster, namespace, project, _, _ := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
 	if cluster != "configured-cluster" {
 		t.Errorf("cluster = %q, want the configured value to win", cluster)
 	}
@@ -90,7 +90,7 @@ func TestOwnership_ResolveWithoutLayout(t *testing.T) {
 		project:   "p",
 	}
 
-	cluster, namespace, project, _ := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
+	cluster, namespace, project, _, _ := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
 	if cluster != "c" || namespace != "n" || project != "p" {
 		t.Errorf("resolve() = (%q, %q, %q), want the configured values unchanged", cluster, namespace, project)
 	}
@@ -99,7 +99,7 @@ func TestOwnership_ResolveWithoutLayout(t *testing.T) {
 func TestOwnership_ShallowPathLeavesRestEmpty(t *testing.T) {
 	own := ownership{layout: mustLayout(t, "cluster/namespace/project")}
 
-	cluster, namespace, project, _ := own.resolve("prod-eu/sbom.spdx.json")
+	cluster, namespace, project, _, _ := own.resolve("prod-eu/sbom.spdx.json")
 	if cluster != "prod-eu" {
 		t.Errorf("cluster = %q, want prod-eu", cluster)
 	}
@@ -136,7 +136,7 @@ func TestOwnership_ResolveCarriesConfiguredTags(t *testing.T) {
 		layout: mustLayout(t, "cluster/namespace/project"),
 		tags:   []string{"sandbox-applications"},
 	}
-	_, _, project, tags := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
+	_, _, project, _, tags := own.resolve("prod-eu/payments/payment-service/sbom.spdx.json")
 	// The project must survive alongside the tag. Tags group projects, they do
 	// not replace them -- if the tag ever started standing in for the project,
 	// every project under one grouping would collapse into a single row.
@@ -152,7 +152,33 @@ func TestOwnership_ResolveCarriesConfiguredTags(t *testing.T) {
 // the empty string, which would show up as a nameless grouping in the UI.
 func TestOwnership_ResolveWithoutTags(t *testing.T) {
 	own := ownership{cluster: "c"}
-	if _, _, _, tags := own.resolve("a/b/sbom.spdx.json"); len(tags) != 0 {
+	if _, _, _, _, tags := own.resolve("a/b/sbom.spdx.json"); len(tags) != 0 {
 		t.Errorf("tags = %v, want empty for an untagged bucket", tags)
+	}
+}
+
+// The CNCF subproject bucket laid out {parent}/{project}/{version}/file.
+func TestOwnership_ParentFromPath(t *testing.T) {
+	own := ownership{layout: mustLayout(t, "parent/project")}
+
+	_, _, project, parent, _ := own.resolve("argo-cd/argo-workflows/3.7.16/argo-cd_argo-workflows_3_7_16_spdx.json")
+	if parent != "argo-cd" || project != "argo-workflows" {
+		t.Errorf("resolve() = (project %q, parent %q), want (argo-workflows, argo-cd)", project, parent)
+	}
+}
+
+// A bucket's configured parent wins over the path, like every other dimension.
+func TestOwnership_ConfiguredParentOutranksPath(t *testing.T) {
+	own := ownership{parent: "argo", layout: mustLayout(t, "parent/project")}
+
+	_, _, _, parent, _ := own.resolve("argo-cd/argo-workflows/3.7.16/f.spdx.json")
+	if parent != "argo" {
+		t.Errorf("parent = %q, want the configured argo", parent)
+	}
+
+	// Without a layout the configured parent is passed through as is.
+	own = ownership{parent: "argo"}
+	if _, _, _, parent, _ := own.resolve("x/y.spdx.json"); parent != "argo" {
+		t.Errorf("parent without layout = %q, want argo", parent)
 	}
 }

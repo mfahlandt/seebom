@@ -59,6 +59,25 @@ type SPDXPackage struct {
 	LicenseConcluded string            `json:"licenseConcluded"`
 	LicenseDeclared  string            `json:"licenseDeclared"`
 	Annotations      []SPDXAnnotation  `json:"annotations"`
+	// Supplier/Originator ("Organization: ACME Corp", "Person: …",
+	// NOASSERTION) name who ships/created the package. Read from the root
+	// package only, as a parent grouping signal (internal/projectgroup).
+	Supplier   spdxActor `json:"supplier"`
+	Originator spdxActor `json:"originator"`
+}
+
+// spdxActor is an SPDX actor string. It tolerates any other JSON shape by
+// yielding "" instead of failing the document: the field is read only as a
+// grouping signal, and a document that parsed before must keep parsing.
+type spdxActor string
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (a *spdxActor) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*a = spdxActor(s)
+	}
+	return nil
 }
 
 // SPDXAnnotation holds a package-level annotation. Some generators (e.g. waybill)
@@ -308,6 +327,7 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 		CreatorTools:      tools,
 	}
 	sbom.SourceRepo, sbom.SourceRef = extractSourceRepo(&doc)
+	sbom.RootPURL, sbom.Supplier = extractGroupingSignals(&doc)
 	sbom.DocumentVersion = extractDocumentVersion(&doc)
 
 	// SPDX IDs that participate in at least one relationship. Used by the
@@ -539,4 +559,56 @@ func sourceRepoFromRoots(doc *SPDXDocument) (repo, ref string) {
 		}
 	}
 	return "", ""
+}
+
+// extractGroupingSignals returns the package URL and the supplier of the
+// package the document DESCRIBES. Both feed the parent grouping of projects
+// (internal/projectgroup) for products that have no repository URL. Only the
+// described roots are consulted, for the same reason as extractSourceRepo:
+// a dependency's purl or supplier says nothing about who ships the product.
+//
+// The first root (document order) with a purl provides it; the first root
+// with a usable supplier, else originator, provides that.
+func extractGroupingSignals(doc *SPDXDocument) (rootPURL, supplier string) {
+	roots := describedRoots(doc)
+	if len(roots) == 0 {
+		return "", ""
+	}
+	for i := range doc.Packages {
+		pkg := &doc.Packages[i]
+		if !roots[pkg.SPDXID] {
+			continue
+		}
+		if rootPURL == "" {
+			rootPURL = purlOf(*pkg)
+		}
+		if supplier == "" {
+			supplier = spdxActorName(string(pkg.Supplier))
+		}
+		if supplier == "" {
+			supplier = spdxActorName(string(pkg.Originator))
+		}
+	}
+	return rootPURL, supplier
+}
+
+// spdxActorName reduces an SPDX actor ("Organization: ACME Corp",
+// "Person: Jane Doe (jane@example.com)", "NOASSERTION") to its name.
+func spdxActorName(actor string) string {
+	s := strings.TrimSpace(actor)
+	switch strings.ToUpper(s) {
+	case "", "NOASSERTION", "NONE":
+		return ""
+	}
+	for _, prefix := range []string{"Organization:", "Person:", "Tool:"} {
+		if len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix) {
+			s = strings.TrimSpace(s[len(prefix):])
+			break
+		}
+	}
+	// Drop a trailing "(email)".
+	if i := strings.LastIndex(s, " ("); i > 0 && strings.HasSuffix(s, ")") {
+		s = strings.TrimSpace(s[:i])
+	}
+	return s
 }

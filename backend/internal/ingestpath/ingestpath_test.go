@@ -299,10 +299,10 @@ func TestDerive_FileTokenAlone(t *testing.T) {
 }
 
 func TestApply_ExplicitValuesWin(t *testing.T) {
-	derived := Attributes{Cluster: "derived-c", Namespace: "derived-n", Project: "derived-p"}
+	derived := Attributes{Cluster: "derived-c", Namespace: "derived-n", Project: "derived-p", Parent: "derived-parent"}
 
-	cluster, namespace, project := "explicit-c", "", "explicit-p"
-	Apply(derived, &cluster, &namespace, &project)
+	cluster, namespace, project, parent := "explicit-c", "", "explicit-p", "explicit-parent"
+	Apply(derived, &cluster, &namespace, &project, &parent)
 
 	if cluster != "explicit-c" {
 		t.Errorf("cluster = %q, want explicit-c (explicit config must outrank the path)", cluster)
@@ -313,13 +313,45 @@ func TestApply_ExplicitValuesWin(t *testing.T) {
 	if project != "explicit-p" {
 		t.Errorf("project = %q, want explicit-p", project)
 	}
+	if parent != "explicit-parent" {
+		t.Errorf("parent = %q, want explicit-parent (a bucket's parent outranks the path)", parent)
+	}
 }
 
 func TestApply_NothingDerived(t *testing.T) {
-	cluster, namespace, project := "c", "", ""
-	Apply(Attributes{}, &cluster, &namespace, &project)
+	cluster, namespace, project, parent := "c", "", "", ""
+	Apply(Attributes{}, &cluster, &namespace, &project, &parent)
 
-	if cluster != "c" || namespace != "" || project != "" {
-		t.Errorf("Apply with zero attributes changed values: %q %q %q", cluster, namespace, project)
+	if cluster != "c" || namespace != "" || project != "" || parent != "" {
+		t.Errorf("Apply with zero attributes changed values: %q %q %q %q", cluster, namespace, project, parent)
+	}
+}
+
+// The CNCF subproject bucket: {parent}/{project}/{version}/file.
+func TestDerive_ParentToken(t *testing.T) {
+	l, err := ParseLayout("parent/project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := l.Derive("argo-cd/argo-workflows/3.7.16/argo-cd_argo-workflows_3_7_16_spdx.json")
+	want := Attributes{Parent: "argo-cd", Project: "argo-workflows"}
+	if !equal(got, want) {
+		t.Errorf("Derive() = %+v, want %+v", got, want)
+	}
+
+	parent := ""
+	cluster, namespace, project := "", "", ""
+	Apply(got, &cluster, &namespace, &project, &parent)
+	if parent != "argo-cd" {
+		t.Errorf("Apply did not fill parent: %q", parent)
+	}
+}
+
+func TestParseLayout_ParentOnce(t *testing.T) {
+	if _, err := ParseLayout("parent/parent/project"); err == nil {
+		t.Error("a repeated parent segment must be rejected like any repeated dimension")
+	}
+	if _, err := ParseLayout("tag/parent/file"); err != nil {
+		t.Errorf("parent combines with tag and file: %v", err)
 	}
 }

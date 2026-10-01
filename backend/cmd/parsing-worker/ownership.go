@@ -22,6 +22,10 @@ type ownership struct {
 	// Array column onto every row of every table would multiply storage for a
 	// value that never varies within one document.
 	tags []string
+	// parent is an explicit parent assignment (bucket config, path layout,
+	// ?parent=). Like tags it lives on the sboms row only: the parent is
+	// resolved per project at query time, never per finding.
+	parent string
 }
 
 // ownershipOf reads the dimensions assigned to a job by the ingestion watcher
@@ -32,12 +36,14 @@ func ownershipOf(job models.IngestionJob) ownership {
 		namespace: job.Namespace,
 		project:   job.Project,
 		tags:      job.Tags,
+		parent:    job.Parent,
 	}
 }
 
 func (o ownership) applySBOM(m *models.SBOM) {
 	m.Cluster, m.Namespace, m.Project = o.cluster, o.namespace, o.project
 	m.Tags = o.tags
+	m.Parent = o.parent
 }
 
 func (o ownership) applyPackages(m *models.SBOMPackages) {

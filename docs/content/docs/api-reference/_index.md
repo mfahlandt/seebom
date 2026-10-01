@@ -405,7 +405,7 @@ names until re-processed. Project-scoped license exceptions match the exact reso
 }
 ```
 
-`source_repo` / `source_ref` (#332) identify where the product's source lives — extracted from the document at ingest (SPDX root `downloadLocation` / vcs `ExternalRef`; CycloneDX `metadata.component.externalReferences[type=vcs]` and `pedigree.commits[0].uid`), overridable via the upload headers or `PATCH /api/v1/sboms/{id}`. Both are omitted from the JSON when unknown.
+`source_repo` / `source_ref` (#332) identify where the product's source lives — extracted from the document at ingest (SPDX root `downloadLocation` / vcs `ExternalRef`, then a `source: <kind>:<url>` entry in `creationInfo.creators`, then a repository-shaped `documentNamespace`; CycloneDX `metadata.component.externalReferences[type=vcs]` and `pedigree.commits[0].uid`), overridable via the upload headers or `PATCH /api/v1/sboms/{id}`. Both are omitted from the JSON when unknown.
 
 `document_version` is the version of the product the document describes — SPDX root package `versionInfo`, CycloneDX `metadata.component.version` — extracted at ingest and omitted when the document states none. Also returned by the detail endpoint.
 

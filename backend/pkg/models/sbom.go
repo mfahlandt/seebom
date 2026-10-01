@@ -42,6 +42,16 @@ type SBOM struct {
 	// no cluster at all. Tags group projects, they do not replace them — a
 	// tagged SBOM keeps its own Project.
 	Tags []string `json:"tags,omitempty"`
+	// Parent is an explicit parent (product) assignment from the ingest path:
+	// bucket config, the "parent" path-layout token, ?parent= on upload or the
+	// PARENT default. '' = none; the parent is then resolved at query time
+	// from the mapping file and automatic signals (internal/projectgroup).
+	Parent string `json:"parent,omitempty"`
+	// RootPURL and Supplier are grouping signals extracted at parse time:
+	// the package URL of the described component and who ships it. Used only
+	// to resolve a parent for products without a repository URL.
+	RootPURL string `json:"root_purl,omitempty"`
+	Supplier string `json:"supplier,omitempty"`
 }
 
 // SBOMPackages stores the full dependency tree of an SBOM as parallel arrays.
@@ -133,6 +143,9 @@ type IngestionJob struct {
 	// Tags (#357) carry the grouping labels from the watcher's bucket config
 	// or the gateway's ?tags= parameter through to the parsing worker.
 	Tags []string `json:"tags,omitempty"`
+	// Parent carries an explicit parent assignment (bucket config, path
+	// layout, ?parent=) from the watcher or gateway to the parsing worker.
+	Parent string `json:"parent,omitempty"`
 }
 
 // StoredDocument is a row in document_store (#256): the reference to the

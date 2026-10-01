@@ -201,6 +201,7 @@ func TestScanner_GenericJSON(t *testing.T) {
 		"not-json.txt":            `plain text`,
 		"license-policy.json":     `{"permissive":["MIT"]}`,
 		"license-exceptions.json": `{"exceptions":[]}`,
+		"project-groups.json":     `{"groups":[]}`,
 	}
 
 	for name, content := range testFiles {
@@ -216,7 +217,7 @@ func TestScanner_GenericJSON(t *testing.T) {
 	}
 
 	// Expected: unknown-format.json (sbom), my-bom.json (sbom), project.spdx.json (sbom), advisory.openvex.json (vex)
-	// Excluded: not-json.txt (not .json), license-policy.json, license-exceptions.json (config files)
+	// Excluded: not-json.txt (not .json), license-policy.json, license-exceptions.json, project-groups.json (config files)
 	if len(files) != 4 {
 		t.Errorf("expected 4 files, got %d", len(files))
 		for _, f := range files {

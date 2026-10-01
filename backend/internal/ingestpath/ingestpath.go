@@ -32,6 +32,12 @@
 // exists because a common real-world shape names the file after the project
 // and uses directories for review metadata — the org there is a grouping,
 // not the identity. "file" and "project" are mutually exclusive.
+//
+// Use "parent" to name the parent (product) a project belongs to from a
+// directory level: a bucket laid out as {product}/{project}/{version}/f.json
+// with layout "parent/project" yields parent=product, project=project. Unlike
+// a "tag" it is a single explicit assignment that the project grouping
+// (internal/projectgroup) honours before any automatic signal.
 package ingestpath
 
 import (
@@ -44,6 +50,8 @@ const (
 	TokenCluster   = "cluster"
 	TokenNamespace = "namespace"
 	TokenProject   = "project"
+	// TokenParent assigns a directory level as the project's parent.
+	TokenParent = "parent"
 	// TokenTag turns a directory level into a grouping label (#357 tags).
 	// Unlike the dimensions it may appear more than once.
 	TokenTag = "tag"
@@ -63,6 +71,7 @@ type Attributes struct {
 	Cluster   string
 	Namespace string
 	Project   string
+	Parent    string
 	Tags      []string
 }
 
@@ -100,7 +109,7 @@ func ParseLayout(spec string) (Layout, error) {
 			return Layout{}, fmt.Errorf("invalid ingest path layout %q: empty segment", spec)
 		}
 		switch s {
-		case TokenCluster, TokenNamespace, TokenProject:
+		case TokenCluster, TokenNamespace, TokenProject, TokenParent:
 			// A dimension appearing twice is always a config mistake: the
 			// second occurrence would silently overwrite the first.
 			if seen[s] {
@@ -121,7 +130,7 @@ func ParseLayout(spec string) (Layout, error) {
 		case TokenSkip, TokenTag:
 			// Repeats are fine — each just consumes one level.
 		default:
-			return Layout{}, fmt.Errorf("invalid ingest path layout %q: unknown segment %q (want cluster|namespace|project|tag|file|_)", spec, s)
+			return Layout{}, fmt.Errorf("invalid ingest path layout %q: unknown segment %q (want cluster|namespace|project|parent|tag|file|_)", spec, s)
 		}
 		segments = append(segments, s)
 	}
@@ -172,6 +181,8 @@ func (l Layout) Derive(key string) Attributes {
 			attrs.Namespace = dirs[i]
 		case TokenProject:
 			attrs.Project = dirs[i]
+		case TokenParent:
+			attrs.Parent = dirs[i]
 		case TokenTag:
 			attrs.Tags = append(attrs.Tags, dirs[i])
 		}
@@ -227,7 +238,7 @@ func stripExtensions(file string) string {
 // Tags are not handled here: they are additive rather than either/or, so the
 // caller merges Attributes.Tags with its configured tags through the tags
 // package, which also normalises them.
-func Apply(derived Attributes, cluster, namespace, project *string) {
+func Apply(derived Attributes, cluster, namespace, project, parent *string) {
 	if *cluster == "" {
 		*cluster = derived.Cluster
 	}
@@ -236,5 +247,8 @@ func Apply(derived Attributes, cluster, namespace, project *string) {
 	}
 	if *project == "" {
 		*project = derived.Project
+	}
+	if *parent == "" {
+		*parent = derived.Parent
 	}
 }

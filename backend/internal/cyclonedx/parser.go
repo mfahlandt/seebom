@@ -38,6 +38,36 @@ type CDXMetadata struct {
 	Timestamp string        `json:"timestamp"`
 	Tools     []CDXTool     `json:"tools"`
 	Component *CDXComponent `json:"component"`
+	// Manufacturer (1.6) / Manufacture (1.5, deprecated spelling) and
+	// Supplier name who makes and who ships the product; used as a parent
+	// grouping signal for vendor SBOMs (internal/projectgroup).
+	Manufacturer *CDXOrganization `json:"manufacturer"`
+	Manufacture  *CDXOrganization `json:"manufacture"`
+	Supplier     *CDXOrganization `json:"supplier"`
+}
+
+// CDXOrganization is an organizational entity (manufacturer, supplier).
+type CDXOrganization struct {
+	Name string `json:"name"`
+}
+
+// UnmarshalJSON accepts the spec's object ({"name": …}) and, leniently, a bare
+// string. Any other shape yields no name instead of an error: these fields
+// were added only as grouping signals, and a document that parsed before
+// must not start failing because a generator put something odd here.
+func (o *CDXOrganization) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		o.Name = s
+		return nil
+	}
+	var obj struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(b, &obj); err == nil {
+		o.Name = obj.Name
+	}
+	return nil
 }
 
 // CDXTool represents a tool entry in metadata.
@@ -57,6 +87,8 @@ type CDXComponent struct {
 	Licenses           []CDXLicense           `json:"licenses"`
 	ExternalReferences []CDXExternalReference `json:"externalReferences"`
 	Pedigree           *CDXPedigree           `json:"pedigree"`
+	Supplier           *CDXOrganization       `json:"supplier"`
+	Manufacturer       *CDXOrganization       `json:"manufacturer"`
 }
 
 // CDXExternalReference is a typed link attached to a component; type "vcs"
@@ -154,6 +186,7 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 		CreatorTools:      tools,
 	}
 	sbom.SourceRepo, sbom.SourceRef = extractSourceRepo(&doc)
+	sbom.RootPURL, sbom.Supplier = extractGroupingSignals(&doc)
 	// The version of the product the BOM describes; document_name may carry it
 	// as a display suffix (above), document_version is the raw attribute.
 	if doc.Metadata.Component != nil {
@@ -307,4 +340,32 @@ func extractSourceRepo(doc *CDXDocument) (repo, ref string) {
 	}
 
 	return repo, ref
+}
+
+// extractGroupingSignals returns the package URL of the component the BOM
+// describes and who makes or ships it. Both feed the parent grouping of
+// projects (internal/projectgroup) for products that have no repository URL.
+//
+// Supplier precedence: the manufacturer (who makes it) over the supplier (who
+// ships it), document-level metadata over the component's own fields. The
+// 1.5 spelling "manufacture" is accepted next to 1.6's "manufacturer".
+func extractGroupingSignals(doc *CDXDocument) (rootPURL, supplier string) {
+	root := doc.Metadata.Component
+	if root != nil {
+		rootPURL = strings.TrimSpace(root.PURL)
+	}
+	candidates := []*CDXOrganization{doc.Metadata.Manufacturer, doc.Metadata.Manufacture}
+	if root != nil {
+		candidates = append(candidates, root.Manufacturer)
+	}
+	candidates = append(candidates, doc.Metadata.Supplier)
+	if root != nil {
+		candidates = append(candidates, root.Supplier)
+	}
+	for _, c := range candidates {
+		if c != nil && strings.TrimSpace(c.Name) != "" {
+			return rootPURL, strings.TrimSpace(c.Name)
+		}
+	}
+	return rootPURL, ""
 }

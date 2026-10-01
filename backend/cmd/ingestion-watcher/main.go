@@ -40,19 +40,22 @@ type ownership struct {
 	// with the bucket's own). Every object in the bucket carries them; a
 	// layout with "tag" segments adds per-object labels on top (#398).
 	tags []string
+	// parent is the bucket's explicit parent (bucket "parent", else PARENT);
+	// a "parent" layout segment fills it when both are empty.
+	parent string
 }
 
 // resolve returns the ownership for one object key, applying path
 // derivation on top of the configured values. Dimensions are either/or
 // (explicit config wins); tags are additive, so path-derived labels join the
 // configured ones rather than replacing them.
-func (o ownership) resolve(key string) (cluster, namespace, project string, tags []string) {
-	cluster, namespace, project, tags = o.cluster, o.namespace, o.project, o.tags
+func (o ownership) resolve(key string) (cluster, namespace, project, parent string, tags []string) {
+	cluster, namespace, project, parent, tags = o.cluster, o.namespace, o.project, o.parent, o.tags
 	if !o.layout.Enabled() {
 		return
 	}
 	derived := o.layout.Derive(stripPrefix(key, o.prefix))
-	ingestpath.Apply(derived, &cluster, &namespace, &project)
+	ingestpath.Apply(derived, &cluster, &namespace, &project, &parent)
 	if len(derived.Tags) > 0 {
 		tags = tagpkg.Merge(o.tags, derived.Tags)
 	}
@@ -179,9 +182,9 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 		// Start from the instance-wide defaults, then let the path fill in
 		// whatever they left unset. RelPath is already relative to SBOM_DIR,
 		// which is exactly the root the layout is defined against.
-		cluster, namespace, project := cfg.ClusterName, cfg.Namespace, cfg.Project
+		cluster, namespace, project, parent := cfg.ClusterName, cfg.Namespace, cfg.Project, cfg.Parent
 		derived := layout.Derive(f.RelPath)
-		ingestpath.Apply(derived, &cluster, &namespace, &project)
+		ingestpath.Apply(derived, &cluster, &namespace, &project, &parent)
 		fileTags := cfg.Tags
 		if len(derived.Tags) > 0 {
 			fileTags = tagpkg.Merge(cfg.Tags, derived.Tags)
@@ -198,6 +201,7 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 			Namespace:  namespace,
 			Project:    project,
 			Tags:       fileTags,
+			Parent:     parent,
 		})
 
 		// Flush batch when it reaches the threshold.
@@ -253,6 +257,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			cluster:   firstNonEmpty(b.Cluster, cfg.ClusterName),
 			namespace: firstNonEmpty(b.Namespace, cfg.Namespace),
 			project:   firstNonEmpty(b.Project, cfg.Project),
+			parent:    firstNonEmpty(strings.TrimSpace(b.Parent), cfg.Parent),
 			prefix:    b.Prefix,
 			layout:    cfg.BucketIngestLayout(b),
 			tags:      cfg.BucketTags(b),
@@ -310,7 +315,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			jobType = models.JobTypeVEX
 		}
 
-		cluster, namespace, project, objTags := bucketOwner[obj.Bucket].resolve(obj.Key)
+		cluster, namespace, project, parent, objTags := bucketOwner[obj.Bucket].resolve(obj.Key)
 
 		// SourceFile stores the s3:// URI so the worker knows where to fetch.
 		batch = append(batch, models.IngestionJob{
@@ -324,6 +329,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 			Namespace:  namespace,
 			Project:    project,
 			Tags:       objTags,
+			Parent:     parent,
 		})
 
 		// Flush batch.

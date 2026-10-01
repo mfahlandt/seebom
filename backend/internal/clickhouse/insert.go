@@ -15,7 +15,8 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 			ingested_at, sbom_id, source_file, spdx_version,
 			document_name, document_namespace, sha256_hash,
 			creation_date, creator_tools, cluster, namespace, project,
-			source_repo, source_ref, document_version, tags
+			source_repo, source_ref, document_version, tags,
+			parent, root_purl, supplier
 		)`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare sbom batch: %w", err)
@@ -38,6 +39,9 @@ func (c *Client) InsertSBOM(ctx context.Context, sbom *models.SBOM) error {
 		sbom.SourceRef,
 		sbom.DocumentVersion,
 		sbom.Tags,
+		sbom.Parent,
+		sbom.RootPURL,
+		sbom.Supplier,
 	); err != nil {
 		return fmt.Errorf("failed to append sbom: %w", err)
 	}

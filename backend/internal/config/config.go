@@ -32,6 +32,11 @@ type S3BucketConfig struct {
 	// NAMESPACE/PROJECT defaults and anything derived from the object key.
 	Namespace string `json:"namespace,omitempty"`
 	Project   string `json:"project,omitempty"`
+	// Parent pins every object in this bucket to one parent (product), for
+	// a bucket per product. Explicit configuration, so it outranks the
+	// global PARENT, the "parent" path-layout token and every automatic
+	// grouping signal.
+	Parent string `json:"parent,omitempty"`
 	// PathLayout overrides INGEST_PATH_LAYOUT for this bucket, for fleets
 	// where buckets are organised differently (e.g. one laid out
 	// "cluster/namespace/project", another flat).
@@ -81,6 +86,10 @@ type Config struct {
 	SBOMLimit         int    // Max number of SBOMs to enqueue (0 = unlimited)
 	IgnorePrefix      string // Files with this prefix are skipped during local scan (default "_")
 	ExceptionsFile    string // Path to license-exceptions.json
+	// ProjectGroupsFile is the optional mapping file that assigns projects
+	// to parents explicitly (internal/projectgroup). A missing file means
+	// "no explicit rules"; the automatic grouping still applies.
+	ProjectGroupsFile string
 	LicensePolicyFile string // Path to license-policy.json
 	// LicenseExpressionMode overrides the policy file's expressionMode for
 	// compound SPDX expressions: "strict" | "permissive-wins" | "off".
@@ -96,6 +105,11 @@ type Config struct {
 	// config, path derivation, upload query param) supplies a value.
 	Namespace string // Default namespace (default "" = unassigned)
 	Project   string // Default project   (default "" = unassigned)
+	// Parent is the instance-wide default parent (product) for every
+	// ingested SBOM, from PARENT. Rarely useful instance-wide; per-bucket
+	// "parent", the "parent" path-layout token and ?parent= on upload are the
+	// usual sources. Empty = resolve automatically at query time.
+	Parent string
 
 	// Tags (#357) are instance-wide grouping labels applied to every ingested
 	// SBOM, from a comma-separated TAGS env var. They group projects along an
@@ -200,12 +214,14 @@ func Load() (*Config, error) {
 		SBOMLimit:             getEnvInt("SBOM_LIMIT", 0),
 		IgnorePrefix:          getEnv("SBOM_IGNORE_PREFIX", "_"),
 		ExceptionsFile:        getEnv("EXCEPTIONS_FILE", "/data/config/license-exceptions.json"),
+		ProjectGroupsFile:     getEnv("PROJECT_GROUPS_FILE", "/data/config/project-groups.json"),
 		LicensePolicyFile:     getEnv("LICENSE_POLICY_FILE", "/data/config/license-policy.json"),
 		LicenseExpressionMode: strings.ToLower(strings.TrimSpace(getEnv("LICENSE_EXPRESSION_MODE", ""))),
 		GitHubToken:           getEnv("GITHUB_TOKEN", ""),
 		ClusterName:           getEnv("CLUSTER_NAME", ""),
 		Namespace:             getEnv("NAMESPACE", ""),
 		Project:               getEnv("PROJECT", ""),
+		Parent:                strings.TrimSpace(getEnv("PARENT", "")),
 		Tags:                  tags.Parse(getEnv("TAGS", "")),
 		IngestPathLayout:      getEnv("INGEST_PATH_LAYOUT", ""),
 		AuthEnabled:           getEnvBool("AUTH_ENABLED", false),

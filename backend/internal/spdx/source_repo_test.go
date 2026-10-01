@@ -293,3 +293,127 @@ func TestSourceRepoIgnoresOpaqueDocumentNamespace(t *testing.T) {
 		})
 	}
 }
+
+// waybillDoc is the shape of the current CNCF corpus (waybill 0.2.0): a
+// declared root whose downloadLocation is NOASSERTION, an opaque namespace,
+// and the repository stated in creationInfo.creators.
+func waybillDoc(namespace string, creators ...string) string {
+	quoted := make([]string, len(creators))
+	for i, c := range creators {
+		quoted[i] = `"` + c + `"`
+	}
+	return `{
+		"spdxVersion": "SPDX-2.3",
+		"SPDXID": "SPDXRef-DOCUMENT",
+		"name": "tmp.WMNAQRqoEg",
+		"documentNamespace": "` + namespace + `",
+		"documentDescribes": ["SPDXRef-DocumentRoot-1"],
+		"creationInfo": {
+			"created": "2026-09-30T10:00:00Z",
+			"creators": [` + strings.Join(quoted, ",") + `]
+		},
+		"packages": [
+			{"SPDXID": "SPDXRef-DocumentRoot-1", "name": "argoproj/argo-cd", "versionInfo": "v3.4.7", "downloadLocation": "NOASSERTION"},
+			{"SPDXID": "SPDXRef-Package-dep", "name": "github.com/spf13/cobra", "downloadLocation": "https://github.com/spf13/cobra"}
+		]
+	}`
+}
+
+// The current CNCF corpus: without the creators branch every one of these
+// documents yields no source_repo (the #355 namespace fallback finds
+// waybill.kusari.dev, which is not a repository).
+func TestSourceRepoFromCreatorsWaybill(t *testing.T) {
+	repo, ref := parseSourceDoc(t, waybillDoc(
+		"https://waybill.kusari.dev/spdx/V3TWYL3KKFADDQSD7X524X232XKS6PYK",
+		"Tool: waybill-0.2.0",
+		"Organization: waybill contributors",
+		"Tool: waybill-0.2.0 source: repo:https://github.com/argoproj/argo-cd.git",
+		"Tool: waybill-0.2.0 source: git:https://github.com/argoproj/argo-cd.git#v3.4.7",
+	))
+	if repo != "https://github.com/argoproj/argo-cd" || ref != "v3.4.7" {
+		t.Errorf("got (%q, %q), want (https://github.com/argoproj/argo-cd, v3.4.7)", repo, ref)
+	}
+}
+
+// Without a ref anywhere the repo is still stored.
+func TestSourceRepoFromCreatorsWithoutRef(t *testing.T) {
+	repo, ref := parseSourceDoc(t, waybillDoc(
+		"https://waybill.kusari.dev/spdx/X",
+		"Tool: waybill-0.2.0 source: repo:https://github.com/antrea-io/theia.git",
+	))
+	if repo != "https://github.com/antrea-io/theia" || ref != "" {
+		t.Errorf("got (%q, %q)", repo, ref)
+	}
+}
+
+// A root's own locator is a statement about the product; the creators only
+// say what the tool scanned. The root wins.
+func TestSourceRepoRootBeatsCreators(t *testing.T) {
+	repo, ref := parseSourceDoc(t, `{
+		"spdxVersion": "SPDX-2.3",
+		"SPDXID": "SPDXRef-DOCUMENT",
+		"name": "app",
+		"documentNamespace": "https://waybill.kusari.dev/spdx/X",
+		"documentDescribes": ["SPDXRef-Package-app"],
+		"creationInfo": {"created": "2026-09-30T10:00:00Z", "creators": ["Tool: waybill-0.2.0 source: git:https://github.com/scanned/app.git#v0.0.1"]},
+		"packages": [{"SPDXID": "SPDXRef-Package-app", "name": "app", "downloadLocation": "git+https://github.com/real-org/app.git@v1.2.3"}]
+	}`)
+	if repo != "https://github.com/real-org/app" || ref != "v1.2.3" {
+		t.Errorf("creators outranked root downloadLocation: (%q, %q)", repo, ref)
+	}
+}
+
+// The tool's statement outranks the namespace, which is only conventionally
+// related to the product.
+func TestSourceRepoCreatorsBeatDocumentNamespace(t *testing.T) {
+	repo, ref := parseSourceDoc(t, waybillDoc(
+		"https://github.com/mirror-org/argo-cd/releases/tag/v9.9.9",
+		"Tool: waybill-0.2.0 source: git:https://github.com/argoproj/argo-cd.git#v3.4.7",
+	))
+	if repo != "https://github.com/argoproj/argo-cd" || ref != "v3.4.7" {
+		t.Errorf("namespace outranked creators: (%q, %q)", repo, ref)
+	}
+}
+
+// Creator sources that are not repositories yield nothing, and the namespace
+// fallback still applies.
+func TestSourceRepoIgnoresNonRepoCreatorSources(t *testing.T) {
+	for _, creator := range []string{
+		"Tool: syft-1.0.0 source: dir:/workspace/src",
+		"Tool: syft-1.0.0 source: image:ghcr.io/org/img:1.0",
+		"Tool: scanner source: oci://ghcr.io/org/img",
+		"Tool: scanner source:",
+		"Tool: waybill-0.2.0",
+		"Organization: Acme source code division",
+	} {
+		t.Run(creator, func(t *testing.T) {
+			repo, ref := parseSourceDoc(t, waybillDoc("https://waybill.kusari.dev/spdx/X", creator))
+			if repo != "" || ref != "" {
+				t.Errorf("non-repo creator %q was stored as repo: (%q, %q)", creator, repo, ref)
+			}
+		})
+	}
+}
+
+func TestCreatorSourceLocator(t *testing.T) {
+	cases := []struct {
+		in, want string
+		ok       bool
+	}{
+		{"Tool: waybill-0.2.0 source: git:https://github.com/x/y.git#v1", "https://github.com/x/y.git#v1", true},
+		{"Tool: waybill-0.2.0 source: repo:https://github.com/x/y.git", "https://github.com/x/y.git", true},
+		{"Tool: t source: https://gitlab.com/g/sub/y", "https://gitlab.com/g/sub/y", true},
+		{"Tool: t source: git+https://github.com/x/y.git@v1", "git+https://github.com/x/y.git@v1", true},
+		{"Tool: t source: git@github.com:x/y.git", "git@github.com:x/y.git", true},
+		{"Tool: t SOURCE: git:https://github.com/x/y extra words", "https://github.com/x/y", true},
+		{"Tool: t source: dir:/src", "dir:/src", true},
+		{"Tool: t", "", false},
+		{"Tool: t source:   ", "", false},
+	}
+	for _, tc := range cases {
+		got, ok := creatorSourceLocator(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("creatorSourceLocator(%q) = (%q, %v), want (%q, %v)", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}

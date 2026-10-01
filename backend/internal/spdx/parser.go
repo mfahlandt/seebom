@@ -410,22 +410,106 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 // yields a repo wins — deterministic because packages are scanned in document
 // order. Ambiguity is resolvable via the upload headers or PATCH.
 //
-// Last resort (#355): documentNamespace. On the CNCF corpus, 500 of 500 SBOMs
-// carry "https://github.com/org/repo/releases/tag/vX.Y.Z" there and *none*
-// declare a root via DESCRIBES/documentDescribes, so without this branch the
-// feature had 0 % coverage in practice. It stays last because a root's
-// downloadLocation is a statement about the product while documentNamespace
-// is only conventionally related to it; sourcerepo.NormalizeStrict accepts
-// only URLs that are evidently a repository (forge host or forge path shape),
-// so UUID-style namespaces (syft's https://anchore.com/syft/…, spdx.org/spdxdocs,
-// urn:uuid:…) yield "" and nothing is guessed from them.
-// packages[0] is deliberately *not* treated as an implicit root — in these
-// very documents it is a dependency.
+// Next: the source the generator declares in creationInfo.creators. waybill,
+// which produces the current CNCF corpus, writes the repository there rather
+// than on the root package (whose downloadLocation is NOASSERTION) or in the
+// namespace (https://waybill.kusari.dev/spdx/<id>):
+//
+//	Tool: waybill-0.2.0 source: git:https://github.com/argoproj/argo-cd.git#v3.4.7
+//	Tool: waybill-0.2.0 source: repo:https://github.com/argoproj/argo-cd.git
+//
+// This is the tool stating what it scanned, so it outranks the namespace, but
+// not a root's own locator, which is a statement about the product itself.
+//
+// Last resort (#355): documentNamespace. On the CNCF corpus surveyed then, 500
+// of 500 SBOMs carried "https://github.com/org/repo/releases/tag/vX.Y.Z" there
+// and *none* declared a root via DESCRIBES/documentDescribes, so without this
+// branch the feature had 0 % coverage in practice. It stays last because a
+// root's downloadLocation is a statement about the product while
+// documentNamespace is only conventionally related to it;
+// sourcerepo.NormalizeStrict accepts only URLs that are evidently a repository
+// (forge host or forge path shape), so UUID-style namespaces (syft's
+// https://anchore.com/syft/…, spdx.org/spdxdocs, urn:uuid:…, waybill's
+// https://waybill.kusari.dev/spdx/…) yield "" and nothing is guessed from them.
+// packages[0] is deliberately *not* treated as an implicit root — in the
+// older documents it is a dependency.
+//
+// The document name ("argoproj/argo-cd v3.4.7") is deliberately not used: it
+// names an owner and a repository but not the host, and a guessed host would
+// send triage tooling to clone code that may not exist there.
 func extractSourceRepo(doc *SPDXDocument) (repo, ref string) {
 	if repo, ref = sourceRepoFromRoots(doc); repo != "" {
 		return repo, ref
 	}
+	if repo, ref = sourceRepoFromCreators(doc.CreationInfo.Creators); repo != "" {
+		return repo, ref
+	}
 	return sourcerepo.NormalizeStrict(doc.DocumentNamespace)
+}
+
+// sourceRepoFromCreators reads a "source: <kind>:<locator>" declaration from
+// the creators list (see extractSourceRepo). The kind ("git", "repo", …) is
+// dropped; the locator must still pass sourcerepo.NormalizeStrict, so a
+// creator naming a directory, an image or an archive ("source: dir:/src",
+// "source: image:ghcr.io/x/y") yields nothing.
+//
+// Several declarations may name the same repository with and without a ref;
+// the first one that carries a ref wins, otherwise the first valid one.
+func sourceRepoFromCreators(creators []string) (repo, ref string) {
+	for _, c := range creators {
+		locator, ok := creatorSourceLocator(c)
+		if !ok {
+			continue
+		}
+		r, rf := sourcerepo.NormalizeStrict(locator)
+		if r == "" {
+			continue
+		}
+		if rf != "" {
+			return r, rf
+		}
+		if repo == "" {
+			repo = r
+		}
+	}
+	return repo, ""
+}
+
+// creatorSourceLocator extracts the locator from a creator entry of the form
+// "Tool: <name> source: [<kind>:]<locator>". The kind prefix is recognised by
+// what follows it: "git:https://…" has a kind, "https://…" and
+// "git@github.com:x/y" (scp syntax) do not.
+func creatorSourceLocator(creator string) (string, bool) {
+	i := strings.Index(strings.ToLower(creator), "source:")
+	if i < 0 {
+		return "", false
+	}
+	rest := strings.TrimSpace(creator[i+len("source:"):])
+	if rest == "" {
+		return "", false
+	}
+	// Only the first whitespace-separated token is the locator.
+	if sp := strings.IndexAny(rest, " \t"); sp > 0 {
+		rest = rest[:sp]
+	}
+	if kind, loc, found := strings.Cut(rest, ":"); found && isCreatorSourceKind(kind) && strings.Contains(loc, "://") {
+		rest = loc
+	}
+	return rest, true
+}
+
+// isCreatorSourceKind reports whether s looks like a "<kind>:" prefix (letters
+// only), as opposed to a URL scheme followed by "//" or an scp user@host.
+func isCreatorSourceKind(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 // sourceRepoFromRoots implements steps 1 and 2 of extractSourceRepo.

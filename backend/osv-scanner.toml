@@ -1,0 +1,16 @@
+# osv-scanner configuration for backend/go.mod. OpenSSF Scorecard's Vulnerabilities check and
+# osv-scanner both read it. Every entry needs a reason someone can re-verify, and an ignoreUntil
+# date so it is looked at again instead of living here forever.
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2027-04-01
+reason = """
+golang.org/x/crypto/openpgp is unmaintained and unsafe by design. The advisory covers every \
+version of golang.org/x/crypto because it is about that one package, so there is no fixed \
+version to upgrade to. BOMHort never builds it: x/crypto is an indirect dependency via \
+github.com/minio/minio-go/v7/pkg/encrypt -> golang.org/x/crypto/argon2 \
+(`go mod why -m golang.org/x/crypto`), and `go list -deps ./...` contains no \
+golang.org/x/crypto/openpgp package. Re-check both commands before extending the date.\
+"""
+

@@ -1,0 +1,33 @@
+{{- $pg := .Values.projectGroups | default dict }}
+{{- if and $pg.enabled (not $pg.existingConfigMap) }}
+{{- $groups := $pg.groups | default list }}
+{{- if not (kindIs "slice" $groups) }}
+{{- fail "projectGroups.groups must be a list" }}
+{{- end }}
+{{- range $i, $g := $groups }}
+{{- if not (kindIs "map" $g) }}
+{{- fail (printf "projectGroups.groups[%d] must be an object" $i) }}
+{{- end }}
+{{- if and (not $g.parent) (not $g.standalone) }}
+{{- fail (printf "projectGroups.groups[%d] needs a parent or standalone: true" $i) }}
+{{- end }}
+{{- if and $g.parent $g.standalone }}
+{{- fail (printf "projectGroups.groups[%d] sets both parent and standalone" $i) }}
+{{- end }}
+{{- if not $g.match }}
+{{- fail (printf "projectGroups.groups[%d] needs a match" $i) }}
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-project-groups
+  labels:
+    app.kubernetes.io/name: bomhort
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  project-groups.json: |-
+    {{- dict "version" "1.0.0" "groups" $groups | mustToPrettyJson | nindent 4 }}
+{{- end }}
+
+

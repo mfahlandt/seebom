@@ -1,0 +1,6 @@
+{
+  "version": "1.0.0",
+  "description": "Explicit parent (product) assignments for projects. Empty: the API groups automatically by repository owner, document name, package namespace and supplier where that is unambiguous. Each group needs a parent or standalone: true, and a match (projects/repos are globs, owners/suppliers exact; case-insensitive). The first matching group wins. Example: {\"parent\": \"argo\", \"match\": {\"projects\": [\"argo-cd/*\"]}}",
+  "groups": []
+}
+

@@ -286,6 +286,7 @@ This endpoint refuses every request with `403 Forbidden` unless `AUTH_ENABLED=tr
 | `cluster` | string | Overrides this instance's configured `CLUSTER_NAME` for the resulting ingestion job. |
 | `namespace` | string | Overrides the configured `NAMESPACE` (#138). The deployment namespace the artifact belongs to, e.g. `payments`. |
 | `project` | string | Overrides the configured `PROJECT` (#57), e.g. `payment-service`. |
+| `parent` | string | Overrides the configured `PARENT`: the parent (product) this SBOM's project belongs to. Outranks the mapping file and the automatic grouping ([Project groups](#project-groups)). |
 | `tags` | string | Comma-separated grouping labels (#357), e.g. `sandbox-applications,platform`. **Merged** with the instance-wide `TAGS` rather than overriding them — a CI job adding a grouping does not contradict a configured one. Normalised (trimmed, lowercased, deduplicated, max 32 × 64 chars). |
 | `sbom_id` | — | **VEX uploads only** (#350): scopes every statement in the document to this SBOM. Must be a valid SBOM UUID; rejected with `400` on SBOM uploads or malformed values. Without it, the worker resolves the statement's OpenVEX product `@id` against `sboms` (`source_repo`, `document_namespace`, `document_name`); if nothing matches the statement is stored **unscoped** and suppresses nothing — until a later ingest of the product's SBOM lets the **VEX rescue** pass (migration `020`) re-resolve and scope it. |
 
@@ -742,11 +743,15 @@ Paginated list of projects. A project is its configured `project` label when set
 | `page_size` | integer | 50 | Items per page (max 500) |
 | `search` | string | — | Filter projects by name (ILIKE) |
 | `tag` | string | — | Only projects carrying this grouping label |
+| `group_by` | string | — | `parent`: list parents with their member projects instead (see below) |
 
 `tag` narrows *which* projects are listed; it never merges them. Filtering by
 `sandbox-applications` returns each sandbox project as its own entry, with its
 own version count. Values are normalised (trimmed, lowercased), so `tag=Platform`
 matches data stored as `platform`.
+
+Each project carries `parent` and `parent_source` when it belongs to a parent
+(see [Project groups](#project-groups)); both are omitted otherwise.
 
 **Response:** `200 OK`
 ```json
@@ -767,6 +772,69 @@ matches data stored as `platform`.
   "page_size": 50
 }
 ```
+
+#### `GET /api/v1/projects?group_by=parent`
+
+The same listing grouped by parent and paged by group: one row per parent with
+its member projects, and one row per project that has no parent (a group of
+one, `project_count: 1`, `sources: []`). `search` matches the group name or any
+member name; `tag` restricts the members. Any other `group_by` value is `400`.
+
+`package_count` and `vuln_count` of a group are de-duplicated across every SBOM
+of every member — not the sum of the members' counts. `members` lists the
+parent project first when the parent is itself a project (`is_project: true`),
+then the others by name. `sources` are the distinct `parent_source` values of
+the members; `owner` is the owner the automatic grouping used.
+
+```json
+{
+  "data": [
+    {
+      "name": "argo",
+      "is_project": true,
+      "project_count": 3,
+      "sbom_count": 32,
+      "package_count": 2104,
+      "vuln_count": 1388,
+      "latest_ingested": "2026-10-01T11:55:31Z",
+      "tags": [],
+      "sources": ["repo"],
+      "owner": "argoproj",
+      "members": [
+        { "project_name": "argo", "sbom_count": 8, "...": "..." },
+        { "project_name": "argo-cd/argo-rollouts", "parent": "argo", "parent_source": "repo", "...": "..." },
+        { "project_name": "argo-cd/argo-workflows", "parent": "argo", "parent_source": "repo", "...": "..." }
+      ]
+    }
+  ],
+  "total": 18,
+  "page": 1,
+  "page_size": 50
+}
+```
+
+#### Project groups
+
+A project's parent (product) is resolved when the API is queried, over all
+projects, so a changed mapping file or bucket config takes effect without
+re-ingesting. First match wins:
+
+| # | Source (`parent_source`) | How |
+|---|---|---|
+| 1 | `config` | The mapping file `PROJECT_GROUPS_FILE` (Helm `projectGroups`), see [Ownership]({{< relref "/docs/ownership" >}}#parent-projects) |
+| 2 | `explicit` | Assigned at ingest: bucket `"parent"`, the `parent` path-layout token, `?parent=` on upload, `PARENT` |
+| 3 | `tag` | A tag that is the name of another project (layout `tag/project`) |
+| 4 | `repo` | Owner of `source_repo` on any forge (GitLab subgroups and Azure DevOps projects kept) |
+| 5 | `document` | Owner in a document name of the form `owner/repo version` |
+| 6 | `purl` | Namespace of the root package URL: maven groupId, npm scope, Go module owner |
+| 7 | `supplier` | Supplier / manufacturer of the root component |
+
+Sources 4–7 only group when it is unambiguous: projects sharing an owner form a
+family; if exactly one of them is a top-level project (no `/` in its name), it
+becomes the parent of the others. Without one, the family is grouped under the
+owner's name from two members on. With several, nothing is grouped — a shared
+owner such as `kubernetes-sigs` would otherwise lump unrelated projects
+together; the mapping file decides there. Nothing is grouped by similar names.
 
 ---
 
@@ -821,9 +889,18 @@ percent-encoded. `404` when no SBOM resolves to that name.
   "latest_sbom_id": "8ca2efd4-9b83-5b93-a013-d53b7ddc54a9",
   "clusters": ["prod-eu"],
   "namespaces": ["platform"],
-  "license_breakdown": { "permissive": 7, "copyleft": 3, "unknown": 1 }
+  "license_breakdown": { "permissive": 7, "copyleft": 3, "unknown": 1 },
+  "parent": "platform-suite",
+  "parent_source": "repo",
+  "parent_owner": "acme-platform",
+  "children": []
 }
 ```
+
+`parent` / `parent_source` / `parent_owner` are the resolved parent (see
+[Project groups](#project-groups)); omitted when the project has none.
+`children` are the projects whose resolved parent is this one. The tag-based
+`parents` above are unchanged and still shown.
 
 ### `GET /api/v1/projects/{name}/sboms`
 

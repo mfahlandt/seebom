@@ -48,6 +48,7 @@ bomhort/
 │   │   │   ├── insert.go      # Batch INSERTs (SBOM, Packages, Vulns, Licenses, VEX)
 │   │   │   ├── queries.go     # Dashboard, SBOM list, vuln list, license, VEX, deps
 │   │   │   ├── queries_projects.go # Project listing (depth-aware key derivation)
+│   │   │   ├── queries_project_groups.go # Parent grouping: per-project signals, grouped listing
 │   │   │   ├── queries_search.go  # SBOM detail, CVE impact, license violations, dep stats
 │   │   │   ├── queries_refresh.go # CVE Refresh: PURL dedup, reverse-lookup, refresh log
 │   │   │   └── queries_github_cache.go # GitHub license cache read/write
@@ -56,6 +57,7 @@ bomhort/
 │   │   ├── osvutil/           # Shared OSV helpers (severity, fixed version, affected versions)
 │   │   ├── s3/                # S3-compatible bucket client (AWS S3, MinIO, GCS)
 │   │   ├── license/           # License compliance + externalized policy + exceptions
+│   │   ├── projectgroup/      # Parent (product) resolution: mapping file, explicit, tag, owner signals
 │   │   ├── repo/              # Filesystem scanner (SBOM + VEX, SHA256)
 │   │   └── config/            # Environment-based configuration
 │   └── pkg/
@@ -228,6 +230,7 @@ S3 project grouping continues to use the source path. See the
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | All projects affected by a CVE (direct + transitive) |
 | GET | `/api/v1/licenses/compliance` | Aggregated license overview |
 | GET | `/api/v1/projects?page=&page_size=&search=` | Grouped project listing (derived from S3 path or document_name) |
+| GET | `/api/v1/projects?group_by=parent` | Projects grouped under their resolved parent (`internal/projectgroup`: mapping file `PROJECT_GROUPS_FILE`, explicit bucket/path/upload `parent`, tag, then repository owner, document name, purl namespace, supplier — ambiguous owners group nothing) |
 | GET | `/api/v1/projects/license-compliance` | Projects with copyleft/unknown licenses (filtered by exceptions) |
 | GET | `/api/v1/license-exceptions` | Active license exceptions (read-only, from config file) |
 | GET | `/api/v1/license-policy` | Active license classification (permissive/copyleft lists) |
@@ -548,4 +551,4 @@ Exemptions are written at ingest time into `exempted_packages` + `exemption_reas
 | 33 | Project key derivation: Depth-aware S3 path parsing (5+ segments → org/project, 4 segments → project only). Fallback: extract project name from SBOM `document_name` field (before ` - ` separator). Non-S3 files without document_name use source_file as key. | ✅ Implemented |
 | 34 | Configurable file ignore prefix: `SBOM_IGNORE_PREFIX` env var (default `_`) skips local files starting with prefix during scanning. Empty string = no skip. Useful for excluding demo/example files from ingestion. | ✅ Implemented |
 | 35 | S3 shared settings inheritance: JSON-configured buckets (`S3_BUCKETS`) inherit shared env vars (`S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_USE_PATH_STYLE`, `S3_USE_SSL`) as fallback when bucket-specific values are empty. | ✅ Implemented |
-| 36 | Generic JSON file acceptance: Scanner accepts any `.json` file (not just `.spdx.json`/`.cdx.json`). Format is auto-detected at parse time by the `internal/sbom` dispatch layer. Config files (`license-policy.json`, `license-exceptions.json`) are still excluded. | ✅ Implemented |
+| 36 | Generic JSON file acceptance: Scanner accepts any `.json` file (not just `.spdx.json`/`.cdx.json`). Format is auto-detected at parse time by the `internal/sbom` dispatch layer. Config files (`license-policy.json`, `license-exceptions.json`, `project-groups.json`) are still excluded. | ✅ Implemented |

@@ -91,7 +91,7 @@ BOMHort plans for **one major version bump every 2–3 years**, driven by accumu
 Every minor version has a release branch `release/vX.Y`. **All release tags — RCs, the final release and every patch — are cut from it**; the release workflow rejects a tag that is not on its release branch.
 
 - **Branch cut**: the first `make release-rc VERSION=X.Y.0` creates `release/vX.Y` from `main` and tags `-rc.1` on it. From then on `main` is open for the next minor; nothing merged there reaches X.Y by itself.
-- **Fixes land on `main` first**, then are backported as a pull request against the release branch: `make cherry-pick PR=<n> BRANCH=X.Y`. Never commit to a release branch directly.
+- **Fixes land on `main` first**, then are backported as a pull request against the release branch: `make cherry-pick PR=<n> BRANCH=X.Y`. Never commit to a release branch directly. PRs are rebase-merged, so the script asks GitHub which commits on `main` belong to the PR and picks all of them; this needs the [GitHub CLI](https://cli.github.com/) (`gh`, or `GH=/path/to/gh`).
 - **Only fixes are backported** — bugs, security, CVE-driven dependency bumps, doc corrections. Never features.
 - Backport PRs run the full CI (CI, CodeQL and fuzz trigger on `release/**`) and are reviewed and merged like any other PR. `release/**` is branch-protected like `main`.
 

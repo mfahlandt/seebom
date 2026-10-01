@@ -216,6 +216,15 @@ class CherryPickTest(ReleaseRepo):
         self.ok(self.cut("branch", "0.8"))
         self.commit("feat: main only", path="feature.txt")
         self.git("push", "--quiet", "upstream", "main")
+        # A stand-in for the GitHub CLI: answers `gh pr view` and
+        # `gh api repos/.../commits/<sha>/pulls` from files, already in the
+        # shape the script's --jq filters produce.
+        self.gh_data = Path(self._tmp.name) / "gh"
+        self.gh_data.mkdir()
+        fake_gh = Path(self._tmp.name) / "fake-gh"
+        fake_gh.write_text(FAKE_GH)
+        fake_gh.chmod(0o755)
+        self.env.update(GH=str(fake_gh), FAKE_GH_DATA=str(self.gh_data))
 
     def pick(self, *args, **env):
         return self.run_script(CHERRY_PICK, *args, **env)
@@ -226,6 +235,22 @@ class CherryPickTest(ReleaseRepo):
             env=self.env, capture_output=True, text=True,
         )
         return result.stdout.strip() or None
+
+    def rebase_merge(self, number, *subjects, pr_commits=None, title="fix: rebased", state="MERGED"):
+        """Land a PR on main the way a rebase merge does: its commits keep their subjects."""
+        shas = [self.commit(subject) for subject in subjects]
+        self.git("push", "--quiet", "upstream", "main")
+        for sha in shas:
+            (self.gh_data / f"commit-{sha}").write_text(f"{number}\n")
+        merge = shas[-1] if shas and state == "MERGED" else "-"
+        count = pr_commits if pr_commits is not None else len(shas)
+        (self.gh_data / f"pr-{number}").write_text(f"{state} {merge} {count} {title}\n")
+        return shas
+
+    def picked(self, head, count):
+        """Subjects and origins of the last <count> commits on <head>, oldest first."""
+        commits = self.git("rev-list", "--reverse", f"-{count}", head).splitlines()
+        return [(self.git("log", "-1", "--format=%s", c), self.git("log", "-1", "--format=%B", c)) for c in commits]
 
     def test_picks_the_squash_merged_pr_onto_the_release_branch(self):
         fix = self.commit("fix(api): handle nil (#42)")
@@ -281,7 +306,64 @@ class CherryPickTest(ReleaseRepo):
         self.assertIn("fix: dry (#46)", out)
         self.assertEqual(self.git("branch", "--list", "cherry-pick/*"), "")
 
+    # ── rebase merges (the default) ─────────────────────────────────────────
+    def test_picks_every_commit_of_a_rebase_merged_pr(self):
+        first, second = self.rebase_merge(50, "fix(api): handle nil", "test(api): cover nil", title="Handle nil")
+
+        out = self.ok(self.pick("50", "0.8"))
+
+        head = self.fork_ref("refs/heads/cherry-pick/50-to-release-v0.8")
+        self.assertIsNotNone(head)
+        picked = self.picked(head, 2)
+        self.assertEqual([subject for subject, _ in picked], ["fix(api): handle nil", "test(api): cover nil"])
+        self.assertIn(f"cherry picked from commit {first}", picked[0][1])
+        self.assertIn(f"cherry picked from commit {second}", picked[1][1])
+        self.assertEqual(self.git("rev-parse", f"{head}~2"), self.git("rev-parse", "upstream/release/v0.8"))
+        self.assertNotIn("feature.txt", self.git("ls-tree", "-r", "--name-only", head))
+        self.assertIn("Title: [release/v0.8] Handle nil", out)
+
+    def test_stops_at_commits_of_other_prs(self):
+        # #51 had three commits, but one was already on main: only two landed.
+        # Walking back by the commit count alone would grab #49's commit.
+        self.rebase_merge(49, "fix: someone else's")
+        self.rebase_merge(51, "fix: one", "fix: two", pr_commits=3)
+
+        out = self.ok(self.pick("51", "0.8", DRY_RUN="1"))
+
+        self.assertIn("fix: one", out)
+        self.assertIn("fix: two", out)
+        self.assertNotIn("someone else's", out)
+
+    def test_refuses_a_second_backport_of_a_rebase_merged_pr(self):
+        self.rebase_merge(52, "fix: a", "fix: b")
+        self.ok(self.pick("52", "0.8"))
+        self.git("push", "--quiet", "upstream", "cherry-pick/52-to-release-v0.8:refs/heads/release/v0.8")
+        self.git("branch", "--quiet", "-D", "cherry-pick/52-to-release-v0.8")
+
+        self.fails(self.pick("52", "0.8"), "already on release/v0.8")
+
+    def test_open_pr(self):
+        self.rebase_merge(53, state="OPEN")
+        self.fails(self.pick("53", "0.8"), "is the PR merged")
+
+    def test_needs_the_github_cli_for_rebase_merges(self):
+        self.rebase_merge(54, "fix: needs gh")
+        self.fails(self.pick("54", "0.8", GH="false"), "needs the GitHub CLI")
+
+
+# Answers from files in $FAKE_GH_DATA: pr-<n> holds the `gh pr view` line
+# ("STATE MERGE_SHA COMMIT_COUNT TITLE"), commit-<sha> the PR numbers.
+FAKE_GH = r"""#!/usr/bin/env bash
+case "$1" in
+  --version) echo "gh version 0.0.0 (fake)" ;;
+  pr) cat "$FAKE_GH_DATA/pr-$3" 2>/dev/null || { echo "no pull request $3" >&2; exit 1; } ;;
+  api) sha="${2#*/commits/}"; cat "$FAKE_GH_DATA/commit-${sha%/pulls}" 2>/dev/null || true ;;
+  *) echo "fake gh: unexpected $*" >&2; exit 1 ;;
+esac
+"""
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

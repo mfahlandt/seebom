@@ -47,6 +47,18 @@ This will:
 4. If S3 is configured: Ingestion Watcher streams SBOMs from your buckets
 5. If S3 is not configured: Seed job clones the repo configured in `seedJob.sbomRepo` into a PVC
 
+#### Testing a published release candidate
+
+`make kind-up` deploys images built from your working tree. To test what was actually published — chart and images from GHCR, nothing built locally — upgrade the running installation to the RC:
+
+```bash
+make kind-deploy-release VERSION=0.8.0-rc.1
+# an RC published by a fork:
+make kind-deploy-release VERSION=0.8.0-rc.1 RELEASE_REPO=<owner>/<repo>
+```
+
+This uses `local/values-local.yaml` if present, otherwise [`values-kind.yaml`](values-kind.yaml), with the image tag and pull policy pointed at the release. Because it upgrades in place, it also exercises the upgrade path.
+
 ### 4. Access
 
 | Service | URL |

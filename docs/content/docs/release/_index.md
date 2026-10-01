@@ -46,8 +46,11 @@ BOMHort follows [Semantic Versioning](https://semver.org/):
 | Component | Format | Example |
 |-----------|--------|---------|
 | Git tag | `vMAJOR.MINOR.PATCH` | `v1.2.3` |
-| Container image tag | `MAJOR.MINOR.PATCH` (no `v`) + `latest` | `1.2.3` |
-| Helm chart version | Matches Git tag | `1.2.3` |
+| Git tag (release candidate) | `vMAJOR.MINOR.PATCH-rc.N` | `v1.3.0-rc.1` |
+| Container image tag | `MAJOR.MINOR.PATCH` (no `v`); `latest` for final releases only | `1.2.3`, `1.3.0-rc.1` |
+| Helm chart version | Matches Git tag | `1.2.3`, `1.3.0-rc.1` |
+
+The `.` before the RC number is required: SemVer compares `rc.10` after `rc.9`, while `rc10` would sort before `rc9`. The release workflow rejects any other tag shape.
 
 ### Version types
 
@@ -85,25 +88,36 @@ BOMHort plans for **one major version bump every 2–3 years**, driven by accumu
 
 ### Minor / Major Release
 
+Every minor or major release goes through at least one **release candidate**. An RC runs the same pipeline as the final release — same images, signing, provenance and Helm chart — so packaging problems surface on the RC, not on the release.
+
 ```bash
 # 1. Ensure main is clean and CI passes
 git checkout main && git pull
 
-# 2. Tag the release
-git tag v1.3.0
-git push origin v1.3.0
+# 2. Cut a release candidate (tags the remote's main, not your checkout)
+make release-rc VERSION=1.3.0 DRY_RUN=1   # preview
+make release-rc VERSION=1.3.0             # → v1.3.0-rc.1, next time -rc.2, ...
 
-# 3. CI automatically:
-#    - Builds all 5 images (multi-arch: amd64 + arm64)
+# 3. Install and test the RC (see "Installing a Release Candidate" below).
+#    Problems? Fix on main, cut the next RC.
+
+# 4. Cut the final release — ideally from the commit that was tested
+make release VERSION=1.3.0 REF=v1.3.0-rc.2
+
+# CI automatically, for RCs and final releases alike:
+#    - Builds all 6 images (multi-arch: amd64 + arm64)
 #    - Signs images with cosign (keyless)
 #    - Attests provenance (SLSA)
-#    - Packages and pushes Helm chart
-#    - Creates GitHub Release with SBOM + changelog
+#    - Packages and pushes the Helm chart
+#    - Creates the GitHub (pre-)release with SBOM + changelog since the last final release
+#    Only final releases move the `latest` image tag.
 
-# 4. Create release branch for future patches
-git checkout -b release/v1.3
+# 5. Create release branch for future patches
+git checkout -b release/v1.3 v1.3.0
 git push origin release/v1.3
 ```
+
+`make release` warns when no RC exists for the version, or when `main` has moved past the last RC (those commits were never tested as a candidate). `DRY_RUN=1` previews, `YES=1` skips the confirmation, `REMOTE=` / `REF=` override the remote and the commit to tag. The script is [`hack/cut-release.sh`](https://github.com/seebom-labs/BOMHort/blob/main/hack/cut-release.sh).
 
 ### Minor Release Checklist
 
@@ -112,7 +126,8 @@ git push origin release/v1.3
 - [ ] `govulncheck ./...` (backend), `npm audit` (ui + docs) clean
 - [ ] **`ROADMAP.md` reconciled**: feature PRs do not tick their own entry, so this happens **once, here**. For every issue that landed since the last tag, update all four places it appears — register row, release criteria checklist, milestone map, dependency graph — and move anything that slipped to the next milestone rather than dropping it. (Why not per PR: two PRs editing the same checklist line conflict by construction, and resolving that by picking a side silently un-ticks an already-merged issue.)
 - [ ] `docs/ARCHITECTURE_PLAN.md` reflects any new services or schema changes
-- [ ] Tag created (`vX.Y.0`) and pushed
+- [ ] Release candidate cut (`make release-rc VERSION=X.Y.0`), installed and tested
+- [ ] Final tag created (`make release VERSION=X.Y.0`) — from the tested RC commit
 - [ ] Release branch created (`release/vX.Y`) and pushed
 - [ ] Release notes written (features, breaking changes, upgrade notes)
 - [ ] Helm chart version matches Git tag
@@ -131,9 +146,8 @@ git checkout release/v1.2
 git cherry-pick <commit-sha>
 git push origin release/v1.2
 
-# 3. Tag the patch
-git tag v1.2.4
-git push origin v1.2.4
+# 3. Tag the patch (uses release/v1.2 automatically once that branch exists)
+make release VERSION=1.2.4
 
 # CI builds and publishes automatically
 ```
@@ -189,6 +203,7 @@ Images are built for **linux/amd64** and **linux/arm64**.
 | `ghcr.io/seebom-labs/bomhort/parsing-worker` | SBOM processing worker |
 | `ghcr.io/seebom-labs/bomhort/ingestion-watcher` | File scanner / queue enqueuer |
 | `ghcr.io/seebom-labs/bomhort/cve-refresher` | Daily CVE refresh |
+| `ghcr.io/seebom-labs/bomhort/mcp-server` | Read-only MCP server (`mcp.enabled`) |
 | `ghcr.io/seebom-labs/bomhort/ui` | Angular frontend (Nginx) |
 
 All images are:
@@ -227,13 +242,37 @@ helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
   -f values-production.yaml
 ```
 
+### Installing a Release Candidate
+
+RC charts are SemVer pre-releases: Helm never selects them unless asked for that exact `--version`, so production installs cannot drift onto an RC.
+
+```bash
+# Fresh install
+helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
+  --version 1.3.0-rc.1 \
+  -f values-production.yaml
+
+# Upgrade a test installation to the RC
+helm upgrade bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
+  --version 1.3.0-rc.1 \
+  --reuse-values
+
+# Into the local Kind cluster (chart + images from GHCR; run `make kind-up` first)
+make kind-deploy-release VERSION=1.3.0-rc.1
+```
+
+The chart's `appVersion` is the RC version and `image.tag` defaults to it, so the RC chart deploys the RC images. If your values pin `image.tag`, unset it or set it to the RC.
+
+### Release Candidate from a Branch
+
+To publish an installable build of a branch that is not merged yet: **Actions → Release → Run workflow**, select the branch, enter a pre-release version (e.g. `1.3.0-rc.1`). The run builds, signs and pushes all images and the chart, then creates the tag at the built commit and a GitHub pre-release. Final versions are rejected here — those are only cut by pushing a tag.
+
 ## CI Workflows
 
 | Workflow | Trigger | What it does |
 |----------|---------|-------------|
 | CI | Push/PR to main | Go build + test + vet, Angular build, Helm lint |
-| Release | Git tag `v*` | Build + push images, sign, attest, Helm chart, GitHub Release |
-| Pre-Release | Manual | Build from any branch, create pre-release |
+| Release | Git tag `v*`, or manual (pre-releases only) | Build + push images, sign, attest, Helm chart, GitHub (pre-)release |
 | Fuzz | Weekly + PRs touching `backend/` | SPDX and VEX parser fuzz tests |
 | CodeQL | Push/PR | SAST for Go and TypeScript |
 | Scorecard | Weekly | OpenSSF Scorecard analysis |
@@ -241,7 +280,7 @@ helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
 ## Building Images Locally
 
 ```bash
-make images            # Build all 5 images with tag "dev"
-make images TAG=0.2.0  # Build with a specific tag
-make images-push       # Build and push to GHCR
+make images                 # Build all 6 images with tag "dev"
+make images TAG=1.3.0-rc.1  # Build with a specific tag
+make images-push            # Build and push to GHCR
 ```

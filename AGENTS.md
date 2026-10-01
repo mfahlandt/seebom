@@ -96,7 +96,16 @@ make kind-status     # Show Kind cluster and pod status
 make kind-build      # Build dev images and load into Kind
 make kind-deploy     # Build, load, and upgrade Helm release
 make kind-reingest   # Truncate data and re-trigger ingestion in Kind
+make kind-deploy-release VERSION=0.8.0-rc.1   # Upgrade Kind to a published release/RC from GHCR (no local build)
 ```
+
+## Releases
+```
+make release-rc VERSION=0.8.0 DRY_RUN=1   # Preview the next release candidate tag (v0.8.0-rc.N)
+make release-rc VERSION=0.8.0             # Tag + push it → release.yml publishes images, chart, pre-release
+make release    VERSION=0.8.0             # Final release (warns if untested commits since the last RC)
+```
+Tags are pushed to the `seebom-labs` remote — only with explicit approval (see Boundaries). Details: `docs/RELEASE.md`.
 
 ## Build & Test
 ```

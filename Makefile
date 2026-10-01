@@ -6,6 +6,7 @@
 .PHONY: ui-build ui-dev
 .PHONY: ingest worker api
 .PHONY: images images-push
+.PHONY: release-rc release kind-deploy-release
 .PHONY: check-demo-sboms
 .PHONY: kind-up kind-down kind-reingest kind-build kind-deploy kind-stop kind-start kind-status
 .PHONY: docs-serve docs-build docs-deps
@@ -294,6 +295,21 @@ images-push: images ## Build and push all images to GHCR (TAG=dev)
 	@echo "✅ Pushed 6 images to $(REGISTRY)/$(REPO) with tag $(TAG)"
 
 
+# ─── Releases ────────────────────────────────────────────────────────────────
+# Tagging triggers .github/workflows/release.yml, which builds, signs and
+# publishes images + Helm chart. See docs/RELEASE.md.
+#   make release-rc VERSION=0.8.0            → v0.8.0-rc.1, then -rc.2, ...
+#   make release    VERSION=0.8.0            → v0.8.0
+#   DRY_RUN=1 / YES=1 / REMOTE=upstream / REF=<commit-ish> are passed through.
+release-rc: ## Tag + push the next release candidate vX.Y.Z-rc.N (VERSION=X.Y.Z, DRY_RUN=1 to preview)
+	@test -n "$(VERSION)" || { echo "❌ Usage: make release-rc VERSION=0.8.0 [DRY_RUN=1]"; exit 1; }
+	@./hack/cut-release.sh rc "$(VERSION)"
+
+release: ## Tag + push the final release vX.Y.Z (VERSION=X.Y.Z, DRY_RUN=1 to preview)
+	@test -n "$(VERSION)" || { echo "❌ Usage: make release VERSION=0.8.0 [DRY_RUN=1]"; exit 1; }
+	@./hack/cut-release.sh final "$(VERSION)"
+
+
 # ─── Kind (local Kubernetes) ─────────────────────────────────────────────────
 kind-up: ## Deploy BOMHort to a local Kind cluster (see local/secrets.env)
 	./local/setup.sh
@@ -356,6 +372,32 @@ kind-deploy: kind-build ## Build images, load into Kind, and upgrade Helm releas
 		--set s3.secretKey="$${S3_SECRET_KEY:-}"
 	@kubectl rollout restart deployment/bomhort-api-gateway deployment/bomhort-parsing-worker -n bomhort
 	@echo "✅ Deployed. Pods restarting with new images."
+
+# Install a *published* release or RC into the Kind cluster (chart + images from
+# GHCR, nothing built locally) — how an RC is smoke-tested before the final tag.
+# Upgrades the existing installation, so it also exercises the upgrade path from
+# whatever is running. Create the cluster first with `make kind-up`.
+RELEASE_REPO ?= $(REPO)
+KIND_VALUES  ?= $(firstword $(wildcard local/values-local.yaml) examples/kind/values-kind.yaml)
+kind-deploy-release: ## Upgrade Kind to a published release/RC from GHCR (VERSION=0.8.0-rc.1 [RELEASE_REPO=owner/repo])
+	@test -n "$(VERSION)" || { echo "❌ Usage: make kind-deploy-release VERSION=0.8.0-rc.1 [RELEASE_REPO=owner/repo]"; exit 1; }
+	@kind get clusters 2>/dev/null | grep -qx bomhort || { echo "❌ No Kind cluster 'bomhort'. Create it first: make kind-up"; exit 1; }
+	@source local/secrets.env 2>/dev/null; \
+	REPO_LC=$$(printf '%s' "$(RELEASE_REPO)" | tr '[:upper:]' '[:lower:]'); \
+	echo "📦 Installing oci://ghcr.io/$$REPO_LC/charts/bomhort --version $(VERSION) (values: $(KIND_VALUES))"; \
+	helm upgrade --install bomhort "oci://ghcr.io/$$REPO_LC/charts/bomhort" \
+		--version "$(VERSION)" \
+		--kube-context kind-bomhort \
+		-n bomhort --create-namespace \
+		-f "$(KIND_VALUES)" \
+		--set image.repository="$$REPO_LC" \
+		--set image.tag="$(VERSION)" \
+		--set image.pullPolicy=IfNotPresent \
+		--set clickhouse.password="$${CLICKHOUSE_PASSWORD:-bomhort}" \
+		--set github.token="$${GITHUB_TOKEN:-}" \
+		--set s3.accessKey="$${S3_ACCESS_KEY:-}" \
+		--set s3.secretKey="$${S3_SECRET_KEY:-}"
+	@echo "✅ BOMHort $(VERSION) deployed. Watch: kubectl get pods -n bomhort -w"
 
 # ─── Documentation (Hugo + Docsy) ────────────────────────────────────────────
 docs-deps: ## Install Hugo docs dependencies (npm + Go modules)

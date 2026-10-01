@@ -1,28 +1,110 @@
 name: Release
 
+# One pipeline for final releases and release candidates, so an RC exercises
+# exactly the build, signing and packaging path its final release will take.
+#
+#   Final release      push tag vX.Y.Z        images :X.Y.Z + :latest, chart X.Y.Z, GitHub Release
+#   Release candidate  push tag vX.Y.Z-rc.N   images :X.Y.Z-rc.N (never :latest), chart X.Y.Z-rc.N,
+#                                             GitHub pre-release
+#   RC from a branch   Run workflow (manual)  same as a release candidate, built from the selected
+#                      version=X.Y.Z-rc.N     branch; the tag is created at the built commit
+#
+# Cut tags with `make release-rc VERSION=X.Y.Z` / `make release VERSION=X.Y.Z`
+# (hack/cut-release.sh). See docs/RELEASE.md.
+
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Pre-release version, e.g. 0.8.0-rc.1 (final releases are cut by pushing a tag)'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
-  # REPO is normalized to lowercase per job via the "Normalize repository name"
-  # step, because GHCR image names must be lowercase and GitHub Actions
-  # expressions have no lower() function. github.repository can contain
-  # uppercase letters (e.g. seebom-labs/BOMHort).
 
 jobs:
+  prepare:
+    name: Resolve Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+      repo: ${{ steps.resolve.outputs.repo }}
+    steps:
+      - name: Resolve and validate version
+        id: resolve
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            VERSION="${INPUT_VERSION#v}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+
+          # X.Y.Z or X.Y.Z-(rc|alpha|beta).N. The dot before N is required:
+          # SemVer compares dot-separated numeric identifiers numerically, so
+          # rc.10 sorts after rc.9 — rc10 would sort before rc9 (in Helm too).
+          if ! printf '%s' "$VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(rc|alpha|beta)\.[1-9][0-9]*)?$'; then
+            echo "::error::'$VERSION' is not a release version. Expected X.Y.Z or X.Y.Z-rc.N (also -alpha.N / -beta.N)."
+            exit 1
+          fi
+
+          PRERELEASE=false
+          case "$VERSION" in *-*) PRERELEASE=true ;; esac
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ "$PRERELEASE" != "true" ]; then
+              echo "::error::Manual runs publish pre-releases only. Cut a final release by pushing the tag: make release VERSION=$VERSION"
+              exit 1
+            fi
+            # The tag is created at the end of this run; refuse to reuse one.
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v$VERSION" >/dev/null 2>&1; then
+              echo "::error::Tag v$VERSION already exists. Pick the next RC number."
+              exit 1
+            fi
+          fi
+
+          # GHCR image names must be lowercase; github.repository may not be
+          # (e.g. seebom-labs/BOMHort) and expressions have no lower().
+          REPO=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+
+          {
+            echo "version=$VERSION"
+            echo "tag=v$VERSION"
+            echo "prerelease=$PRERELEASE"
+            echo "repo=$REPO"
+          } >> "$GITHUB_OUTPUT"
+          echo "### Releasing v$VERSION (pre-release: $PRERELEASE) from \`$GITHUB_REF_NAME\` @ \`${GITHUB_SHA:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
+
   images:
     name: Build & Push Images
     runs-on: ubuntu-latest
+    needs: prepare
     permissions:
       packages: write
       id-token: write       # For cosign keyless signing & provenance attestation
       attestations: write   # For GitHub artifact attestations
+    env:
+      REPO: ${{ needs.prepare.outputs.repo }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
     strategy:
       matrix:
         component:
@@ -38,15 +120,13 @@ jobs:
           - name: cve-refresher
             context: backend
             target: cve-refresher
+          - name: mcp-server
+            context: backend
+            target: mcp-server
           - name: ui
             context: ui
             target: ""
     steps:
-      - name: Normalize repository name (GHCR requires lowercase)
-        run: |
-          REPO=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
-          echo "REPO=$REPO" >> "$GITHUB_ENV"
-
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -57,9 +137,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Compute image tags
+        id: tags
+        env:
+          NAME: ${{ matrix.component.name }}
+        run: |
+          IMAGE="$REGISTRY/$REPO/$NAME"
+          {
+            echo "tags<<EOF"
+            echo "$IMAGE:$VERSION"
+            # A release candidate must never move :latest — whoever pulls
+            # latest is promised the newest *final* release.
+            if [ "$PRERELEASE" != "true" ]; then echo "$IMAGE:latest"; fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         id: push
@@ -69,9 +160,9 @@ jobs:
           target: ${{ matrix.component.target || '' }}
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.component.name }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.component.name }}:latest
+          build-args: |
+            VERSION=${{ env.VERSION }}
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -81,9 +172,9 @@ jobs:
       - name: Sign container image
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
+          NAME: ${{ matrix.component.name }}
         run: |
-          cosign sign --yes \
-            "${{ env.REGISTRY }}/${{ env.REPO }}/${{ matrix.component.name }}@${DIGEST}"
+          cosign sign --yes "$REGISTRY/$REPO/$NAME@${DIGEST}"
 
       - name: Attest provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -95,65 +186,60 @@ jobs:
   helm:
     name: Package & Push Helm Chart
     runs-on: ubuntu-latest
-    needs: images
+    needs: [prepare, images]
     permissions:
       packages: write
+    env:
+      REPO: ${{ needs.prepare.outputs.repo }}
+      VERSION: ${{ needs.prepare.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
 
-      - name: Normalize repository name (GHCR requires lowercase)
-        run: |
-          REPO=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
-          echo "REPO=$REPO" >> "$GITHUB_ENV"
-
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
+      # values.yaml leaves image.tag empty, so the chart deploys the images of
+      # its own appVersion — for an RC chart, the RC images.
       - name: Update chart version
         run: |
-          sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" deploy/helm/bomhort/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.version.outputs.version }}\"/" deploy/helm/bomhort/Chart.yaml
+          sed -i "s/^version:.*/version: ${VERSION}/" deploy/helm/bomhort/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" deploy/helm/bomhort/Chart.yaml
 
       - name: Package chart
         run: helm package deploy/helm/bomhort/
 
       - name: Login to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$TOKEN" | helm registry login "$REGISTRY" -u "$ACTOR" --password-stdin
 
       - name: Push chart
-        run: helm push bomhort-${{ steps.version.outputs.version }}.tgz oci://${{ env.REGISTRY }}/${{ env.REPO }}/charts
+        run: helm push "bomhort-${VERSION}.tgz" "oci://$REGISTRY/$REPO/charts"
 
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [images, helm]
+    needs: [prepare, images, helm]
     permissions:
-      contents: write
+      contents: write       # Create the release (and, for manual runs, the tag)
       id-token: write
       attestations: write
+    env:
+      REPO: ${{ needs.prepare.outputs.repo }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
-      - name: Normalize repository name (GHCR requires lowercase)
-        run: |
-          REPO=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
-          echo "REPO=$REPO" >> "$GITHUB_ENV"
-
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Generate SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2.18.0.24.2
         with:
           path: .
           format: spdx-json
-          output-file: bomhort-${{ steps.version.outputs.version }}.spdx.json
+          output-file: bomhort-${{ env.VERSION }}.spdx.json
           artifact-name: bomhort-sbom
 
       - name: Install cosign
@@ -162,65 +248,116 @@ jobs:
       - name: Sign release artifacts
         run: |
           cosign sign-blob --yes \
-            --bundle bomhort-${{ steps.version.outputs.version }}.spdx.json.bundle \
-            bomhort-${{ steps.version.outputs.version }}.spdx.json
+            --bundle "bomhort-${VERSION}.spdx.json.bundle" \
+            "bomhort-${VERSION}.spdx.json"
 
       - name: Attest SBOM provenance
         id: provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: bomhort-${{ steps.version.outputs.version }}.spdx.json
+          subject-path: bomhort-${{ env.VERSION }}.spdx.json
 
       - name: Rename provenance bundle
-        run: |
-          cp "${{ steps.provenance.outputs.bundle-path }}" bomhort-${{ steps.version.outputs.version }}.spdx.json.intoto.jsonl
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: cp "$BUNDLE" "bomhort-${VERSION}.spdx.json.intoto.jsonl"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v2.3.2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: BOMHort ${{ steps.version.outputs.version }}
-          generate_release_notes: true
-          files: |
-            bomhort-${{ steps.version.outputs.version }}.spdx.json
-            bomhort-${{ steps.version.outputs.version }}.spdx.json.bundle
-            bomhort-${{ steps.version.outputs.version }}.spdx.json.intoto.jsonl
-          body: |
+      - name: Write release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          RC_NOTE: |
+            > [!WARNING]
+            > **Release candidate** for `v${{ needs.prepare.outputs.version }}` — for testing, not for production.
+            > The images are not tagged `latest`, and Helm installs this chart only when asked for `--version ${{ needs.prepare.outputs.version }}` explicitly.
+          HEADER: |
+            ## Helm Chart
+
+            ```bash
+            helm install bomhort oci://${{ env.REGISTRY }}/${{ needs.prepare.outputs.repo }}/charts/bomhort --version ${{ needs.prepare.outputs.version }}
+            ```
+
+            Upgrading an existing installation:
+
+            ```bash
+            helm upgrade bomhort oci://${{ env.REGISTRY }}/${{ needs.prepare.outputs.repo }}/charts/bomhort --version ${{ needs.prepare.outputs.version }} --reuse-values
+            ```
+
             ## Container Images
 
             All images are signed with [cosign](https://github.com/sigstore/cosign) (keyless) and attested with SLSA provenance.
 
             ```
-            docker pull ${{ env.REGISTRY }}/${{ env.REPO }}/api-gateway:${{ steps.version.outputs.version }}
-            docker pull ${{ env.REGISTRY }}/${{ env.REPO }}/parsing-worker:${{ steps.version.outputs.version }}
-            docker pull ${{ env.REGISTRY }}/${{ env.REPO }}/ingestion-watcher:${{ steps.version.outputs.version }}
-            docker pull ${{ env.REGISTRY }}/${{ env.REPO }}/cve-refresher:${{ steps.version.outputs.version }}
-            docker pull ${{ env.REGISTRY }}/${{ env.REPO }}/ui:${{ steps.version.outputs.version }}
+            docker pull ${{ env.REGISTRY }}/${{ needs.prepare.outputs.repo }}/api-gateway:${{ needs.prepare.outputs.version }}
+            docker pull ${{ env.REGISTRY }}/${{ needs.prepare.outputs.repo }}/parsing-worker:${{ needs.prepare.outputs.version }}
+            docker pull ${{ env.REGISTRY }}/${{ needs.prepare.outputs.repo }}/ingestion-watcher:${{ needs.prepare.outputs.version }}
+            docker pull ${{ env.REGISTRY }}/${{ needs.prepare.outputs.repo }}/cve-refresher:${{ needs.prepare.outputs.version }}
+            docker pull ${{ env.REGISTRY }}/${{ needs.prepare.outputs.repo }}/mcp-server:${{ needs.prepare.outputs.version }}
+            docker pull ${{ env.REGISTRY }}/${{ needs.prepare.outputs.repo }}/ui:${{ needs.prepare.outputs.version }}
             ```
 
             Verify signatures (**cosign v3 or newer**):
+
             ```bash
             cosign verify \
-              --certificate-identity-regexp="^https://github.com/${{ github.repository }}/\.github/workflows/release\.yml@refs/tags/${{ github.ref_name }}$" \
+              --certificate-identity="https://github.com/${{ github.workflow_ref }}" \
               --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-              ${{ env.REGISTRY }}/${{ env.REPO }}/api-gateway:${{ steps.version.outputs.version }}
+              ${{ env.REGISTRY }}/${{ needs.prepare.outputs.repo }}/api-gateway:${{ needs.prepare.outputs.version }}
             ```
 
             > - **cosign v2 reports `no signatures found`.** These images are signed
             >   by cosign v3, which stores the signature as an OCI referrer
             >   (`application/vnd.dev.sigstore.bundle.v0.3+json`) rather than a
             >   `.sig` tag; v2 looks only for the tag.
-            > - The identity regex is **case-sensitive**: the repository is
+            > - The identity is **case-sensitive**: the repository is
             >   `${{ github.repository }}`, even though the image names are lowercase.
-
-            ## Helm Chart
-
-            ```bash
-            helm install bomhort oci://${{ env.REGISTRY }}/${{ env.REPO }}/charts/bomhort --version ${{ steps.version.outputs.version }}
-            ```
 
             ## SBOM
 
-            An SPDX SBOM for this release is attached as `bomhort-${{ steps.version.outputs.version }}.spdx.json`.
+            An SPDX SBOM for this release is attached as `bomhort-${{ needs.prepare.outputs.version }}.spdx.json`.
+        run: |
+          set -euo pipefail
+
+          # Compare against the previous *final* release below this version.
+          # GitHub's default is the previous tag, so v0.8.0's notes would list
+          # only what changed since v0.8.0-rc.3, and an RC's notes only what
+          # changed since the RC before it. Testers and users want the whole
+          # delta since the last release they could have installed.
+          BASE="v${VERSION%%-*}"
+          PREVIOUS=$( { git tag -l 'v*' | grep -Ev -- '-' | grep -vxF "$BASE" || true; echo "$BASE"; } \
+            | sort -V | grep -B1 -xF "$BASE" | head -n1)
+          [ "$PREVIOUS" = "$BASE" ] && PREVIOUS=""
+          echo "Release notes: ${PREVIOUS:-<first release>}..$TAG"
+
+          ARGS=(-f "tag_name=$TAG" -f "target_commitish=$GITHUB_SHA")
+          if [ -n "$PREVIOUS" ]; then ARGS+=(-f "previous_tag_name=$PREVIOUS"); fi
+          gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" "${ARGS[@]}" --jq .body > generated-notes.md
+
+          {
+            if [ "$PRERELEASE" = "true" ]; then
+              printf '%s' "$RC_NOTE"
+              if [ "$EVENT" = "workflow_dispatch" ]; then
+                printf '> Built from branch `%s` at `%s`.\n' "$GITHUB_REF_NAME" "${GITHUB_SHA:0:7}"
+              fi
+              echo
+            fi
+            printf '%s\n' "$HEADER"
+            cat generated-notes.md
+          } > release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v2.3.2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          # Only used when the tag does not exist yet (manual RC runs): tag the
+          # commit that was actually built.
+          target_commitish: ${{ github.sha }}
+          name: BOMHort ${{ needs.prepare.outputs.version }}
+          body_path: release-notes.md
+          files: |
+            bomhort-${{ env.VERSION }}.spdx.json
+            bomhort-${{ env.VERSION }}.spdx.json.bundle
+            bomhort-${{ env.VERSION }}.spdx.json.intoto.jsonl
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+

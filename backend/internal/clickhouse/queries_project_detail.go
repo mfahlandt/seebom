@@ -31,6 +31,7 @@ func (c *Client) QueryProjectDetail(ctx context.Context, name string) (*dto.Proj
 		Clusters:         []string{},
 		Namespaces:       []string{},
 		LicenseBreakdown: make(map[string]uint64),
+		Children:         []string{},
 	}
 
 	// One pass over the project's SBOMs for everything that lives on the

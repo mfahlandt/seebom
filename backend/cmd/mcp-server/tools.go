@@ -382,6 +382,7 @@ func nonNilMap[K comparable, V any](m map[K]V) map[K]V {
 func normalizeProjectDetail(d dto.ProjectDetail) dto.ProjectDetail {
 	d.Tags = nonNil(d.Tags)
 	d.Parents = nonNil(d.Parents)
+	d.Children = nonNil(d.Children)
 	d.Clusters = nonNil(d.Clusters)
 	d.Namespaces = nonNil(d.Namespaces)
 	d.LicenseBreakdown = nonNilMap(d.LicenseBreakdown)

@@ -117,6 +117,10 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryProjects", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", ""); return err }},
 		{"QueryProjects/tag", func() error { _, err := c.QueryProjects(ctx, 1, 10, "", "sandbox"); return err }},
 		{"QueryTags", func() error { _, err := c.QueryTags(ctx); return err }},
+		// Parent grouping (internal/projectgroup).
+		{"QueryProjectSignals", func() error { _, err := c.QueryProjectSignals(ctx); return err }},
+		{"QueryProjectGroups", func() error { _, err := c.QueryProjectGroups(ctx, nil, 1, 10, "", ""); return err }},
+		{"QueryProjectGroups/search+tag", func() error { _, err := c.QueryProjectGroups(ctx, nil, 1, 10, "argo", "sandbox"); return err }},
 		// Project read model (#398). The detail query returns ErrSBOMNotFound
 		// for an unknown name, which isEmptyResult accepts.
 		{"QueryProjectDetail", func() error { _, err := c.QueryProjectDetail(ctx, "no-such-project"); return err }},

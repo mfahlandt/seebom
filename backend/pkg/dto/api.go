@@ -405,6 +405,43 @@ type ProjectListItem struct {
 	// a replacement for it — so a project with three SBOMs stays one row and
 	// merely carries the groupings those SBOMs were ingested with.
 	Tags []string `json:"tags"`
+	// Parent is the product this project belongs to, resolved at query time
+	// (internal/projectgroup); ParentSource says how: config (mapping file),
+	// explicit (bucket, path layout, ?parent=), tag, repo, document, purl or
+	// supplier. Both omitted when the project has no parent.
+	Parent       string `json:"parent,omitempty"`
+	ParentSource string `json:"parent_source,omitempty"`
+}
+
+// ProjectGroupItem is one row of GET /api/v1/projects?group_by=parent: a
+// parent with its member projects, or a project that belongs to no parent
+// (a group of one).
+//
+// Counts follow ProjectListItem: PackageCount and VulnCount are de-duplicated
+// across every SBOM of every member, so they are not the sum of the members'
+// counts. SBOMCount is the plain sum.
+type ProjectGroupItem struct {
+	// Name is the parent's name, or the project's own name for a group of one.
+	Name string `json:"name"`
+	// IsProject reports whether Name is itself a project (the parent has its
+	// own SBOMs, like argo) rather than only a label (an owner, a product
+	// name from the mapping file).
+	IsProject      bool     `json:"is_project"`
+	ProjectCount   uint64   `json:"project_count"`
+	SBOMCount      uint64   `json:"sbom_count"`
+	PackageCount   uint64   `json:"package_count"`
+	VulnCount      uint64   `json:"vuln_count"`
+	LatestIngested string   `json:"latest_ingested"`
+	Tags           []string `json:"tags"`
+	// Sources are the distinct ParentSource values of the members, so the UI
+	// can say why they were grouped. Empty for a group of one.
+	Sources []string `json:"sources"`
+	// Owner is the owner the automatic grouping used (e.g. "argoproj"), when
+	// one did.
+	Owner string `json:"owner,omitempty"`
+	// Members are the projects in the group: the parent project first when it
+	// is one, then the others by name.
+	Members []ProjectListItem `json:"members"`
 }
 
 // ProjectDetail is the response DTO for GET /api/v1/projects/{name} (#398):
@@ -450,6 +487,13 @@ type ProjectDetail struct {
 	Clusters         []string          `json:"clusters"`
 	Namespaces       []string          `json:"namespaces"`
 	LicenseBreakdown map[string]uint64 `json:"license_breakdown"`
+	// Parent / ParentSource / ParentOwner: the resolved parent (product) of
+	// this project, see ProjectListItem. Omitted when it has none.
+	Parent       string `json:"parent,omitempty"`
+	ParentSource string `json:"parent_source,omitempty"`
+	ParentOwner  string `json:"parent_owner,omitempty"`
+	// Children are the projects whose resolved parent is this project.
+	Children []string `json:"children"`
 }
 
 // ProjectPackageItem is one distinct component across a project's SBOMs

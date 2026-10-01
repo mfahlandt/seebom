@@ -299,7 +299,13 @@ func main() {
 		writeJSON(w, http.StatusOK, violations)
 	})
 
+	// Parent grouping (internal/projectgroup): resolved over all projects at
+	// query time, cached briefly, re-read when the mapping file changes.
+	parents := newParentResolver(chClient.QueryProjectSignals, cfg.ProjectGroupsFile)
+
 	// Project list view – groups SBOMs by project with aggregated stats.
+	// ?group_by=parent returns parents with their member projects instead
+	// (dto.ProjectGroupItem), paged by group.
 	mux.HandleFunc("GET /api/v1/projects", func(w http.ResponseWriter, r *http.Request) {
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
@@ -310,12 +316,41 @@ func main() {
 		// the filter would silently return nothing.
 		tag := firstTag(tagpkg.Parse(r.URL.Query().Get("tag")))
 
+		groupBy := strings.TrimSpace(r.URL.Query().Get("group_by"))
+		if groupBy != "" && groupBy != "parent" {
+			writeError(w, http.StatusBadRequest, "group_by must be 'parent'")
+			return
+		}
+
+		assignments, err := parents.Assignments(r.Context())
+		if err != nil {
+			// The flat list still works without parents; the grouped one
+			// does not.
+			log.Printf("ERROR: resolve project parents: %v", err)
+			if groupBy == "parent" {
+				writeError(w, http.StatusInternalServerError, "Failed to group projects")
+				return
+			}
+		}
+
+		if groupBy == "parent" {
+			resp, err := chClient.QueryProjectGroups(r.Context(), assignments, page, pageSize, search, tag)
+			if err != nil {
+				log.Printf("ERROR: list project groups: %v", err)
+				writeError(w, http.StatusInternalServerError, "Failed to fetch project groups")
+				return
+			}
+			writeJSON(w, http.StatusOK, resp)
+			return
+		}
+
 		resp, err := chClient.QueryProjects(r.Context(), page, pageSize, search, tag)
 		if err != nil {
 			log.Printf("ERROR: list projects: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch projects")
 			return
 		}
+		clickhouse.AnnotateParents(resp.Data, assignments)
 		writeJSON(w, http.StatusOK, resp)
 	})
 
@@ -361,6 +396,11 @@ func main() {
 			log.Printf("ERROR: project detail for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project")
 			return
+		}
+		if assignments, err := parents.Assignments(r.Context()); err != nil {
+			log.Printf("ERROR: resolve project parents: %v", err)
+		} else {
+			clickhouse.AnnotateProjectDetail(detail, assignments)
 		}
 		writeJSON(w, http.StatusOK, detail)
 	})
@@ -1409,6 +1449,9 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 		cluster := queryOverride(r, "cluster", cfg.ClusterName)
 		namespace := queryOverride(r, "namespace", cfg.Namespace)
 		project := queryOverride(r, "project", cfg.Project)
+		// ?parent= names the product this upload belongs to explicitly; it
+		// outranks the mapping file and the automatic grouping signals.
+		parent := queryOverride(r, "parent", cfg.Parent)
 		// Tags are merged with the instance defaults rather than overriding
 		// them, unlike the three above. A CI job labelling its artifact
 		// "sandbox-applications" is adding a grouping, not contradicting an
@@ -1508,6 +1551,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			SourceRef:    sourceRefHdr,
 			TargetSBOMID: targetSBOMID,
 			Tags:         uploadTags,
+			Parent:       parent,
 		}
 		// Single-row insert, deliberately: the API contract returns job_id
 		// synchronously, so the row has to be durable before we respond — there
@@ -1550,6 +1594,7 @@ func uploadHandler(deps uploadDeps) http.HandlerFunc {
 			"cluster":     cluster,
 			"namespace":   namespace,
 			"project":     project,
+			"parent":      parent,
 		})
 	}
 }

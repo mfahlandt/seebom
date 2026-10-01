@@ -29,13 +29,14 @@ on:
     branches: [main]
     paths: [.github/prow.yaml]
 
-# the reusable workflow can use at most what is granted here
+# Read-only at the top level; each job grants what the reusable workflow needs. Its single job
+# requests contents, issues, pull-requests, statuses and actions: write (labels, comments, the
+# prow/lgtm commit status, merging, /retest), and a caller must grant at least that or the run
+# fails. Job level rather than top level: OpenSSF Scorecard (Token-Permissions) scores any
+# top-level contents/actions write as 0, while job-level grants under a read-only top level
+# are what it asks for.
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  statuses: write
-  actions: write
+  contents: read
 
 # One run per comment (commands are never collapsed); per event+action for everything else,
 # so a pending `synchronize` run can only be superseded by a newer `synchronize` run.
@@ -49,7 +50,13 @@ jobs:
     if: >-
       github.repository == 'seebom-labs/BOMHort' &&
       github.event_name != 'workflow_dispatch' && github.event_name != 'push'
-    uses: cncf/prow-github-actions/.github/workflows/prow.yml@v3.0.1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      statuses: write
+      actions: write
+    uses: cncf/prow-github-actions/.github/workflows/prow.yml@187c5e3cd95a329c43448e1bdb3b1f5249232e44 # v3.0.1
     with:
       # Every /<key> below must have a matching `labels.<key>` section in .github/prow.yaml,
       # except the built-ins (/assign ... /ok-to-test). /remove-<key> forms come for free.
@@ -65,7 +72,13 @@ jobs:
     if: >-
       github.repository == 'seebom-labs/BOMHort' &&
       (github.event_name == 'workflow_dispatch' || github.event_name == 'push')
-    uses: cncf/prow-github-actions/.github/workflows/prow.yml@v3.0.1
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      statuses: write
+      actions: write
+    uses: cncf/prow-github-actions/.github/workflows/prow.yml@187c5e3cd95a329c43448e1bdb3b1f5249232e44 # v3.0.1
     with:
       jobs: label-sync
 

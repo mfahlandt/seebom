@@ -102,4 +102,10 @@ The `sboms/` directory includes several example files for testing. See [FAQ: Wha
 | `make dev-logs` | Follow Docker Compose logs |
 | `make re-ingest` | Re-trigger the Ingestion Watcher |
 | `make re-scan` | Wipe vulns/licenses and re-process all SBOMs |
+| `make cherry-pick PR=<n> BRANCH=0.8` | Backport a fix merged on `main` to `release/v0.8` as a pull request ([Release Branches](/docs/release/#release-branches)) |
+| `make kind-deploy-release VERSION=0.8.0-rc.1` | Install a published release candidate into the local Kind cluster to test it |
+
+## Branches
+
+Open every pull request against `main` — also fixes for a released version. Each minor has a release branch `release/vX.Y` that only receives backports of merged fixes; see [Release → Release Branches](/docs/release/#release-branches) and `CONTRIBUTING.md`.
 

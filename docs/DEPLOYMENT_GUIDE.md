@@ -9,6 +9,18 @@
 - Helm 3.x
 - Container images pushed to a registry (e.g. `ghcr.io/your-org/bomhort/*`)
 
+### Chart source: published release or working tree
+
+The examples below install from the working tree (`deploy/helm/bomhort/`). For a published release use the OCI chart — it deploys the images of exactly that release (leave `image.tag` unset):
+
+```bash
+helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort --version 0.8.0 -n bomhort -f my-values.yaml
+# Release candidate, for testing an upcoming release (installed only when asked for the exact version):
+helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort --version 0.8.0-rc.1 -n bomhort -f my-values.yaml
+```
+
+See [RELEASE.md](RELEASE.md#installing-a-release-candidate).
+
 ---
 
 ## 1. SBOMs – Getting Data Into the Cluster

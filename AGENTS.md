@@ -117,6 +117,8 @@ Backend Vet:     cd backend && go fmt ./... && go vet ./...
 Frontend Install: cd ui && npm install
 Frontend Build:  cd ui && npx ng build --configuration=production
 Frontend Test:   cd ui && npx ng test            # uses Vitest
+Helm Test:       python3 -B -m unittest discover -s deploy/helm/tests -v   # needs helm
+Release Tooling: python3 -B -m unittest discover -s hack/tests -v          # cut-release / cherry-pick vs. throwaway repos
 ```
 
 # Code Style & Database Best Practices

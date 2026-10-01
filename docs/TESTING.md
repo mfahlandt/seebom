@@ -285,7 +285,7 @@ For each function, write tests for:
 
 ## CI Integration
 
-Tests run automatically on every push/PR via GitHub Actions (`.github/workflows/ci.yml`):
+Tests run automatically on every push/PR to `main` and to release branches (`release/**`) via GitHub Actions (`.github/workflows/ci.yml`):
 
 ```yaml
 - name: Test Backend
@@ -298,6 +298,24 @@ Tests run automatically on every push/PR via GitHub Actions (`.github/workflows/
 ```
 
 The `-race` flag enables Go's race detector – this catches concurrent access bugs in the workers/queue code.
+
+### Helm and release tooling tests (Python, stdlib only)
+
+```bash
+# Helm chart templates + release workflow contract (needs helm on PATH)
+python3 -B -m unittest discover -s deploy/helm/tests -v
+
+# hack/cut-release.sh and hack/cherry-pick.sh, end to end against throwaway
+# local git repositories (bare "upstream" + "fork" + working clone) — no GitHub
+python3 -B -m unittest discover -s hack/tests -v
+```
+
+| Suite | Pins |
+|-------|------|
+| `deploy/helm/tests/test_release_workflow.py` | every image the chart deploys is published by `release.yml`; `make images` builds the same set; `:latest` only for final releases; tags must be on `release/vX.Y`; CI runs on `release/**` |
+| `hack/tests/test_release_scripts.py` | branch cut at the first RC; later RCs/final/patches only from the release branch; RC numbering (`rc.10` > `rc.9`); `REF` must be on the branch; patching a minor released before branches; backport picks only the PR's commit, refuses duplicates, stops on conflicts |
+
+Both run in CI (jobs *Helm Lint* and *Release tooling*). Change the release scripts or `release.yml` → extend these tests.
 
 ---
 

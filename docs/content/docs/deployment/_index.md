@@ -18,6 +18,22 @@ This guide covers deploying BOMHort to a Kubernetes cluster using Helm.
 - Helm 3.x
 - Container images pushed to a registry (e.g. `ghcr.io/seebom-labs/bomhort/*`)
 
+### Chart source: published release or working tree
+
+The examples on this page install from the working tree (`deploy/helm/bomhort/`). For a published release, use the OCI chart instead — it deploys the images of exactly that release:
+
+```bash
+# Final release (recommended)
+helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort --version 0.8.0 \
+  -n bomhort -f my-values.yaml
+
+# Release candidate — for testing an upcoming release; Helm only installs it when asked for the exact version
+helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort --version 0.8.0-rc.1 \
+  -n bomhort -f my-values.yaml
+```
+
+Leave `image.tag` unset: the chart then uses its own `appVersion`, so chart and images always match. RCs never move the `latest` image tag. See [Release → Installing a Release Candidate](../release/#installing-a-release-candidate).
+
 ---
 
 ## 1. SBOMs – Getting Data Into the Cluster

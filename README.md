@@ -411,7 +411,7 @@ The Parsing Worker processes each SBOM in a carefully ordered pipeline:
 
 See [docs/ARCHITECTURE_PLAN.md](docs/ARCHITECTURE_PLAN.md) for the full blueprint.  
 See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for Kubernetes deployment.  
-See [docs/RELEASE.md](docs/RELEASE.md) for building and publishing container images.  
+See [docs/RELEASE.md](docs/RELEASE.md) for release branches, release candidates, backports and publishing container images.  
 See [docs/TESTING.md](docs/TESTING.md) for writing and running tests.  
 See the [API Reference](https://docs.bomhort.dev/docs/api-reference/) for complete endpoint documentation.
 
@@ -441,6 +441,7 @@ See the [API Reference](https://docs.bomhort.dev/docs/api-reference/) for comple
 | `make kind-build` | Build all container images and load them into Kind |
 | `make kind-deploy` | Build images, Helm upgrade, and restart pods |
 | `make kind-reingest` | Re-ingest all SBOMs (truncate data, re-queue, no re-download) |
+| `make kind-deploy-release VERSION=0.8.0-rc.1` | Upgrade the Kind install to a published release / RC from GHCR (no local build) |
 | **ClickHouse** | |
 | `make ch-only` | Start only ClickHouse (for local dev) |
 | `make ch-migrate` | Run SQL migrations against ClickHouse |
@@ -455,8 +456,13 @@ See the [API Reference](https://docs.bomhort.dev/docs/api-reference/) for comple
 | `make backend-vet` | Run go vet + go fmt |
 | `make ui-build` | Build Angular for production |
 | **Images** | |
-| `make images` | Build all 5 container images locally (TAG=dev) |
+| `make images` | Build all 6 container images locally (TAG=dev) |
 | `make images-push` | Build and push all images to GHCR |
+| **Releases** (maintainers — see [docs/RELEASE.md](docs/RELEASE.md)) | |
+| `make release-rc VERSION=0.8.0` | Tag the next release candidate `v0.8.0-rc.N`; the first one cuts `release/v0.8` from `main` |
+| `make release VERSION=0.8.0` | Tag the final release (or a patch, `VERSION=0.8.1`) from `release/v0.8` |
+| `make cherry-pick PR=431 BRANCH=0.8` | Backport a PR merged on `main` to `release/v0.8`, as a pull request |
+| `make release-branch VERSION=0.7` | Create a release branch for a minor released before release branches existed |
 
 ---
 

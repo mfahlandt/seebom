@@ -169,6 +169,8 @@ export interface ProjectLicenseViolation {
   source_file: string;
   document_name: string;
   copyleft_count: number;
+  /** Declared licenses that are not on the policy allow-list. */
+  unapproved_count: number;
   unknown_count: number;
   violating_licenses: string[];
   non_compliant_packages: string[];

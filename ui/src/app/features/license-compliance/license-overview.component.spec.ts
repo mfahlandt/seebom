@@ -25,7 +25,9 @@ describe('LicenseOverviewComponent', () => {
     fixture.detectChanges();
     const compiled = fixture.nativeElement as HTMLElement;
     const cards = compiled.querySelectorAll('.category-card');
-    expect(cards.length).toBe(4);
+    // permissive, copyleft, not approved, unknown, exempted
+    expect(cards.length).toBe(5);
+    expect(compiled.querySelector('.category-card.unapproved h3')?.textContent).toContain('Not Approved');
   });
 });
 

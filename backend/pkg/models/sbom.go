@@ -105,7 +105,7 @@ type LicenseCompliance struct {
 	SBOMID               uuid.UUID `json:"sbom_id"`
 	SourceFile           string    `json:"source_file"`
 	LicenseID            string    `json:"license_id"`
-	Category             string    `json:"category"` // permissive, copyleft, unknown
+	Category             string    `json:"category"` // permissive, copyleft, unapproved, unknown
 	PackageCount         uint32    `json:"package_count"`
 	NonCompliantPackages []string  `json:"non_compliant_packages"`
 	ExemptedPackages     []string  `json:"exempted_packages"`

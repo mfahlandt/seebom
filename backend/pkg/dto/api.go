@@ -171,6 +171,7 @@ type ProjectLicenseViolation struct {
 	SourceFile           string   `json:"source_file"`
 	DocumentName         string   `json:"document_name"`
 	CopyleftCount        uint64   `json:"copyleft_count"`
+	UnapprovedCount      uint64   `json:"unapproved_count"`
 	UnknownCount         uint64   `json:"unknown_count"`
 	ViolatingLicenses    []string `json:"violating_licenses"`
 	NonCompliantPackages []string `json:"non_compliant_packages"`

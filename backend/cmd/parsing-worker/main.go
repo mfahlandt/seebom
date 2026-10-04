@@ -100,8 +100,8 @@ func main() {
 		log.Println("GitHub license resolver disabled (SKIP_GITHUB_RESOLVE=true)")
 	}
 
-	// Initialize package-registry license resolvers (npm, NuGet) for licenses
-	// that are still unknown after the GitHub pass.
+	// Initialize package-registry license resolvers (npm, NuGet, deps.dev)
+	// for licenses that are still unknown after the GitHub pass.
 	registryResolvers := newRegistryResolvers(context.Background(), cfg, chClient, ghResolver)
 
 	// Initialize S3 client if S3 buckets are configured.
@@ -402,9 +402,14 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		}
 	}
 
-	// 2b. Resolve remaining unknown licenses via package registries (npm, NuGet).
+	// 2b. Resolve remaining unknown licenses via package registries.
 	resolveViaRegistries(ctx, chClient, registryResolvers, result.Packages.PackagePURLs, result.Packages.PackageLicenses)
 
+	// 2c. Rewrite free-text spellings ("MPL 2.0") to SPDX IDs so the stored
+	// licenses, the compliance rows and the exception matching all agree.
+	for i, lic := range result.Packages.PackageLicenses {
+		result.Packages.PackageLicenses[i] = license.Normalize(lic)
+	}
 	// 3. Insert SBOM metadata. Every row written from here on carries the
 	// job's ownership dimensions (#131 cluster, #138 namespace, #57 project).
 	own := ownershipOf(job)

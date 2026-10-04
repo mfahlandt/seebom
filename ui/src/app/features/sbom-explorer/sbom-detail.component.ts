@@ -95,7 +95,11 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
             <span class="license-summary-count">{{ getLicenseCategoryCount('copyleft') }}</span>
             <span class="license-summary-label">Copyleft</span>
           </div>
-          <div class="license-summary-item unknown-bg">
+          <div class="license-summary-item unapproved-bg" title="Declared license that is not on the policy allow-list">
+            <span class="license-summary-count">{{ getLicenseCategoryCount('unapproved') }}</span>
+            <span class="license-summary-label">Not Approved</span>
+          </div>
+          <div class="license-summary-item unknown-bg" title="No license information in the SBOM (NOASSERTION / NONE)">
             <span class="license-summary-count">{{ getLicenseCategoryCount('unknown') }}</span>
             <span class="license-summary-label">Unknown</span>
           </div>
@@ -304,6 +308,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .license-summary-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); font-weight: 500; }
     .permissive-bg { background: var(--surface-alt); }
     .copyleft-bg { background: var(--severity-critical-bg); }
+    .unapproved-bg { background: var(--severity-high-bg); }
     .unknown-bg { background: var(--surface-alt); }
 
     .license-list { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
@@ -315,6 +320,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .cat-permissive { background: var(--surface); border: 1px solid var(--border); }
     .cat-copyleft { background: var(--severity-critical-bg); border: 1px solid var(--severity-critical); }
     .cat-copyleft-exempted { background: var(--status-success-bg); border: 1px solid var(--status-success); }
+    .cat-unapproved { background: var(--severity-high-bg); border: 1px solid var(--severity-high); }
     .cat-unknown { background: var(--surface); border: 1px solid var(--border); }
     .lic-header {
       display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer;
@@ -332,6 +338,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     }
     .cat-badge-permissive { background: var(--status-success-bg); color: var(--status-success); }
     .cat-badge-copyleft { background: var(--severity-critical-bg); color: var(--severity-critical); }
+    .cat-badge-unapproved { background: var(--severity-high-bg); color: var(--severity-high); }
     .cat-badge-unknown { background: var(--bg); color: var(--text-secondary); }
     .lic-exempted-badge {
       padding: 2px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600;
@@ -575,7 +582,7 @@ export class SbomDetailComponent implements OnInit {
   }
 
   getLicenseCardClass(lic: SBOMLicenseBreakdownItem): string {
-    if (lic.exempted_packages?.length && lic.category === 'copyleft') {
+    if (lic.exempted_packages?.length && (lic.category === 'copyleft' || lic.category === 'unapproved')) {
       return 'cat-copyleft-exempted';
     }
     return 'cat-' + lic.category;

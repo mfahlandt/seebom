@@ -103,6 +103,8 @@ cp .env.example .env
 | `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution |
 | `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution |
 | `SKIP_DEPSDEV_RESOLVE` | `false` | Skip deps.dev fallback license resolution |
+| `SKIP_PACKAGIST_RESOLVE` | `false` | Skip Packagist (Composer) license resolution |
+| `SKIP_PYPI_RESOLVE` | `false` | Skip PyPI license resolution |
 | `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | Classification of compound SPDX expressions: `strict`, `permissive-wins` or `off`. See [Deployment → License Policy](/docs/deployment/#4-license-policy) |
 
 {{% alert title="Recommended: Set GITHUB_TOKEN" color="warning" %}}

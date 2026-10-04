@@ -691,10 +691,14 @@ ones — `BSD` (which clause count?), `Apache Software License` (1.1 or 2.0?),
 `Public Domain` (no SPDX ID) — are deliberately not guessed and stay
 **unapproved** until the SBOM is fixed or an exception is added.
 
-The project's own Yarn workspace packages (`pkg:npm/…@0.0.0-use.local`) are,
-like the SBOM's root package, first-party code rather than dependencies. They
-remain in the package list but are excluded from the compliance check, so they
-do not show up as NOASSERTION. The folding modes:
+The project's own Yarn workspace packages (`pkg:npm/…@0.0.0-use.local`) and
+Maven modules with unresolved `${project.*}` coordinates are, like the SBOM's
+root package, first-party code rather than dependencies. They remain in the
+package list but are excluded from the compliance check, so they do not show up
+as NOASSERTION. Every normalization and resolution rule, and why it exists, is
+listed on the [License Resolution](/docs/license-resolution/) page.
+
+The folding modes:
 
 | Mode | `Apache-2.0 AND MIT` | `MIT AND GPL-3.0-only` | `MIT OR GPL-3.0-only` |
 |------|----------------------|------------------------|-----------------------|
@@ -906,6 +910,8 @@ parsingWorker:
   skipNPMResolve: false
   skipNuGetResolve: false
   skipDepsDevResolve: false
+  skipPackagistResolve: false
+  skipPyPIResolve: false
 ```
 
 See [Architecture: License Resolution](/docs/architecture/#license-resolution) for the exact resolution strategy.

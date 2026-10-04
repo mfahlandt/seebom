@@ -650,6 +650,8 @@ cp .env.example .env
 | `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution for npm packages with unknown licenses. |
 | `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution for NuGet packages with unknown licenses. |
 | `SKIP_DEPSDEV_RESOLVE` | `false` | Skip deps.dev fallback license resolution for supported package registries. |
+| `SKIP_PACKAGIST_RESOLVE` | `false` | Skip Packagist license resolution for Composer packages with unknown licenses. |
+| `SKIP_PYPI_RESOLVE` | `false` | Skip PyPI license resolution for Python packages deps.dev could not resolve. |
 | `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | Classification of compound SPDX expressions (`A AND B`, `A OR B`): `strict`, `permissive-wins` or `off`. Overrides `expressionMode` in `license-policy.json`. Re-scan after changing. |
 | `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI |
 | `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand, titles, disclaimer) |

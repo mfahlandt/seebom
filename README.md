@@ -84,6 +84,8 @@ cp .env.example .env
 | `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution for `pkg:npm/*` packages with `NOASSERTION`/empty licenses. |
 | `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution for `pkg:nuget/*` packages with `NOASSERTION`/empty licenses. Legacy packages without `licenseExpression` fall back to their GitHub repository license. |
 | `SKIP_DEPSDEV_RESOLVE` | `false` | Skip deps.dev fallback license resolution for Maven, PyPI, Cargo, Go, NuGet and npm packages with `NOASSERTION`/empty licenses. Composer is not supported by deps.dev. |
+| `SKIP_PACKAGIST_RESOLVE` | `false` | Skip Packagist license resolution for `pkg:composer/*` packages (development branches use the branch's or the latest release's license). |
+| `SKIP_PYPI_RESOLVE` | `false` | Skip PyPI license resolution for `pkg:pypi/*` packages deps.dev could not resolve (free-text licenses, trove classifiers). |
 | `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | How compound SPDX expressions (`Apache-2.0 AND MIT`, `MIT OR GPL-2.0-only`) are classified: `strict` (SPDX semantics), `permissive-wins` (one permissive operand suffices) or `off` (whole string looked up verbatim). Overrides `expressionMode` in `license-policy.json`. See "License Policy". |
 | `CLUSTER_NAME` | *(empty)* | Cluster identifier for multi-cluster deployments. All ingested data is tagged with this value. Empty = single-instance mode. |
 | `NAMESPACE` | *(empty)* | Default deployment-namespace label (#138) stamped onto all ingested data. Overridable per bucket and per upload (`?namespace=`). |
@@ -483,6 +485,7 @@ See the [API Reference](https://docs.bomhort.dev/docs/api-reference/) for comple
 | GET | `/api/v1/vulnerabilities?page=&page_size=` | Paginated vulnerabilities (every finding, VEX status attached) |
 | GET | `/api/v1/vulnerabilities/{id}/affected-projects` | All projects affected by a CVE |
 | GET | `/api/v1/licenses/compliance` | Global license compliance overview |
+| GET | `/api/v1/licenses/sources` | Where package licenses came from, or why they are missing |
 | GET | `/api/v1/projects/license-compliance` | Projects with license violations (filtered by exceptions) |
 | GET | `/api/v1/license-exceptions` | Active license exceptions (read-only, from config file) |
 | GET | `/api/v1/license-policy` | Active license classification policy (permissive/copyleft lists) |

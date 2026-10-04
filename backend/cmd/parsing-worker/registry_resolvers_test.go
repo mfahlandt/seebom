@@ -34,6 +34,36 @@ func (f *fakeResolver) PreloadCache(entries map[string]string) {
 
 func (f *fakeResolver) CacheEntries() map[string]string { return f.cache }
 
+type fakeBatchResolver struct {
+	known map[string]string
+	seen  []string
+	cache map[string]string
+}
+
+func (f *fakeBatchResolver) Resolve(_ context.Context, purl string) string {
+	return f.known[purl]
+}
+
+func (f *fakeBatchResolver) ResolveBatch(_ context.Context, purls []string) map[string]string {
+	f.seen = append(f.seen, purls...)
+	out := make(map[string]string, len(purls))
+	for _, purl := range purls {
+		out[purl] = f.known[purl]
+	}
+	return out
+}
+
+func (f *fakeBatchResolver) PreloadCache(entries map[string]string) {
+	if f.cache == nil {
+		f.cache = map[string]string{}
+	}
+	for k, v := range entries {
+		f.cache[k] = v
+	}
+}
+
+func (f *fakeBatchResolver) CacheEntries() map[string]string { return f.cache }
+
 type fakeStore struct {
 	inserted map[string]map[string]string
 }
@@ -71,6 +101,36 @@ func TestApplyRegistryResolvers(t *testing.T) {
 	// Known licenses (index 5) must never be offered to a resolver.
 	if nuget.calls != 1 {
 		t.Errorf("nuget resolver called %d times, want 1 (only the unknown nuget purl)", nuget.calls)
+	}
+}
+
+func TestApplyRegistryResolvers_BatchResolverRunsAfterNPMForStillUnknownLicenses(t *testing.T) {
+	npm := &fakeResolver{prefix: "pkg:npm/", known: map[string]string{
+		"pkg:npm/a@1": "MIT",
+		"pkg:npm/b@1": "",
+	}}
+	depsdev := &fakeBatchResolver{known: map[string]string{
+		"pkg:npm/b@1":      "ISC",
+		"pkg:maven/g/a@1":  "Apache-2.0",
+		"pkg:cargo/skip@1": "BSD-3-Clause",
+	}}
+	resolvers := []registryResolver{{"npm", npm}, {"depsdev", depsdev}}
+
+	purls := []string{"pkg:npm/a@1", "pkg:npm/b@1", "pkg:maven/g/a@1", "pkg:cargo/skip@1"}
+	licenses := []string{"NOASSERTION", "", "NONE", "MIT"}
+
+	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses)
+
+	wantLicenses := []string{"MIT", "ISC", "Apache-2.0", "MIT"}
+	if !reflect.DeepEqual(licenses, wantLicenses) {
+		t.Errorf("licenses = %v, want %v", licenses, wantLicenses)
+	}
+	wantSeen := []string{"pkg:npm/b@1", "pkg:maven/g/a@1"}
+	if !reflect.DeepEqual(depsdev.seen, wantSeen) {
+		t.Errorf("deps.dev saw %v, want only still-unknown purls %v", depsdev.seen, wantSeen)
+	}
+	if counts["npm"] != 1 || counts["depsdev"] != 2 {
+		t.Errorf("counts = %v, want npm=1 depsdev=2", counts)
 	}
 }
 

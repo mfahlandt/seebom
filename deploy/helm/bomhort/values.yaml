@@ -321,6 +321,7 @@ parsingWorker:
   skipGitHubResolve: false  # Skip GitHub license resolution for unknown licenses
   skipNPMResolve: false     # Skip npm registry license resolution for unknown npm licenses
   skipNuGetResolve: false   # Skip NuGet license resolution for unknown NuGet licenses
+  skipDepsDevResolve: false # Skip deps.dev license resolution for unknown package licenses
   resources:
     requests:
       cpu: 250m

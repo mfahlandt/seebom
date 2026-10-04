@@ -75,8 +75,20 @@ before BOMHort recorded sources have no value; the API reports them as
 
 ### Where you see it
 
-- **License Compliance page → License Resolution**: packages per source and per
-  reason, with example package names on hover.
+- **License Compliance page → License Resolution** (open by default; clicking the
+  *Unknown* card jumps there):
+  - a summary: how many packages the SBOMs left without a license, how many of
+    them BOMHort resolved from public registries (and what share), and how many
+    remain unknown;
+  - packages per source, with example package names on hover;
+  - a table of the remaining unknowns per reason with package and SBOM counts,
+    example packages and what you can do about each reason. First-party
+    components are listed separately as *not counted*, because they are excluded
+    from license compliance ([D8](#d8-first-party-code-is-not-a-dependency)).
+    The table's package total equals the plain `NOASSERTION` entry of the
+    license list; the *Unknown* card can be slightly higher because it also
+    counts expressions that are only partly unknown, e.g.
+    `GPL-2.0-only AND NOASSERTION`.
 - **SBOM → Dependencies tab**: hover a license to see where it came from.
 - **API**: `GET /api/v1/licenses/sources` and the `license_source` field of
   `GET /api/v1/sboms/{id}/dependencies` (see the [API Reference](/docs/api-reference/)).

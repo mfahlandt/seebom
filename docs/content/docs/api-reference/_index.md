@@ -619,6 +619,7 @@ Dependency tree reconstructed as a flat array with parent→child index referenc
     "version": "1.7.2",
     "purl": "pkg:golang/github.com/containerd/containerd@v1.7.2",
     "license": "Apache-2.0",
+    "license_source": "declared",
     "children": [1, 2, 3]
   },
   {
@@ -628,12 +629,15 @@ Dependency tree reconstructed as a flat array with parent→child index referenc
     "version": "1.1.12",
     "purl": "pkg:golang/github.com/opencontainers/runc@v1.1.12",
     "license": "Apache-2.0",
+    "license_source": "github",
     "children": [4, 5]
   }
 ]
 ```
 
 The UI reconstructs the tree by following `children` indices. Root nodes are those not referenced as children by any other node.
+
+`license_source` says where `license` came from (`declared`, `github`, `npm`, `nuget`, `depsdev`, `packagist`, `pypi`, optionally with `+latest` / `+normalized`) or, when the license is still unknown, why (`first-party`, `not-published`, `no-license-upstream`, `no-purl`, `unsupported-ecosystem`, `unresolved`). It is omitted for SBOMs ingested before BOMHort recorded it. See [License Resolution](/docs/license-resolution/).
 
 ---
 
@@ -727,6 +731,43 @@ Aggregated license compliance overview across all projects, with exemption detai
         "document_name": "my-project-v1.0"
       }
     ]
+  }
+]
+```
+
+### `GET /api/v1/licenses/sources`
+
+How every package across all SBOMs got its license — or why it has none. One row per distinct `license_source` value (see [License Resolution](/docs/license-resolution/)), most frequent first. Packages from SBOMs ingested before sources were recorded are counted as `unrecorded`.
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "source": "declared",
+    "origin": "declared",
+    "modifiers": [],
+    "resolved": true,
+    "package_count": 251204,
+    "sbom_count": 498,
+    "examples": ["golang.org/x/sys", "github.com/stretchr/testify"]
+  },
+  {
+    "source": "depsdev+latest",
+    "origin": "depsdev",
+    "modifiers": ["latest"],
+    "resolved": true,
+    "package_count": 812,
+    "sbom_count": 37,
+    "examples": ["org.apache.commons:commons-pool2"]
+  },
+  {
+    "source": "not-published",
+    "origin": "not-published",
+    "modifiers": [],
+    "resolved": false,
+    "package_count": 242,
+    "sbom_count": 19,
+    "examples": ["athenz-zms", "internal-ui"]
   }
 ]
 ```

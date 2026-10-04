@@ -25,7 +25,7 @@ In headless mode (Helm: `ui.enabled: false`), only the API Gateway is deployed. 
 
 ## Authentication
 
-Authentication is **fully optional** and disabled by default. Enable it via the `AUTH_ENABLED=true` environment variable on the API Gateway. See the [Deployment Guide](/docs/deployment/#6-api-authentication-optional) for full setup instructions.
+Authentication is **fully optional** and disabled by default. Enable it via the `AUTH_ENABLED=true` environment variable on the API Gateway. See the [Deployment Guide](/docs/deployment/#7-api-authentication-optional) for full setup instructions.
 
 ### Two modes (combinable)
 
@@ -171,9 +171,10 @@ Aggregated platform statistics for the dashboard view.
   "medium_vulns": 412,
   "low_vulns": 270,
   "license_breakdown": {
-    "Apache-2.0": 8421,
-    "MIT": 6234,
-    "BSD-3-Clause": 2100
+    "permissive": 16755,
+    "copyleft": 312,
+    "unapproved": 41,
+    "unknown": 18
   },
   "exempted_packages": 14,
   "total_vex_statements": 42,
@@ -735,6 +736,8 @@ Aggregated license compliance overview across all projects, with exemption detai
 ]
 ```
 
+`category` is one of `permissive`, `copyleft`, `unapproved` (a declared license that is not on the policy allow-list, e.g. `LicenseRef-…`, `BSD`, `Public Domain`) or `unknown` (no license information, `NOASSERTION` / `NONE`). Why a license is unknown is answered by `GET /api/v1/licenses/sources` below; the rules are on the [License Resolution](/docs/license-resolution/) page.
+
 ### `GET /api/v1/licenses/sources`
 
 How every package across all SBOMs got its license — or why it has none. One row per distinct `license_source` value (see [License Resolution](/docs/license-resolution/)), most frequent first. Packages from SBOMs ingested before sources were recorded are counted as `unrecorded`.
@@ -930,7 +933,7 @@ percent-encoded. `404` when no SBOM resolves to that name.
   "latest_sbom_id": "8ca2efd4-9b83-5b93-a013-d53b7ddc54a9",
   "clusters": ["prod-eu"],
   "namespaces": ["platform"],
-  "license_breakdown": { "permissive": 7, "copyleft": 3, "unknown": 1 },
+  "license_breakdown": { "permissive": 7, "copyleft": 3, "unapproved": 1, "unknown": 1 },
   "parent": "platform-suite",
   "parent_source": "repo",
   "parent_owner": "acme-platform",

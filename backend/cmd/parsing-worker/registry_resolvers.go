@@ -6,16 +6,21 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"github.com/seebom-labs/bomhort/backend/internal/depsdev"
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/npm"
 	"github.com/seebom-labs/bomhort/backend/internal/nuget"
 )
 
-// licenseResolver is implemented by the package-registry resolvers (npm, NuGet).
+// licenseResolver is implemented by the package-registry resolvers.
 type licenseResolver interface {
 	Resolve(ctx context.Context, purl string) string
 	PreloadCache(entries map[string]string)
 	CacheEntries() map[string]string
+}
+
+type batchLicenseResolver interface {
+	ResolveBatch(ctx context.Context, purls []string) map[string]string
 }
 
 // registryResolver couples a resolver with its cache namespace in registry_license_cache.
@@ -46,6 +51,13 @@ func newRegistryResolvers(ctx context.Context, cfg *config.Config, chClient *cli
 		log.Println("NuGet license resolver enabled (api.nuget.org)")
 	} else {
 		log.Println("NuGet license resolver disabled (SKIP_NUGET_RESOLVE=true)")
+	}
+
+	if !cfg.SkipDepsDevResolve {
+		out = append(out, registryResolver{name: "depsdev", resolver: depsdev.NewResolver()})
+		log.Println("deps.dev license resolver enabled (api.deps.dev)")
+	} else {
+		log.Println("deps.dev license resolver disabled (SKIP_DEPSDEV_RESOLVE=true)")
 	}
 
 	for _, rr := range out {
@@ -87,6 +99,35 @@ func resolveViaRegistries(ctx context.Context, store cachePersister, resolvers [
 func applyRegistryResolvers(ctx context.Context, resolvers []registryResolver, purls, licenses []string) map[string]int {
 	counts := make(map[string]int, len(resolvers))
 	for _, rr := range resolvers {
+		if batch, ok := rr.resolver.(batchLicenseResolver); ok {
+			unknownPURLs := make([]string, 0, len(licenses))
+			for i, lic := range licenses {
+				if !isUnknownLicense(lic) {
+					continue
+				}
+				if i >= len(purls) || purls[i] == "" {
+					continue
+				}
+				unknownPURLs = append(unknownPURLs, purls[i])
+			}
+			if len(unknownPURLs) == 0 {
+				continue
+			}
+			resolved := batch.ResolveBatch(ctx, unknownPURLs)
+			for i, lic := range licenses {
+				if !isUnknownLicense(lic) {
+					continue
+				}
+				if i >= len(purls) || purls[i] == "" {
+					continue
+				}
+				if spdx := resolved[purls[i]]; spdx != "" {
+					licenses[i] = spdx
+					counts[rr.name]++
+				}
+			}
+			continue
+		}
 		for i, lic := range licenses {
 			if !isUnknownLicense(lic) {
 				continue

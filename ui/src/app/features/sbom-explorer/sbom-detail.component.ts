@@ -13,6 +13,7 @@ import {
 } from '../../core/api.models';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
+import { licenseSourceTooltip } from '../../shared/license-source';
 
 type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 
@@ -190,6 +191,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
             </span>
             <span class="dep-version">{{ node.version }}</span>
             <span class="dep-license"
+                  [title]="node.licenseTitle"
                   [class.copyleft]="isCopyleft(node.license) && !isExemptedLicense(node.license)"
                   [class.exempted]="isCopyleft(node.license) && isExemptedLicense(node.license)">
               {{ node.license || '—' }}
@@ -613,6 +615,7 @@ export class SbomDetailComponent implements OnInit {
     for (const node of nodes) {
       result.push({
         name: node.name, version: node.version, license: node.license,
+        licenseTitle: licenseSourceTooltip(node.license_source),
         purl: node.purl, level, index: node.index,
       });
     }
@@ -624,6 +627,7 @@ interface FlatDep {
   name: string;
   version: string;
   license: string;
+  licenseTitle: string;
   purl: string;
   level: number;
   index: number;

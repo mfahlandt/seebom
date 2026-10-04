@@ -103,8 +103,23 @@ func TestResolveAndCache(t *testing.T) {
 	if entries["MAVEN:com.google.code.findbugs:jsr305@3.0.2"] != "Apache-2.0" {
 		t.Fatalf("cache missing positive entry: %v", entries)
 	}
-	if v, ok := entries["CARGO:missing@1.0.0"]; !ok || v != "" {
-		t.Fatalf("cache missing negative entry: %v", entries)
+	if v := entries["CARGO:missing@1.0.0"]; v != "!not-published" {
+		t.Fatalf("404 must be cached with its reason, got %q", v)
+	}
+	if v := entries["CARGO:private@1.0.0"]; v != "!no-license-upstream" {
+		t.Fatalf("license-less version must be cached with its reason, got %q", v)
+	}
+	for purl, want := range map[string]string{
+		"pkg:cargo/missing@1.0.0":                         "not-published",
+		"pkg:cargo/private@1.0.0":                         "no-license-upstream",
+		"pkg:maven/com.google.code.findbugs/jsr305@3.0.2": "",
+	} {
+		if handled, reason, latest := r.Explain(purl); !handled || reason != want || latest {
+			t.Errorf("Explain(%s) = (%v, %q, %v), want (true, %q, false)", purl, handled, reason, latest, want)
+		}
+	}
+	if handled, _, _ := r.Explain("pkg:composer/vendor/name@1.0.0"); handled {
+		t.Error("composer is not a deps.dev ecosystem")
 	}
 }
 
@@ -133,6 +148,7 @@ func TestResolveBatch(t *testing.T) {
 				{"request":{"versionKey":{"system":"MAVEN","name":"com.google.code.findbugs:jsr305","version":"3.0.2"}},"version":{"licenses":["Apache-2.0"]}},
 				{"request":{"versionKey":{"system":"CARGO","name":"unicode-ident","version":"1.0.12"}},"version":{"licenses":["Unicode-DFS-2016 AND (Apache-2.0 OR MIT)"]}},
 				{"request":{"versionKey":{"system":"PYPI","name":"unknown","version":"1.0.0"}},"version":{"licenses":[]}},
+				{"request":{"versionKey":{"system":"NPM","name":"private-pkg","version":"1.0.0"}},"version":null},
 				{"request":{"versionKey":{"system":"MAVEN","name":"jakarta.xml.bind:jakarta.xml.bind-api","version":"4.0.2"}},"version":{"licenses":["non-standard"],"licenseDetails":[{"license":"Eclipse Distribution License - v 1.0","spdx":"non-standard"}]}}
 			]
 		}`))
@@ -146,6 +162,7 @@ func TestResolveBatch(t *testing.T) {
 		"pkg:pypi/unknown@1.0.0",
 		"pkg:composer/vendor/name@1.0.0",
 		"pkg:maven/jakarta.xml.bind/jakarta.xml.bind-api@4.0.2",
+		"pkg:npm/private-pkg@1.0.0",
 	}
 	got := r.ResolveBatch(context.Background(), purls)
 	want := map[string]string{
@@ -153,9 +170,16 @@ func TestResolveBatch(t *testing.T) {
 		"pkg:cargo/unicode-ident@1.0.12":                        "Unicode-DFS-2016 AND (Apache-2.0 OR MIT)",
 		"pkg:pypi/unknown@1.0.0":                                "",
 		"pkg:maven/jakarta.xml.bind/jakarta.xml.bind-api@4.0.2": "BSD-3-Clause",
+		"pkg:npm/private-pkg@1.0.0":                             "",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ResolveBatch() = %v, want %v", got, want)
+	}
+	if _, reason, _ := r.Explain("pkg:npm/private-pkg@1.0.0"); reason != "not-published" {
+		t.Errorf("null version in batch must mean not-published, got %q", reason)
+	}
+	if _, reason, _ := r.Explain("pkg:pypi/unknown@1.0.0"); reason != "no-license-upstream" {
+		t.Errorf("empty licenses in batch must mean no-license-upstream, got %q", reason)
 	}
 	before := calls
 	got = r.ResolveBatch(context.Background(), purls)
@@ -263,6 +287,12 @@ func TestResolveBatch_VersionlessUsesDefaultVersion(t *testing.T) {
 	entries := r.CacheEntries()
 	if entries["PYPI:requests@*"] != "Apache-2.0" || entries["PYPI:requests@2.34.2"] != "Apache-2.0" {
 		t.Fatalf("cache missing wildcard or concrete entry: %v", entries)
+	}
+	if _, reason, latest := r.Explain("pkg:maven/org.example/gone@unknown"); reason != "not-published" || !latest {
+		t.Errorf("unknown package without version: reason %q latest %v", reason, latest)
+	}
+	if _, reason, latest := r.Explain("pkg:pypi/requests"); reason != "" || !latest {
+		t.Errorf("versionless resolved package: reason %q latest %v", reason, latest)
 	}
 	// Second call is served from the cache.
 	if got := r.Resolve(context.Background(), "pkg:pypi/requests"); got != "Apache-2.0" || packageCalls != 1 {

@@ -89,11 +89,16 @@ func TestApplyRegistryResolvers(t *testing.T) {
 	purls := []string{"pkg:npm/a@1", "pkg:npm/b@1", "pkg:nuget/C@1", "pkg:golang/x@1", "", "pkg:nuget/D@1"}
 	licenses := []string{"NOASSERTION", "", "NONE", "NOASSERTION", "NOASSERTION", "BSD-3-Clause"}
 
-	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses)
+	sources := make([]string, len(licenses))
+	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses, sources)
 
 	want := []string{"MIT", "", "Apache-2.0", "NOASSERTION", "NOASSERTION", "BSD-3-Clause"}
 	if !reflect.DeepEqual(licenses, want) {
 		t.Errorf("licenses = %v, want %v", licenses, want)
+	}
+	wantSources := []string{"npm", "", "nuget", "", "", ""}
+	if !reflect.DeepEqual(sources, wantSources) {
+		t.Errorf("sources = %v, want %v", sources, wantSources)
 	}
 	if counts["npm"] != 1 || counts["nuget"] != 1 {
 		t.Errorf("counts = %v, want npm=1 nuget=1", counts)
@@ -119,7 +124,7 @@ func TestApplyRegistryResolvers_BatchResolverRunsAfterNPMForStillUnknownLicenses
 	purls := []string{"pkg:npm/a@1", "pkg:npm/b@1", "pkg:maven/g/a@1", "pkg:cargo/skip@1"}
 	licenses := []string{"NOASSERTION", "", "NONE", "MIT"}
 
-	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses)
+	counts := applyRegistryResolvers(context.Background(), resolvers, purls, licenses, nil)
 
 	wantLicenses := []string{"MIT", "ISC", "Apache-2.0", "MIT"}
 	if !reflect.DeepEqual(licenses, wantLicenses) {
@@ -138,40 +143,26 @@ func TestApplyRegistryResolvers_LicensesShorterThanPURLs(t *testing.T) {
 	r := &fakeResolver{prefix: "pkg:npm/", known: map[string]string{"pkg:npm/a@1": "MIT"}}
 	purls := []string{"pkg:npm/a@1", "pkg:npm/b@1"}
 	licenses := []string{"NOASSERTION"}
-	applyRegistryResolvers(context.Background(), []registryResolver{{"npm", r}}, purls, licenses)
+	applyRegistryResolvers(context.Background(), []registryResolver{{"npm", r}}, purls, licenses, []string{""})
 	if licenses[0] != "MIT" || len(licenses) != 1 {
 		t.Errorf("got %v", licenses)
 	}
 }
 
-func TestResolveViaRegistries_PersistsCaches(t *testing.T) {
-	r := &fakeResolver{prefix: "pkg:npm/", known: map[string]string{"pkg:npm/a@1": "MIT"}}
-	r.PreloadCache(map[string]string{"a@1": "MIT"})
+func TestPersistRegistryCaches(t *testing.T) {
+	r := &fakeResolver{prefix: "pkg:npm/"}
+	r.PreloadCache(map[string]string{"a@1": "MIT", "b@1": "!not-published"})
 	empty := &fakeResolver{prefix: "pkg:nuget/"}
 	store := &fakeStore{}
 
-	licenses := []string{"NOASSERTION"}
-	resolveViaRegistries(context.Background(), store,
-		[]registryResolver{{"npm", r}, {"nuget", empty}},
-		[]string{"pkg:npm/a@1"}, licenses)
+	persistRegistryCaches(context.Background(), store, []registryResolver{{"npm", r}, {"nuget", empty}})
 
-	if licenses[0] != "MIT" {
-		t.Errorf("license not resolved: %v", licenses)
-	}
-	if got := store.inserted["npm"]; !reflect.DeepEqual(got, map[string]string{"a@1": "MIT"}) {
-		t.Errorf("npm cache not persisted: %v", store.inserted)
+	if got := store.inserted["npm"]; !reflect.DeepEqual(got, map[string]string{"a@1": "MIT", "b@1": "!not-published"}) {
+		t.Errorf("npm cache (with negative reasons) not persisted: %v", store.inserted)
 	}
 	if _, ok := store.inserted["nuget"]; ok {
 		t.Errorf("empty cache must not be persisted: %v", store.inserted)
 	}
-}
-
-func TestResolveViaRegistries_NilStore(t *testing.T) {
-	r := &fakeResolver{prefix: "pkg:npm/", known: map[string]string{"pkg:npm/a@1": "MIT"}}
-	licenses := []string{"NOASSERTION"}
 	// Must not panic without a persistence backend.
-	resolveViaRegistries(context.Background(), nil, []registryResolver{{"npm", r}}, []string{"pkg:npm/a@1"}, licenses)
-	if licenses[0] != "MIT" {
-		t.Errorf("got %v", licenses)
-	}
+	persistRegistryCaches(context.Background(), nil, []registryResolver{{"npm", r}})
 }

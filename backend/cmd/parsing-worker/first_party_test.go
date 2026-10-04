@@ -12,9 +12,12 @@ func TestLicenseCheckSkips(t *testing.T) {
 		"pkg:npm/app@0.0.0-use.local?vcs_url=x",
 		"pkg:maven/a/b@0.0.0-use.local",
 		"",
+		"pkg:maven/${project.groupId}/athenz-zms-core@unknown",
+		"pkg:maven/%24%7Bproject.parent.groupId%7D/core@1.0",
+		"pkg:maven/org.scalatest/scalatest_${scala.compat.version}@3.3.0",
 	}
 	got := licenseCheckSkips([]uint32{4}, purls)
-	want := []uint32{4, 0, 2}
+	want := []uint32{4, 0, 2, 5, 6}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("licenseCheckSkips() = %v, want %v", got, want)
 	}

@@ -23,6 +23,9 @@ var spdxAliases = map[string]string{
 	"bouncy castle license": "MIT",
 	"the unlicense":         "Unlicense",
 	"unlicense":             "Unlicense",
+	// Composer's documented value for closed-source packages. Not an SPDX ID;
+	// as a LicenseRef it is reported as unapproved rather than mistaken for one.
+	"proprietary": "LicenseRef-proprietary",
 }
 
 // familyRule maps one spelling family to an SPDX ID. spdx receives the
@@ -233,4 +236,24 @@ func LicenseRef(name string) string {
 		ref = strings.TrimRight(ref[:64], "-.")
 	}
 	return "LicenseRef-" + ref
+}
+
+// Recover turns one declared license name from registry metadata into an SPDX
+// expression: a recognisable spelling becomes its SPDX ID ("The MIT License"
+// → "MIT"), anything else a LicenseRef so the package keeps its declared
+// license and is reported as unapproved instead of NOASSERTION. URLs and empty
+// input carry no license name and yield "".
+func Recover(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if isNoLicenseInfo(raw) {
+		return ""
+	}
+	lower := strings.ToLower(raw)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return ""
+	}
+	if norm := Normalize(raw); LooksLikeSPDX(norm) {
+		return norm
+	}
+	return LicenseRef(raw)
 }

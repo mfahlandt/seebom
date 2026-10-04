@@ -89,18 +89,28 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 	}
 	key := CacheKey(PackageVersion{System: pv.System, Name: pv.Name, Version: anyVersion})
 	if cached, found := r.cache.Load(key); found {
-		return cached.(string)
+		lic, _ := license.SplitCacheValue(cached.(string))
+		return lic
 	}
-	lic := ""
-	if v := r.defaultVersion(ctx, pv); v != "" {
-		lic = r.resolveOne(ctx, PackageVersion{System: pv.System, Name: pv.Name, Version: v})
+	v, reason := r.defaultVersion(ctx, pv)
+	value := license.NegativeCacheValue(reason)
+	if v != "" {
+		value = r.resolveOneValue(ctx, PackageVersion{System: pv.System, Name: pv.Name, Version: v})
 	}
-	r.cache.Store(key, lic)
+	r.cache.Store(key, value)
+	lic, _ := license.SplitCacheValue(value)
 	return lic
 }
 
 // resolveOne resolves a single concrete package version, caching the result.
 func (r *Resolver) resolveOne(ctx context.Context, pv PackageVersion) string {
+	lic, _ := license.SplitCacheValue(r.resolveOneValue(ctx, pv))
+	return lic
+}
+
+// resolveOneValue is resolveOne returning the cache encoding (license or
+// negative marker with reason).
+func (r *Resolver) resolveOneValue(ctx context.Context, pv PackageVersion) string {
 	key := CacheKey(pv)
 	if cached, found := r.cache.Load(key); found {
 		return cached.(string)
@@ -110,12 +120,31 @@ func (r *Resolver) resolveOne(ctx context.Context, pv PackageVersion) string {
 		return ""
 	}
 
-	lic := r.fetchLicense(ctx, pv)
-	r.cache.Store(key, lic)
-	if lic != "" {
+	value := r.fetchLicense(ctx, pv)
+	r.cache.Store(key, value)
+	if lic, _ := license.SplitCacheValue(value); lic != "" {
 		log.Printf("  deps.dev license resolved: %s → %s", key, lic)
 	}
-	return lic
+	return value
+}
+
+// Explain reports, for a purl deps.dev covers, why it stayed unresolved (a
+// license.Reason* value, "" when unknown) and whether the license is the
+// default version's because the purl carries no usable version. handled is
+// false for ecosystems deps.dev does not cover.
+func (r *Resolver) Explain(purl string) (handled bool, reason string, latest bool) {
+	pv, ok := extractPackage(purl)
+	if !ok {
+		return false, "", false
+	}
+	latest = pv.Version == ""
+	if latest {
+		pv.Version = anyVersion
+	}
+	if cached, found := r.cache.Load(CacheKey(pv)); found {
+		_, reason = license.SplitCacheValue(cached.(string))
+	}
+	return true, reason, latest
 }
 
 // ResolveBatch returns SPDX license expressions for the provided purls. It uses
@@ -136,7 +165,7 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 		}
 		key := CacheKey(pv)
 		if cached, found := r.cache.Load(key); found {
-			out[purl] = cached.(string)
+			out[purl], _ = license.SplitCacheValue(cached.(string))
 			continue
 		}
 		if _, seen := pending[key]; !seen {
@@ -164,9 +193,9 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 		if pv.Version != anyVersion {
 			continue
 		}
-		version := r.defaultVersion(ctx, pv)
+		version, reason := r.defaultVersion(ctx, pv)
 		if version == "" {
-			resolved[key] = ""
+			resolved[key] = license.NegativeCacheValue(reason)
 			continue
 		}
 		concrete := PackageVersion{System: pv.System, Name: pv.Name, Version: version}
@@ -210,13 +239,14 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 		}
 	}
 	for key := range pending {
-		lic := resolved[key]
+		value := resolved[key]
 		via := ""
 		if ck, ok := defaultOf[key]; ok {
-			lic = resolved[ck]
+			value = resolved[ck]
 			via = " (default version " + strings.TrimPrefix(ck, strings.TrimSuffix(key, anyVersion)) + ")"
 		}
-		r.cache.Store(key, lic)
+		r.cache.Store(key, value)
+		lic, _ := license.SplitCacheValue(value)
 		if lic != "" {
 			log.Printf("  deps.dev license resolved: %s%s → %s", key, via, lic)
 		}
@@ -235,38 +265,42 @@ type packageResponse struct {
 }
 
 // defaultVersion returns the version deps.dev marks as the package's default
-// (normally the latest release), or "" if the package is unknown.
-func (r *Resolver) defaultVersion(ctx context.Context, pv PackageVersion) string {
+// (normally the latest release). When there is none, reason says why if
+// deps.dev gave a definite answer (license.ReasonNotPublished on 404).
+func (r *Resolver) defaultVersion(ctx context.Context, pv PackageVersion) (version, reason string) {
 	if err := r.limiter.Wait(ctx); err != nil {
-		return ""
+		return "", ""
 	}
 	u := fmt.Sprintf("%s/%s/systems/%s/packages/%s",
 		r.baseURL, getAPIVersion, strings.ToLower(pv.System), url.PathEscape(pv.Name))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return ""
+		return "", ""
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "bomhort-license-resolver")
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
 		log.Printf("  deps.dev package request failed for %s: %v", pv.System+":"+pv.Name, err)
-		return ""
+		return "", ""
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", license.ReasonNotPublished
+	}
 	if resp.StatusCode != http.StatusOK {
-		return ""
+		return "", ""
 	}
 	var pr packageResponse
 	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
-		return ""
+		return "", ""
 	}
 	for _, v := range pr.Versions {
 		if v.IsDefault {
-			return v.VersionKey.Version
+			return v.VersionKey.Version, ""
 		}
 	}
-	return ""
+	return "", ""
 }
 
 // PreloadCache seeds the in-memory cache (e.g. from ClickHouse).
@@ -328,11 +362,23 @@ type batchResponse struct {
 		Request struct {
 			VersionKey versionKey `json:"versionKey"`
 		} `json:"request"`
-		Version versionResponse `json:"version"`
+		// Version is null when deps.dev does not know the package version.
+		Version *versionResponse `json:"version"`
 	} `json:"responses"`
 	NextPageToken string `json:"nextPageToken"`
 }
 
+// cacheValue encodes a version lookup: the license, or the reason there is
+// none. deps.dev knowing the version but listing no license means the package
+// metadata declares none.
+func (v versionResponse) cacheValue() string {
+	if lic := v.expression(); lic != "" {
+		return lic
+	}
+	return license.NegativeCacheValue(license.ReasonNoLicenseUpstream)
+}
+
+// fetchLicense looks up one version and returns its cache encoding.
 func (r *Resolver) fetchLicense(ctx context.Context, pv PackageVersion) string {
 	u := fmt.Sprintf("%s/%s/systems/%s/packages/%s/versions/%s",
 		r.baseURL, getAPIVersion, strings.ToLower(pv.System), url.PathEscape(pv.Name), url.PathEscape(pv.Version))
@@ -350,6 +396,9 @@ func (r *Resolver) fetchLicense(ctx context.Context, pv PackageVersion) string {
 		return ""
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return license.NegativeCacheValue(license.ReasonNotPublished)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return ""
 	}
@@ -358,7 +407,7 @@ func (r *Resolver) fetchLicense(ctx context.Context, pv PackageVersion) string {
 	if err := json.NewDecoder(resp.Body).Decode(&vr); err != nil {
 		return ""
 	}
-	return vr.expression()
+	return vr.cacheValue()
 }
 
 func (r *Resolver) fetchLicenseBatch(ctx context.Context, versions []PackageVersion) (map[string]string, bool) {
@@ -401,7 +450,11 @@ func (r *Resolver) fetchLicenseBatch(ctx context.Context, versions []PackageVers
 		}
 		for _, item := range br.Responses {
 			pv := PackageVersion{System: item.Request.VersionKey.System, Name: item.Request.VersionKey.Name, Version: item.Request.VersionKey.Version}
-			resolved[CacheKey(pv)] = item.Version.expression()
+			if item.Version == nil {
+				resolved[CacheKey(pv)] = license.NegativeCacheValue(license.ReasonNotPublished)
+				continue
+			}
+			resolved[CacheKey(pv)] = item.Version.cacheValue()
 		}
 		if br.NextPageToken == "" {
 			return resolved, true
@@ -443,18 +496,7 @@ func NormalizeLicenseDetails(details []licenseDetail) string {
 
 // recoverLicense maps the raw license text of a non-standard detail.
 func recoverLicense(raw string) string {
-	raw = cleanLicense(raw)
-	if raw == "" {
-		return ""
-	}
-	lower := strings.ToLower(raw)
-	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
-		return ""
-	}
-	if norm := license.Normalize(raw); license.LooksLikeSPDX(norm) {
-		return norm
-	}
-	return license.LicenseRef(raw)
+	return license.Recover(cleanLicense(raw))
 }
 
 // NormalizeLicenses converts deps.dev's licenses array into a single SPDX

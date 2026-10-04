@@ -360,40 +360,36 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 		}
 	}
 
-	// 2. Resolve unknown licenses via GitHub API BEFORE inserting into ClickHouse,
-	// so that sbom_packages.package_licenses contains the resolved values.
+	// 2.–2d. Resolve unknown licenses (GitHub, then package registries),
+	// normalise free-text spellings and record each package's license source
+	// BEFORE inserting into ClickHouse, so sbom_packages.package_licenses holds
+	// the resolved values. See resolvePackageLicenses.
+	var ghLookup githubLookup
+	archived := 0
 	if ghResolver != nil {
-		resolved := 0
-		archived := 0
-		for i, lic := range result.Packages.PackageLicenses {
-			purl := ""
-			if i < len(result.Packages.PackagePURLs) {
-				purl = result.Packages.PackagePURLs[i]
+		ghLookup = func(ctx context.Context, purl string) string {
+			meta := ghResolver.ResolveWithMetadata(ctx, purl)
+			if meta == nil {
+				return ""
 			}
-			if purl == "" {
-				continue
+			if meta.Archived {
+				archived++
 			}
-
-			// For unknown licenses, fetch full metadata (license + archived status)
-			if lic == "" || lic == "NOASSERTION" || lic == "NONE" {
-				if meta := ghResolver.ResolveWithMetadata(ctx, purl); meta != nil {
-					if meta.SPDXID != "" {
-						result.Packages.PackageLicenses[i] = meta.SPDXID
-						resolved++
-					}
-					if meta.Archived {
-						archived++
-					}
-				}
-			}
+			return meta.SPDXID
 		}
-		if resolved > 0 {
-			log.Printf("  Resolved %d unknown licenses via GitHub API", resolved)
+	}
+	sources, resolvedBy := resolvePackageLicenses(ctx, ghLookup, registryResolvers,
+		result.Packages.PackagePURLs, result.Packages.PackageLicenses, result.Packages.RootIndices)
+	result.Packages.PackageLicenseSources = sources
+	for name, n := range resolvedBy {
+		if n > 0 {
+			log.Printf("  Resolved %d unknown licenses via %s", n, name)
 		}
-		if archived > 0 {
-			log.Printf("  ⚠️  Found %d packages using ARCHIVED GitHub repos", archived)
-		}
-		// Persist caches to ClickHouse.
+	}
+	if archived > 0 {
+		log.Printf("  ⚠️  Found %d packages using ARCHIVED GitHub repos", archived)
+	}
+	if ghResolver != nil {
 		if entries := ghResolver.CacheEntries(); len(entries) > 0 {
 			_ = chClient.InsertGitHubLicenseCache(ctx, entries)
 		}
@@ -401,15 +397,8 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 			_ = chClient.InsertGitHubRepoMetadata(ctx, metaEntries)
 		}
 	}
+	persistRegistryCaches(ctx, chClient, registryResolvers)
 
-	// 2b. Resolve remaining unknown licenses via package registries.
-	resolveViaRegistries(ctx, chClient, registryResolvers, result.Packages.PackagePURLs, result.Packages.PackageLicenses)
-
-	// 2c. Rewrite free-text spellings ("MPL 2.0") to SPDX IDs so the stored
-	// licenses, the compliance rows and the exception matching all agree.
-	for i, lic := range result.Packages.PackageLicenses {
-		result.Packages.PackageLicenses[i] = license.Normalize(lic)
-	}
 	// 3. Insert SBOM metadata. Every row written from here on carries the
 	// job's ownership dimensions (#131 cluster, #138 namespace, #57 project).
 	own := ownershipOf(job)

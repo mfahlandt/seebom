@@ -23,7 +23,8 @@ Two principles hold throughout:
    not which license it is.
 2. **Every package says where its license came from, or why it has none.** The
    parsing worker stores a *license source* next to each package license
-   (`sbom_packages.package_license_sources`, migration `024`). An unknown
+   (`sbom_packages.package_license_sources`, migration `024`,
+   [#439](https://github.com/seebom-labs/bomhort/issues/439)). An unknown
    license is no longer a dead end: it carries a reason, so you can tell an
    actionable gap from one where looking further makes no sense.
 

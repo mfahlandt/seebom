@@ -1,4 +1,4 @@
-import { describeLicenseSource, licenseSourceTooltip } from './license-source';
+import { describeLicenseSource, isExcludedFromCompliance, licenseReasonHint, licenseSourceTooltip } from './license-source';
 
 describe('license-source', () => {
   it('returns null for missing sources (pre-migration rows)', () => {
@@ -24,6 +24,15 @@ describe('license-source', () => {
       expect(describeLicenseSource(reason)!.resolved).toBe(false);
     }
     expect(licenseSourceTooltip('not-published')).toContain('Unknown: Not published');
+  });
+
+  it('gives every unresolved reason a hint and excludes only first-party', () => {
+    for (const reason of ['first-party', 'not-published', 'no-license-upstream', 'no-purl',
+      'unsupported-ecosystem', 'unresolved', 'unrecorded']) {
+      expect(licenseReasonHint(reason)).not.toBe('');
+      expect(isExcludedFromCompliance(reason)).toBe(reason === 'first-party');
+    }
+    expect(licenseReasonHint('npm')).toBe('');
   });
 
   it('falls back to the raw value for unknown vocabulary', () => {

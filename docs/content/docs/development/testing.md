@@ -229,7 +229,7 @@ npx ng test --watch=false
 | `archived-packages.component.spec.ts` | 10 | Data loading, grouped display |
 | `dashboard.component.spec.ts` | 2 | Component creation, data loading |
 | `fleet-view.component.spec.ts` | 3 | Cluster → namespace → project tree |
-| `license-overview.component.spec.ts` | 3 | Category cards, License Resolution panel (resolved vs unknown) |
+| `license-overview.component.spec.ts` | 4 | Category cards, License Resolution panel: resolved share, unknown reasons with hints, first-party excluded |
 | `project-detail.component.spec.ts` | 12 | Project detail tabs and stats |
 | `project-list.component.spec.ts` | 18 | Project loading, search, tags, grouping |
 | `parent-group-list.component.spec.ts` | 6 | Parent → project grouping |
@@ -244,8 +244,8 @@ npx ng test --watch=false
 | `version-skew.spec.ts` | 3 | Paginated loading, search |
 | `vulnerability-list.component.spec.ts` | 2 | Component creation, vuln list loading |
 | `global-search.component.spec.ts` | 5 | Navbar search box |
-| `license-source.spec.ts` | 4 | License source labels and tooltips |
-| **Total** | **140** | **21 spec files** |
+| `license-source.spec.ts` | 5 | License source labels, tooltips, reason hints |
+| **Total** | **142** | **21 spec files** |
 
 ### Test Patterns (Angular)
 

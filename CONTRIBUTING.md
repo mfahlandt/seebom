@@ -55,6 +55,7 @@ See the [Development Guide](https://docs.bomhort.dev/docs/development/) for deta
 
 - All new features must have tests
 - Run `cd backend && go test ./... -count=1 -race` before submitting
+- Changed or added a ClickHouse query? Add it to `TestQueriesExecute` and run it against a live database: `make dev-up`, then `CLICKHOUSE_HOST=localhost go test ./internal/clickhouse/ -run TestQueriesExecute` (skipped without `CLICKHOUSE_HOST`)
 - See [Testing Guide](https://docs.bomhort.dev/docs/development/testing/) for patterns and conventions
 
 ### Demo SBOMs

@@ -91,7 +91,7 @@ backend/
 
 ## Current Test Inventory
 
-Counted on 2026-10-04 with `go test ./... -count=1 -race -json` (top-level tests and `t.Run` subtests that ran).
+Counted on 2026-10-04 with `CLICKHOUSE_HOST=localhost go test ./... -count=1 -race -json` against `make dev-up` (top-level tests and `t.Run` subtests that ran). Without `CLICKHOUSE_HOST`, the four query smoke tests in `internal/clickhouse/queries_integration_test.go` are skipped — run them whenever you add or change a query, and add new queries to `TestQueriesExecute`.
 
 | Package | Tests | Subtests | What's Covered |
 |---------|-------|----------|---------------|
@@ -100,8 +100,8 @@ Counted on 2026-10-04 with `go test ./... -count=1 -race -json` (top-level tests
 | `cmd/mcp-server` | 23 | 8 | Tool surface, transports, Origin/token guards |
 | `cmd/parsing-worker` | 30 | 30 | **License pipeline golden test**, **docs-sync test** (see below), license provenance and unresolved-reason precedence, first-party detection, registry resolvers, ownership propagation to every row type incl. all statements in a VEX document |
 | `internal/apiclient` | 11 | 4 | Read-only REST client used by the MCP server |
-| `internal/clickhouse` | 23 | 13 | Query helpers, license source labels, **migration/schema drift (no DB required)**: migrations replayed into an in-memory schema, every `INSERT INTO` column asserted to exist, ownership columns required on all data tables, all `ingestion_queue` writers share one column list, migration numbers unique + contiguous |
-| `internal/config` | 44 | 0 | Defaults, env vars, S3 buckets JSON, shared settings inheritance, auth modes, resolver switches |
+| `internal/clickhouse` | 37 | 54 | Query helpers, license source labels, `package_license_sources` padding, **query smoke tests against a real ClickHouse** (every read query plans and executes; needs `CLICKHOUSE_HOST`), **migration/schema drift (no DB required)**: migrations replayed into an in-memory schema, every `INSERT INTO` column asserted to exist, ownership columns required on all data tables, all `ingestion_queue` writers share one column list, migration numbers unique + contiguous |
+| `internal/config` | 45 | 6 | Defaults, env vars, S3 buckets JSON, shared settings inheritance, auth modes, resolver switches |
 | `internal/cyclonedx` | 16 | 4 | CycloneDX parsing |
 | `internal/depsdev` | 8 | 19 | deps.dev batch + per-version lookups, raw-license recovery, versionless (`@*`) resolution, negative reasons |
 | `internal/docstore` | 27 | 8 | fs/S3 original-document store, reference-driven reads |
@@ -127,7 +127,7 @@ Counted on 2026-10-04 with `go test ./... -count=1 -race -json` (top-level tests
 | `internal/vex` | 12 | 13 | Parse, normalizeVulnID, URL patterns |
 | `pkg/dto` | 8 | 0 | JSON serialization |
 | `pkg/models` | 6 | 0 | Ownership fields, omitempty |
-| **Total** | **509** | **545** | |
+| **Total** | **524** | **592** | |
 
 ### License resolution: golden and docs-sync tests
 
@@ -227,7 +227,7 @@ npx ng test --watch=false
 | `app.spec.ts` | 6 | App creation, navbar, navigation |
 | `api.service.spec.ts` | 18 | HTTP methods incl. license sources, error handling, pagination params |
 | `archived-packages.component.spec.ts` | 10 | Data loading, grouped display |
-| `dashboard.component.spec.ts` | 2 | Component creation, data loading |
+| `dashboard.component.spec.ts` | 3 | Component creation, data loading, Not Approved license segment |
 | `fleet-view.component.spec.ts` | 3 | Cluster → namespace → project tree |
 | `license-overview.component.spec.ts` | 4 | Category cards, License Resolution panel: resolved share, unknown reasons with hints, first-party excluded |
 | `project-detail.component.spec.ts` | 12 | Project detail tabs and stats |
@@ -239,13 +239,13 @@ npx ng test --watch=false
 | `cve-impact.component.spec.ts` | 2 | CVE search, project listing |
 | `dependency-stats.component.spec.ts` | 2 | Top dependencies, unique deps counter |
 | `global-search-results.component.spec.ts` | 3 | Global search results |
-| `license-violations.component.spec.ts` | 6 | Violations tab, exceptions tab |
+| `license-violations.component.spec.ts` | 7 | Violations tab, exceptions tab, not-approved badge |
 | `package-search.spec.ts` | 8 | Search, expandable results, detail navigation |
 | `version-skew.spec.ts` | 3 | Paginated loading, search |
 | `vulnerability-list.component.spec.ts` | 2 | Component creation, vuln list loading |
 | `global-search.component.spec.ts` | 5 | Navbar search box |
 | `license-source.spec.ts` | 5 | License source labels, tooltips, reason hints |
-| **Total** | **142** | **21 spec files** |
+| **Total** | **144** | **21 spec files** |
 
 ### Test Patterns (Angular)
 

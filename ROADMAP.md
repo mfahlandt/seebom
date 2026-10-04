@@ -190,9 +190,9 @@ The second questionnaire: cryptographic inventory, crypto agility, PQC migration
 
 | # | Issue | Migration | Notes |
 |---|-------|-----------|-------|
-| **#415** | Ingest CycloneDX 1.6 `cryptographic-asset` components → `crypto_assets` | `02x_create_crypto_assets` | Base. Today a CBOM is mis-filed as packages without PURL. |
+| **#415** | Ingest CycloneDX 1.6 `cryptographic-asset` components → `crypto_assets` | `03x_create_crypto_assets` | Base. Today a CBOM is mis-filed as packages without PURL. |
 | **#416** | Cryptographic inventory — algorithms, protocols, certificates (expiry), keys per project/fleet | none | Fourth dimension next to packages/vulns/licenses. |
-| **#417** | `crypto-policy.json` + `crypto-exceptions.json` — deprecated/forbidden algorithms, key sizes, protocol versions; BSI TR-02102 / NIST SP 800-131A example profiles | `02x_create_crypto_compliance` | Exact precedent: license policy. |
+| **#417** | `crypto-policy.json` + `crypto-exceptions.json` — deprecated/forbidden algorithms, key sizes, protocol versions; BSI TR-02102 / NIST SP 800-131A example profiles | `03x_create_crypto_compliance` | Exact precedent: license policy. |
 | **#418** | PQC readiness — `quantum_vulnerable` / `hybrid` / `pqc` classification, readiness % per project, migration list, trend | reuses `crypto_compliance` | Agility is reported as *indicators* only — see #420 for what is and is not claimed. |
 | **#420** | Umbrella: docs page, exports | — | Closes with #418. |
 
@@ -245,11 +245,11 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | `029_create_vulnerability_resolutions` | #7 | New table | **pre** (v1.0.0, stretch) | market (additive) |
 | — (endpoint) | #62 | Report bundle (CSV + JSON + manifest) | **pre** (v1.0.0) | market |
 | `030_create_crypto_libraries` | #419 | New table (or MV over `sbom_packages`) | **pre** (v1.0.0) | market (additive; values: `cryptoLibraries.*`) |
-| `02x_create_package_index_mv` | #344-C/D/E | MV + skip indexes | post | additive |
-| `02x_create_upload_jobs` | #336 | New table | post | additive |
-| `02x_create_attestations` | #143 | New table | post | additive |
-| `02x_create_crypto_assets`, `02x_create_crypto_compliance` | #415, #417 | New tables | post (v1.1.0) | additive |
-| `02x_*` | #61, #82, #255, #60 | Enrichment / overlay / mirror tables | post | additive |
+| `03x_create_package_index_mv` | #344-C/D/E | MV + skip indexes | post | additive |
+| `03x_create_upload_jobs` | #336 | New table | post | additive |
+| `03x_create_attestations` | #143 | New table | post | additive |
+| `03x_create_crypto_assets`, `03x_create_crypto_compliance` | #415, #417 | New tables | post (v1.1.0) | additive |
+| `03x_*` | #61, #82, #255, #60 | Enrichment / overlay / mirror tables | post | additive |
 | — | #268 | Operator swap (`values.yaml` breaking) | **v2.0** | breaking |
 
 ---

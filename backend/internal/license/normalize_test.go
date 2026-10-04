@@ -125,3 +125,44 @@ func TestLicenseRef(t *testing.T) {
 		t.Errorf("LicenseRef did not truncate: %q", got)
 	}
 }
+
+func TestRecover(t *testing.T) {
+	tests := []struct{ in, want string }{
+		// Recognisable spellings become SPDX.
+		{"The MIT License", "MIT"},
+		{"Apache License, Version 2.0", "Apache-2.0"},
+		{"  MIT  ", "MIT"},
+		{"MIT OR Apache-2.0", "MIT OR Apache-2.0"},
+		// Unrecognised names keep the declared license as a LicenseRef.
+		{"Remix Icon License 1.0", "LicenseRef-Remix-Icon-License-1.0"},
+		{"Public Domain", "LicenseRef-Public-Domain"},
+		{"proprietary", "LicenseRef-proprietary"},
+		// A single ID-like token is kept as declared (unapproved), not guessed.
+		{"BSD", "BSD"},
+		// No license name at all.
+		{"", ""},
+		{"NOASSERTION", ""},
+		{"NONE", ""},
+		{"https://opensource.org/licenses/MIT", ""},
+		{"HTTP://example.com/LICENSE", ""},
+	}
+	for _, tt := range tests {
+		if got := Recover(tt.in); got != tt.want {
+			t.Errorf("Recover(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestLicenseRefLength(t *testing.T) {
+	long := strings.Repeat("Very Long License Name ", 10)
+	ref := LicenseRef(long)
+	if !strings.HasPrefix(ref, "LicenseRef-") || len(ref) > len("LicenseRef-")+64 {
+		t.Errorf("LicenseRef(long) = %q, want a LicenseRef of at most 64 characters", ref)
+	}
+	if strings.HasSuffix(ref, "-") {
+		t.Errorf("LicenseRef(long) = %q ends with a separator", ref)
+	}
+	if got := LicenseRef(" -- "); got != "" {
+		t.Errorf("LicenseRef(punctuation) = %q, want \"\"", got)
+	}
+}

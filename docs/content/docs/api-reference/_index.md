@@ -936,7 +936,7 @@ or PURL.
 
 ### `GET /api/v1/projects/license-compliance`
 
-Projects with copyleft or unknown license packages (filtered by active exceptions).
+Projects with copyleft, unapproved or unknown license packages (filtered by active exceptions). `unapproved_count` counts packages whose declared license is not on the policy allow-list; `unknown_count` counts packages without license information.
 
 **Response:** `200 OK`
 ```json
@@ -946,8 +946,9 @@ Projects with copyleft or unknown license packages (filtered by active exception
     "source_file": "my-project.spdx.json",
     "document_name": "my-project-v2.1",
     "copyleft_count": 3,
+    "unapproved_count": 2,
     "unknown_count": 1,
-    "violating_licenses": ["LGPL-2.1-only", "UNKNOWN"],
+    "violating_licenses": ["LGPL-2.1-only", "CC0-1.0", "NOASSERTION"],
     "non_compliant_packages": ["github.com/some/lgpl-lib", "github.com/unknown/pkg"]
   }
 ]
@@ -1294,7 +1295,8 @@ Per-cluster dashboard statistics including severity breakdown and license distri
   "license_breakdown": {
     "permissive": 9800,
     "copyleft": 340,
-    "unknown": 2260
+    "unapproved": 410,
+    "unknown": 1850
   },
   "last_ingested": "2026-06-01T14:30:00Z"
 }

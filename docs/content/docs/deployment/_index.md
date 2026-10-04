@@ -653,7 +653,16 @@ source of truth for the exceptions and their review history.
 
 ## 4. License Policy
 
-The license policy defines which SPDX IDs are classified as **permissive**, **copyleft**, or **unknown**.
+The license policy defines which SPDX IDs are classified as **permissive** or **copyleft**. Every license is then in one of four categories:
+
+| Category | Meaning | Violation |
+|----------|---------|-----------|
+| `permissive` | Listed under `permissive` in the policy | no |
+| `copyleft` | Listed under `copyleft` in the policy | yes |
+| `unapproved` | A declared license the policy does not list (e.g. `CC0-1.0`, `Unlicense`, `LicenseRef-…`) — not necessarily copyleft, but nobody approved it | yes |
+| `unknown` | No license information in the SBOM (`NOASSERTION`, `NONE`, empty) after resolution, or an unparseable expression | yes (needs review) |
+
+Approve an `unapproved` license by adding it to the policy, or per package via `license-exceptions.json`.
 
 ```bash
 kubectl edit configmap bomhort-license-policy
@@ -665,15 +674,25 @@ kubectl rollout restart deployment bomhort-api-gateway bomhort-parsing-worker
 Declared licenses are often expressions rather than single IDs —
 `Apache-2.0 AND BSD-3-Clause AND MIT`, `MIT OR GPL-2.0-only`,
 `GPL-2.0-only WITH Classpath-exception-2.0`. BOMHort parses them (precedence
-`WITH` > `AND` > `OR`, parentheses, case-insensitive operators, deprecated `+`)
+`WITH` > `AND` > `OR`, parentheses, case-insensitive operators, deprecated `+`,
+and deprecated bare GNU IDs such as `GPL-2.0` → `GPL-2.0-only` or
+`GPL-2.0-with-classpath-exception` → `GPL-2.0-only`)
 and folds the operands into one category according to
-`licensePolicy.expressionMode`:
+`licensePolicy.expressionMode`.
+
+Before that, common free-text spellings are rewritten to SPDX IDs at ingest
+(`MPL 2.0` → `MPL-2.0`, `CC BY-SA 4.0` → `CC-BY-SA-4.0`,
+`Apache License, Version 2.0` → `Apache-2.0`, also inside expressions), so the
+stored package license already carries the SPDX form. Ambiguous spellings —
+`BSD` (which clause count?), `Public Domain` (no SPDX ID) — are deliberately
+not guessed and stay **unapproved** until the SBOM is fixed or an exception is
+added. The folding modes:
 
 | Mode | `Apache-2.0 AND MIT` | `MIT AND GPL-3.0-only` | `MIT OR GPL-3.0-only` |
 |------|----------------------|------------------------|-----------------------|
 | `strict` (default) | permissive | copyleft | permissive |
 | `permissive-wins` | permissive | permissive | permissive |
-| `off` | unknown | unknown | unknown |
+| `off` | unapproved | unapproved | unapproved |
 
 ```yaml
 licensePolicy:
@@ -687,6 +706,11 @@ it). `off` restores the pre-evaluation behaviour. The Helm value overrides the
 `expressionMode` field of the policy file; an invalid value fails
 `helm template`. A verbatim policy entry for a whole expression always wins,
 and a malformed expression stays `unknown`.
+
+Folding uses the order permissive < unknown < unapproved < copyleft: `AND`
+(under `strict`) takes the worst operand, `OR` the best — so
+`MIT AND CC0-1.0` is `unapproved` and `CDDL-1.0 OR GPL-2.0-only` is
+`unapproved` rather than copyleft.
 
 {{% alert title="Re-process after changing the mode" color="warning" %}}
 The mode is applied when an SBOM is parsed. Existing rows keep their stored
@@ -866,13 +890,14 @@ helm install bomhort deploy/helm/bomhort/ -n bomhort -f values.yaml \
 
 See [FAQ: Should I use a GitHub token?](/docs/faq/#should-i-use-a-github-token) for more details and how to re-ingest after adding a token.
 
-Licenses that are still unknown after the GitHub pass are looked up in the public package registries for **npm** (`registry.npmjs.org`) and **NuGet** (`api.nuget.org`). These lookups need no credentials and are rate-limited client-side (5 req/s per worker). They can be disabled individually, e.g. in air-gapped environments:
+Licenses that are still unknown after the GitHub pass are looked up in public package registries for **npm** (`registry.npmjs.org`), **NuGet** (`api.nuget.org`) and **deps.dev** (`api.deps.dev`, covering Maven, PyPI, Cargo, Go, NuGet and npm exact versions). These lookups need no credentials and are rate-limited client-side. They can be disabled individually, e.g. in air-gapped environments:
 
 ```yaml
 parsingWorker:
   skipGitHubResolve: false
   skipNPMResolve: false
   skipNuGetResolve: false
+  skipDepsDevResolve: false
 ```
 
 See [Architecture: License Resolution](/docs/architecture/#license-resolution) for the exact resolution strategy.

@@ -30,7 +30,11 @@ interface GroupedProject {
           <h3>Copyleft</h3>
           <span class="count">{{ getCategoryCount('copyleft') | number }}</span>
         </div>
-        <div class="category-card unknown">
+        <div class="category-card unapproved" title="Declared license that is not on the policy allow-list">
+          <h3>Not Approved</h3>
+          <span class="count">{{ getCategoryCount('unapproved') | number }}</span>
+        </div>
+        <div class="category-card unknown" title="No license information in the SBOM (NOASSERTION / NONE)">
           <h3>Unknown</h3>
           <span class="count">{{ getCategoryCount('unknown') | number }}</span>
         </div>
@@ -139,6 +143,7 @@ interface GroupedProject {
     .category-card h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-secondary); margin: 0 0 4px; font-weight: 600; }
     .permissive { background: var(--surface-alt); }
     .copyleft { background: var(--severity-critical-bg); }
+    .unapproved { background: var(--severity-high-bg); }
     .unknown { background: var(--surface-alt); }
     .exempted { background: var(--status-success-bg); }
     .count { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
@@ -181,6 +186,7 @@ interface GroupedProject {
     .cat-permissive { background: var(--status-success-bg); color: var(--status-success); }
     .cat-copyleft { background: var(--severity-critical-bg); color: var(--severity-critical); }
     .cat-copyleft-exempted { background: var(--status-success-bg); color: var(--status-success); }
+    .cat-unapproved { background: var(--severity-high-bg); color: var(--severity-high); }
     .cat-unknown { background: var(--bg); color: var(--text-secondary); }
 
     .header-main { display: flex; align-items: center; gap: 8px; min-width: 280px; }
@@ -265,8 +271,9 @@ export class LicenseOverviewComponent implements OnInit {
 
   private readonly severityOrder: Record<string, number> = {
     copyleft: 0,
-    unknown: 1,
-    permissive: 2,
+    unapproved: 1,
+    unknown: 2,
+    permissive: 3,
   };
 
   constructor(
@@ -289,7 +296,7 @@ export class LicenseOverviewComponent implements OnInit {
   }
 
   getCategoryClass(item: LicenseComplianceItem): string {
-    if (item.category === 'copyleft' && item.exempted_packages?.length) {
+    if ((item.category === 'copyleft' || item.category === 'unapproved') && item.exempted_packages?.length) {
       return 'cat-copyleft-exempted';
     }
     return 'cat-' + item.category;
@@ -315,8 +322,8 @@ export class LicenseOverviewComponent implements OnInit {
     this.licenses = [...this.rawLicenses].sort((a, b) => {
       switch (this.sortField) {
         case 'severity': {
-          const sa = this.severityOrder[a.category] ?? 1;
-          const sb = this.severityOrder[b.category] ?? 1;
+          const sa = this.severityOrder[a.category] ?? 2;
+          const sb = this.severityOrder[b.category] ?? 2;
           // exempted copyleft should sort between copyleft and unknown
           const ea = a.exempted_packages?.length ? 0.5 : 0;
           const eb = b.exempted_packages?.length ? 0.5 : 0;

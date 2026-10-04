@@ -682,11 +682,19 @@ and folds the operands into one category according to
 
 Before that, common free-text spellings are rewritten to SPDX IDs at ingest
 (`MPL 2.0` → `MPL-2.0`, `CC BY-SA 4.0` → `CC-BY-SA-4.0`,
-`Apache License, Version 2.0` → `Apache-2.0`, also inside expressions), so the
-stored package license already carries the SPDX form. Ambiguous spellings —
-`BSD` (which clause count?), `Public Domain` (no SPDX ID) — are deliberately
-not guessed and stay **unapproved** until the SBOM is fixed or an exception is
-added. The folding modes:
+`The Apache Software License, Version 2.0` → `Apache-2.0`,
+`Eclipse Public License - v 1.0` → `EPL-1.0`,
+`Lesser General Public License, version 3 or greater` → `LGPL-3.0-or-later`,
+also inside expressions), so the stored package license already carries the
+SPDX form. Only spellings that name an explicit version are mapped. Ambiguous
+ones — `BSD` (which clause count?), `Apache Software License` (1.1 or 2.0?),
+`Public Domain` (no SPDX ID) — are deliberately not guessed and stay
+**unapproved** until the SBOM is fixed or an exception is added.
+
+The project's own Yarn workspace packages (`pkg:npm/…@0.0.0-use.local`) are,
+like the SBOM's root package, first-party code rather than dependencies. They
+remain in the package list but are excluded from the compliance check, so they
+do not show up as NOASSERTION. The folding modes:
 
 | Mode | `Apache-2.0 AND MIT` | `MIT AND GPL-3.0-only` | `MIT OR GPL-3.0-only` |
 |------|----------------------|------------------------|-----------------------|
@@ -890,7 +898,7 @@ helm install bomhort deploy/helm/bomhort/ -n bomhort -f values.yaml \
 
 See [FAQ: Should I use a GitHub token?](/docs/faq/#should-i-use-a-github-token) for more details and how to re-ingest after adding a token.
 
-Licenses that are still unknown after the GitHub pass are looked up in public package registries for **npm** (`registry.npmjs.org`), **NuGet** (`api.nuget.org`) and **deps.dev** (`api.deps.dev`, covering Maven, PyPI, Cargo, Go, NuGet and npm exact versions). These lookups need no credentials and are rate-limited client-side. They can be disabled individually, e.g. in air-gapped environments:
+Licenses that are still unknown after the GitHub pass are looked up in public package registries for **npm** (`registry.npmjs.org`), **NuGet** (`api.nuget.org`) and **deps.dev** (`api.deps.dev`, covering Maven, PyPI, Cargo, Go, NuGet and npm; a package without a usable version is resolved via its latest release). These lookups need no credentials and are rate-limited client-side. They can be disabled individually, e.g. in air-gapped environments:
 
 ```yaml
 parsingWorker:

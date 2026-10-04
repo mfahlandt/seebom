@@ -20,6 +20,7 @@ import (
 
 	json "github.com/goccy/go-json"
 
+	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/ratelimit"
 )
 
@@ -32,6 +33,10 @@ const (
 	maxBatchSize    = 5000
 	batchAPIVersion = "v3alpha"
 	getAPIVersion   = "v3"
+
+	// anyVersion stands in for the version in cache keys of purls that name
+	// no usable version; those resolve via the package's default version.
+	anyVersion = "*"
 )
 
 // Resolver resolves package licenses via deps.dev.
@@ -69,15 +74,33 @@ func CacheKey(pv PackageVersion) string {
 }
 
 // Resolve returns the SPDX license expression for purl, or "" if deps.dev does
-// not support the ecosystem, the purl does not name an exact version, or the
-// version has no standard SPDX license data. Results, including negatives, are
-// cached in memory.
+// not support the ecosystem or has no license data for it. A purl without a
+// usable version ("pkg:pypi/requests", "…@unknown") resolves via the package's
+// default (latest) version — licenses rarely change between versions, and a
+// best guess beats NOASSERTION. Results, including negatives, are cached in
+// memory.
 func (r *Resolver) Resolve(ctx context.Context, purl string) string {
-	pv, ok := ExtractPackageVersion(purl)
+	pv, ok := extractPackage(purl)
 	if !ok {
 		return ""
 	}
+	if pv.Version != "" {
+		return r.resolveOne(ctx, pv)
+	}
+	key := CacheKey(PackageVersion{System: pv.System, Name: pv.Name, Version: anyVersion})
+	if cached, found := r.cache.Load(key); found {
+		return cached.(string)
+	}
+	lic := ""
+	if v := r.defaultVersion(ctx, pv); v != "" {
+		lic = r.resolveOne(ctx, PackageVersion{System: pv.System, Name: pv.Name, Version: v})
+	}
+	r.cache.Store(key, lic)
+	return lic
+}
 
+// resolveOne resolves a single concrete package version, caching the result.
+func (r *Resolver) resolveOne(ctx context.Context, pv PackageVersion) string {
 	key := CacheKey(pv)
 	if cached, found := r.cache.Load(key); found {
 		return cached.(string)
@@ -104,9 +127,12 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 	purlsByKey := make(map[string][]string)
 
 	for _, purl := range purls {
-		pv, ok := ExtractPackageVersion(purl)
+		pv, ok := extractPackage(purl)
 		if !ok {
 			continue
+		}
+		if pv.Version == "" {
+			pv.Version = anyVersion
 		}
 		key := CacheKey(pv)
 		if cached, found := r.cache.Load(key); found {
@@ -122,12 +148,40 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 		return out
 	}
 
+	resolved := make(map[string]string, len(pending))
+	// Versionless purls borrow the license of the package's default version.
+	defaultOf := make(map[string]string) // wildcard key → concrete key
 	items := make([]PackageVersion, 0, len(pending))
-	for _, pv := range pending {
+	queued := make(map[string]bool, len(pending))
+	for key, pv := range pending {
+		if pv.Version == anyVersion {
+			continue
+		}
 		items = append(items, pv)
+		queued[key] = true
+	}
+	for key, pv := range pending {
+		if pv.Version != anyVersion {
+			continue
+		}
+		version := r.defaultVersion(ctx, pv)
+		if version == "" {
+			resolved[key] = ""
+			continue
+		}
+		concrete := PackageVersion{System: pv.System, Name: pv.Name, Version: version}
+		ck := CacheKey(concrete)
+		defaultOf[key] = ck
+		if cached, found := r.cache.Load(ck); found {
+			resolved[ck] = cached.(string)
+			continue
+		}
+		if !queued[ck] {
+			items = append(items, concrete)
+			queued[ck] = true
+		}
 	}
 
-	resolved := make(map[string]string, len(pending))
 	for start := 0; start < len(items); start += maxBatchSize {
 		end := start + maxBatchSize
 		if end > len(items) {
@@ -149,20 +203,70 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 		}
 	}
 
-	for key, pv := range pending {
-		lic, ok := resolved[key]
-		if !ok {
-			lic = ""
+	for _, pv := range items {
+		ck := CacheKey(pv)
+		if _, isPending := pending[ck]; !isPending {
+			r.cache.Store(ck, resolved[ck])
+		}
+	}
+	for key := range pending {
+		lic := resolved[key]
+		via := ""
+		if ck, ok := defaultOf[key]; ok {
+			lic = resolved[ck]
+			via = " (default version " + strings.TrimPrefix(ck, strings.TrimSuffix(key, anyVersion)) + ")"
 		}
 		r.cache.Store(key, lic)
 		if lic != "" {
-			log.Printf("  deps.dev license resolved: %s → %s", key, lic)
+			log.Printf("  deps.dev license resolved: %s%s → %s", key, via, lic)
 		}
-		for _, purl := range purlsByKey[CacheKey(pv)] {
+		for _, purl := range purlsByKey[key] {
 			out[purl] = lic
 		}
 	}
 	return out
+}
+
+type packageResponse struct {
+	Versions []struct {
+		VersionKey versionKey `json:"versionKey"`
+		IsDefault  bool       `json:"isDefault"`
+	} `json:"versions"`
+}
+
+// defaultVersion returns the version deps.dev marks as the package's default
+// (normally the latest release), or "" if the package is unknown.
+func (r *Resolver) defaultVersion(ctx context.Context, pv PackageVersion) string {
+	if err := r.limiter.Wait(ctx); err != nil {
+		return ""
+	}
+	u := fmt.Sprintf("%s/%s/systems/%s/packages/%s",
+		r.baseURL, getAPIVersion, strings.ToLower(pv.System), url.PathEscape(pv.Name))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "bomhort-license-resolver")
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		log.Printf("  deps.dev package request failed for %s: %v", pv.System+":"+pv.Name, err)
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	var pr packageResponse
+	if err := json.NewDecoder(resp.Body).Decode(&pr); err != nil {
+		return ""
+	}
+	for _, v := range pr.Versions {
+		if v.IsDefault {
+			return v.VersionKey.Version
+		}
+	}
+	return ""
 }
 
 // PreloadCache seeds the in-memory cache (e.g. from ClickHouse).
@@ -183,7 +287,25 @@ func (r *Resolver) CacheEntries() map[string]string {
 }
 
 type versionResponse struct {
-	Licenses []string `json:"licenses"`
+	Licenses       []string        `json:"licenses"`
+	LicenseDetails []licenseDetail `json:"licenseDetails"`
+}
+
+// licenseDetail is one declared license: the raw text from the package
+// metadata (POM <license><name>, PyPI classifier, …) and deps.dev's SPDX
+// mapping of it, which is "non-standard" when deps.dev could not map it.
+type licenseDetail struct {
+	License string `json:"license"`
+	SPDX    string `json:"spdx"`
+}
+
+// expression folds the response into one SPDX expression, preferring the
+// per-license details over the flat licenses array.
+func (v versionResponse) expression() string {
+	if len(v.LicenseDetails) > 0 {
+		return NormalizeLicenseDetails(v.LicenseDetails)
+	}
+	return NormalizeLicenses(v.Licenses)
 }
 
 type versionKey struct {
@@ -236,7 +358,7 @@ func (r *Resolver) fetchLicense(ctx context.Context, pv PackageVersion) string {
 	if err := json.NewDecoder(resp.Body).Decode(&vr); err != nil {
 		return ""
 	}
-	return NormalizeLicenses(vr.Licenses)
+	return vr.expression()
 }
 
 func (r *Resolver) fetchLicenseBatch(ctx context.Context, versions []PackageVersion) (map[string]string, bool) {
@@ -279,13 +401,60 @@ func (r *Resolver) fetchLicenseBatch(ctx context.Context, versions []PackageVers
 		}
 		for _, item := range br.Responses {
 			pv := PackageVersion{System: item.Request.VersionKey.System, Name: item.Request.VersionKey.Name, Version: item.Request.VersionKey.Version}
-			resolved[CacheKey(pv)] = NormalizeLicenses(item.Version.Licenses)
+			resolved[CacheKey(pv)] = item.Version.expression()
 		}
 		if br.NextPageToken == "" {
 			return resolved, true
 		}
 		pageToken = br.NextPageToken
 	}
+}
+
+// NormalizeLicenseDetails turns deps.dev's per-license details into one SPDX
+// expression. A detail deps.dev mapped is used as is. A "non-standard" one is
+// recovered from its raw text: a recognisable spelling ("The MIT License",
+// "Eclipse Public License - v 1.0") becomes its SPDX ID, anything else a
+// LicenseRef, so the package keeps its declared license and is reported as
+// unapproved rather than as NOASSERTION. Details without usable text (empty,
+// "non-standard", a URL) are skipped. Several licenses are joined with AND:
+// POMs list them without saying whether they are alternatives, and AND is
+// the reading that never under-reports an obligation.
+func NormalizeLicenseDetails(details []licenseDetail) string {
+	parts := make([]string, 0, len(details))
+	seen := make(map[string]bool, len(details))
+	for _, d := range details {
+		lic := cleanLicense(d.SPDX)
+		if lic == "" {
+			lic = recoverLicense(d.License)
+		}
+		if lic == "" || seen[lic] {
+			continue
+		}
+		seen[lic] = true
+		parts = append(parts, lic)
+	}
+	if len(parts) > 1 {
+		for i, lic := range parts {
+			parts[i] = parenthesizeIfCompound(lic)
+		}
+	}
+	return strings.Join(parts, " AND ")
+}
+
+// recoverLicense maps the raw license text of a non-standard detail.
+func recoverLicense(raw string) string {
+	raw = cleanLicense(raw)
+	if raw == "" {
+		return ""
+	}
+	lower := strings.ToLower(raw)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		return ""
+	}
+	if norm := license.Normalize(raw); license.LooksLikeSPDX(norm) {
+		return norm
+	}
+	return license.LicenseRef(raw)
 }
 
 // NormalizeLicenses converts deps.dev's licenses array into a single SPDX
@@ -340,6 +509,17 @@ func containsOperator(lic string) bool {
 
 // ExtractPackageVersion maps supported package URLs to deps.dev version keys.
 func ExtractPackageVersion(purl string) (PackageVersion, bool) {
+	pv, ok := extractPackage(purl)
+	if !ok || pv.Version == "" {
+		return PackageVersion{}, false
+	}
+	return pv, true
+}
+
+// extractPackage is ExtractPackageVersion without the version requirement: a
+// missing or placeholder version ("unknown", "${project.version}") yields an
+// empty Version instead of a failure.
+func extractPackage(purl string) (PackageVersion, bool) {
 	const prefix = "pkg:"
 	if !strings.HasPrefix(purl, prefix) {
 		return PackageVersion{}, false
@@ -354,18 +534,20 @@ func ExtractPackageVersion(purl string) (PackageVersion, bool) {
 	}
 	typ := strings.ToLower(rest[:slash])
 	packageAndVersion := rest[slash+1:]
-	at := strings.LastIndex(packageAndVersion, "@")
-	if at <= 0 || at == len(packageAndVersion)-1 {
-		return PackageVersion{}, false
+	rawName, rawVersion := packageAndVersion, ""
+	if at := strings.LastIndex(packageAndVersion, "@"); at > 0 {
+		rawName, rawVersion = packageAndVersion[:at], packageAndVersion[at+1:]
 	}
-	rawName, rawVersion := packageAndVersion[:at], packageAndVersion[at+1:]
 	name, ok := decodePath(rawName)
-	if !ok {
+	if !ok || strings.Contains(name, "${") {
 		return PackageVersion{}, false
 	}
 	version, ok := decodePath(rawVersion)
-	if !ok || !validVersion(version) {
+	if !ok {
 		return PackageVersion{}, false
+	}
+	if !validVersion(version) {
+		version = ""
 	}
 
 	var system string
@@ -423,7 +605,7 @@ func decodePath(s string) (string, bool) {
 
 func validVersion(version string) bool {
 	version = strings.TrimSpace(version)
-	if version == "" || strings.EqualFold(version, "unknown") {
+	if version == "" || strings.EqualFold(version, "unknown") || strings.Contains(version, "${") {
 		return false
 	}
 	return !strings.ContainsAny(version, " \t\r\n,")

@@ -533,9 +533,10 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	}
 
 	// 6. License compliance check (uses the already-resolved licenses).
-	// The described root (the product itself) is not a dependency and must not
-	// show up in the license breakdown, e.g. as a NOASSERTION finding.
-	licNames, licLicenses := excludeIndices(result.Packages.PackageNames, result.Packages.PackageLicenses, result.Packages.RootIndices)
+	// The described root (the product itself) and the project's own workspace
+	// packages are not dependencies and must not show up in the license
+	// breakdown, e.g. as NOASSERTION findings.
+	licNames, licLicenses := excludeIndices(result.Packages.PackageNames, result.Packages.PackageLicenses, licenseCheckSkips(result.Packages.RootIndices, result.Packages.PackagePURLs))
 	licResults := license.CheckWithExceptions(licNames, licLicenses, exceptions, result.SBOM.DocumentName)
 	if len(licResults) > 0 {
 		licModels := make([]models.LicenseCompliance, len(licResults))

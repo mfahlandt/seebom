@@ -88,18 +88,20 @@ func TestCategorize_Expressions(t *testing.T) {
 		{"(MIT OR GPL-3.0-only) AND GPL-2.0-only", CategoryCopyleft, CategoryPermissive, CategoryUnapproved},
 		{"MIT OR GPL-3.0-only AND GPL-2.0-only", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
 
-		// Deprecated "+" spelling.
-		{"GPL-2.0+", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
+		// Deprecated "+" spelling. A single deprecated ID is rewritten by
+		// Normalize before any lookup, so even "off" recognises it.
+		{"GPL-2.0+", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
 		{"LGPL-2.1+ OR MIT", CategoryPermissive, CategoryPermissive, CategoryUnapproved},
 
 		// Deprecated bare GNU IDs mean "-only"; the "-with-…-exception" IDs are
 		// the old spelling of "WITH". A policy listing only current IDs must
-		// still recognise them as copyleft.
-		{"GPL-2.0", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
-		{"GPL-3.0", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
-		{"LGPL-2.1", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
-		{"LGPL-3.0", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
-		{"AGPL-3.0", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
+		// still recognise them as copyleft — single IDs in every mode, since
+		// Normalize rewrites them before the verbatim lookup.
+		{"GPL-2.0", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
+		{"GPL-3.0", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
+		{"LGPL-2.1", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
+		{"LGPL-3.0", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
+		{"AGPL-3.0", CategoryCopyleft, CategoryCopyleft, CategoryCopyleft},
 		{"GPL-2.0-with-classpath-exception", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
 		{"GPL-3.0 AND GPL-3.0-or-later", CategoryCopyleft, CategoryCopyleft, CategoryUnapproved},
 		{"MIT OR GPL-2.0", CategoryPermissive, CategoryPermissive, CategoryUnapproved},

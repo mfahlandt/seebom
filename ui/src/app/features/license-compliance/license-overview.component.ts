@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ApiService } from '../../core/api.service';
-import { LicenseComplianceItem, LicenseAffectedSBOM } from '../../core/api.models';
+import { LicenseComplianceItem, LicenseAffectedSBOM, LicenseSourceItem } from '../../core/api.models';
+import { describeLicenseSource } from '../../shared/license-source';
 
 type SortField = 'severity' | 'usages' | 'name' | 'projects' | 'non-compliant';
 
@@ -34,7 +35,7 @@ interface GroupedProject {
           <h3>Not Approved</h3>
           <span class="count">{{ getCategoryCount('unapproved') | number }}</span>
         </div>
-        <div class="category-card unknown" title="No license information in the SBOM (NOASSERTION / NONE)">
+        <div class="category-card unknown" title="No license could be determined (NOASSERTION / NONE) — see License Resolution below for why">
           <h3>Unknown</h3>
           <span class="count">{{ getCategoryCount('unknown') | number }}</span>
         </div>
@@ -43,6 +44,35 @@ interface GroupedProject {
           <span class="count">{{ getExemptedCount() | number }}</span>
         </div>
       </div>
+
+      <section class="resolution" *ngIf="resolvedSources.length || unresolvedSources.length">
+        <div class="resolution-header" (click)="toggleResolution()">
+          <h2>License Resolution</h2>
+          <span class="resolution-summary">
+            {{ resolvedTotal | number }} resolved · {{ unresolvedTotal | number }} unknown
+          </span>
+          <span class="toggle-icon">{{ resolutionOpen ? '▾' : '▸' }}</span>
+        </div>
+        <div class="resolution-body" *ngIf="resolutionOpen">
+          <div class="resolution-col">
+            <h4>Where licenses came from</h4>
+            <div *ngFor="let s of resolvedSources; trackBy: trackBySource" class="source-row"
+                 [title]="'Examples: ' + (s.examples.join(', ') || '—')">
+              <span class="source-label">{{ sourceLabel(s) }}</span>
+              <span class="source-count">{{ s.package_count | number }}</span>
+            </div>
+          </div>
+          <div class="resolution-col">
+            <h4>Why licenses are unknown</h4>
+            <div *ngFor="let s of unresolvedSources; trackBy: trackBySource" class="source-row unresolved"
+                 [title]="'Examples: ' + (s.examples.join(', ') || '—')">
+              <span class="source-label">{{ sourceLabel(s) }}</span>
+              <span class="source-count">{{ s.package_count | number }}</span>
+            </div>
+            <p class="resolution-empty" *ngIf="!unresolvedSources.length">Every package has a license.</p>
+          </div>
+        </div>
+      </section>
 
       <div class="list-header">
         <h2>All Licenses</h2>
@@ -147,6 +177,21 @@ interface GroupedProject {
     .unknown { background: var(--surface-alt); }
     .exempted { background: var(--status-success-bg); }
     .count { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+
+    .resolution { border: 1px solid var(--border); border-radius: 4px; margin-bottom: 20px; background: var(--surface); }
+    .resolution-header { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; }
+    .resolution-header:hover { background: var(--surface-alt); }
+    .resolution-summary { font-size: 0.75rem; color: var(--text-secondary); }
+    .resolution-body { display: flex; gap: 24px; padding: 12px 14px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+    .resolution-col { flex: 1; min-width: 300px; }
+    .resolution-col h4 {
+      font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.03em; color: var(--text-secondary); margin: 0 0 6px;
+    }
+    .source-row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; font-size: 0.78rem; cursor: help; }
+    .source-row.unresolved .source-label { color: var(--severity-high); }
+    .source-count { font-weight: 600; white-space: nowrap; }
+    .resolution-empty { font-size: 0.78rem; color: var(--text-muted); margin: 0; }
 
     .list-header {
       display: flex; align-items: center; justify-content: space-between;
@@ -254,6 +299,11 @@ interface GroupedProject {
 })
 export class LicenseOverviewComponent implements OnInit {
   licenses: LicenseComplianceItem[] = [];
+  resolvedSources: LicenseSourceItem[] = [];
+  unresolvedSources: LicenseSourceItem[] = [];
+  resolvedTotal = 0;
+  unresolvedTotal = 0;
+  resolutionOpen = false;
   expandedLicense: string | null = null;
   private rawLicenses: LicenseComplianceItem[] = [];
   private groupedCache = new Map<string, GroupedProject[]>();
@@ -288,6 +338,26 @@ export class LicenseOverviewComponent implements OnInit {
       this.applySort();
       this.cdr.markForCheck();
     });
+    this.api.getLicenseSources().subscribe((items) => {
+      this.resolvedSources = items.filter((s) => s.resolved);
+      this.unresolvedSources = items.filter((s) => !s.resolved);
+      this.resolvedTotal = this.resolvedSources.reduce((n, s) => n + s.package_count, 0);
+      this.unresolvedTotal = this.unresolvedSources.reduce((n, s) => n + s.package_count, 0);
+      this.cdr.markForCheck();
+    });
+  }
+
+  toggleResolution(): void {
+    this.resolutionOpen = !this.resolutionOpen;
+    this.cdr.markForCheck();
+  }
+
+  sourceLabel(item: LicenseSourceItem): string {
+    return describeLicenseSource(item.source)?.label ?? item.source;
+  }
+
+  trackBySource(_index: number, item: LicenseSourceItem): string {
+    return item.source;
   }
 
   toggle(licenseId: string): void {

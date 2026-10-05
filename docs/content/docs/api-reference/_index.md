@@ -634,7 +634,7 @@ License breakdown for a specific SBOM, grouped by license ID with package lists.
 ]
 ```
 
-`package_scopes` maps each listed package to its [dependency scope](#dependency-scope); it is omitted for permissive licenses, where the distinction carries no action.
+`package_scopes` maps each listed package (from `packages` and `exempted_packages`) to its [dependency scope](#dependency-scope). Packages whose scope is `unknown` are left out of the map, and the map itself is omitted when no package has a recorded depth — a client reads a missing key as `unknown`.
 
 ### `GET /api/v1/sboms/{id}/dependencies`
 
@@ -1048,7 +1048,7 @@ Projects with copyleft, unapproved or unknown license packages (filtered by acti
 ]
 ```
 
-`package_scopes` gives each non-compliant package its [dependency scope](#dependency-scope).
+`package_scopes` gives each non-compliant package its [dependency scope](#dependency-scope); `unknown` packages are left out, a missing key reads as `unknown`.
 
 ### `GET /api/v1/license-exceptions`
 

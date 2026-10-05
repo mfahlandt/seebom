@@ -7,8 +7,10 @@ public [CNCF colour palette](https://www.cncf.io/brand-guidelines/)
 [contribute.cncf.io](https://contribute.cncf.io/contributors/).
 
 Light navbar (white, Stone rule, CNCF Blue active link), CNCF Blue accent,
-Pink for critical findings, and the CNCF wordmark (`brand/cncf-logo.svg`,
-the unmodified primary logo) in place of the mascot via `brandLogo`.
+Pink for critical findings, and the CNCF wordmark in place of the mascot:
+`brand/cncf-logo.svg` (unmodified primary logo) in light mode and
+`brand/cncf-logo-dark.svg` (the official all-white variant) in dark mode via
+`brandLogo` / `brandLogoDark`.
 
 ```bash
 # Docker Compose

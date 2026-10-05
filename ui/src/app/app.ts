@@ -12,7 +12,7 @@ import { GlobalSearchComponent } from './shared/global-search/global-search.comp
   template: `
     <nav class="navbar">
       <a class="brand" routerLink="/">
-        <img [src]="siteConfig.brandLogo" [alt]="siteConfig.brandLogoAlt" class="brand-logo">
+        <img [src]="siteConfig.logoFor(dark)" [alt]="siteConfig.brandLogoAlt" class="brand-logo">
         {{ siteConfig.brandName }}
       </a>
       <div class="nav-links">

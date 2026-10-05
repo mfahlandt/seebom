@@ -7,6 +7,8 @@ export interface SiteConfig {
   brandName: string;
   /** Image shown left of the brand name. Same-origin path or data: URI (CSP). */
   brandLogo: string;
+  /** Variant used in dark mode; empty = reuse brandLogo. */
+  brandLogoDark: string;
   brandLogoAlt: string;
   pageTitle: string;
   dashboard: {
@@ -24,6 +26,7 @@ export interface SiteConfig {
 const DEFAULTS: SiteConfig = {
   brandName: 'BOMHort',
   brandLogo: 'assets/bomhort-mascot.png',
+  brandLogoDark: '',
   brandLogoAlt: 'BOMHort dragon mascot',
   pageTitle: 'BOMHort',
   dashboard: {
@@ -69,6 +72,11 @@ export class SiteConfigService {
 
   get brandLogo(): string {
     return this.config.brandLogo;
+  }
+
+  /** Logo for the given mode: the dark variant when configured, else brandLogo. */
+  logoFor(dark: boolean): string {
+    return dark && this.config.brandLogoDark ? this.config.brandLogoDark : this.config.brandLogo;
   }
 
   get brandLogoAlt(): string {

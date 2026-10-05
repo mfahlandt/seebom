@@ -36,6 +36,19 @@ describe('SiteConfigService', () => {
     expect(service.brandLogoAlt).toBe('Cloud Native Computing Foundation');
   });
 
+  it('serves the dark variant only in dark mode and only when configured', async () => {
+    const p = service.load();
+    httpMock.expectOne('/ui-config.json').flush({ brandLogo: '/brand/a.svg', brandLogoDark: '/brand/a-dark.svg' });
+    await p;
+    expect(service.logoFor(false)).toBe('/brand/a.svg');
+    expect(service.logoFor(true)).toBe('/brand/a-dark.svg');
+
+    const q = service.load();
+    httpMock.expectOne('/ui-config.json').flush({ brandLogo: '/brand/b.svg' });
+    await q;
+    expect(service.logoFor(true)).toBe('/brand/b.svg');
+  });
+
   it('keeps defaults when the config file is missing', async () => {
     const p = service.load();
     httpMock.expectOne('/ui-config.json').flush('nope', { status: 404, statusText: 'Not Found' });

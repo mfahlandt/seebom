@@ -43,11 +43,21 @@
   --accent-orange-hover: #b01c79;
   --dark: #000000;
 
-  --nav-bg: #000000;
-  --nav-brand: #ffffff;
-  --nav-link: #b8c4d6;
-  --nav-link-hover: #93eaff;
-  --nav-link-active-bg: rgba(0, 134, 255, 0.35);
+  /* Light navbar: Cloud White with a Stone rule, CNCF Blue for the active
+     link – mirrors the contribute.cncf.io header. */
+  --nav-bg: #ffffff;
+  --nav-fg: #111418;
+  --nav-border: #e5e5e5;
+  --nav-brand: #000000;
+  --nav-link: #4b5563;
+  --nav-link-hover: #0086ff;
+  --nav-link-hover-bg: rgba(0, 134, 255, 0.08);
+  --nav-link-active: #0086ff;
+  --nav-link-active-bg: rgba(0, 134, 255, 0.12);
+  --nav-control-border: #e5e5e5;
+  --nav-input-bg: #f5f7fa;
+  --nav-input-fg: #111418;
+  --nav-input-focus-bg: #ffffff;
 
   --text: #111418;
   --text-secondary: #5b6572;
@@ -92,10 +102,18 @@
   --dark: #e6ebf1;
 
   --nav-bg: #000000;
+  --nav-fg: #ffffff;
+  --nav-border: #273038;
   --nav-brand: #ffffff;
   --nav-link: #8f9bab;
   --nav-link-hover: #93eaff;
+  --nav-link-hover-bg: rgba(255, 255, 255, 0.08);
+  --nav-link-active: #ffffff;
   --nav-link-active-bg: rgba(0, 134, 255, 0.4);
+  --nav-control-border: rgba(255, 255, 255, 0.15);
+  --nav-input-bg: rgba(255, 255, 255, 0.06);
+  --nav-input-fg: #ffffff;
+  --nav-input-focus-bg: rgba(255, 255, 255, 0.1);
 
   --text: #e6ebf1;
   --text-secondary: #9aa6b5;

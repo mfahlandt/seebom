@@ -12,7 +12,7 @@ import { GlobalSearchComponent } from './shared/global-search/global-search.comp
   template: `
     <nav class="navbar">
       <a class="brand" routerLink="/">
-        <img src="assets/bomhort-mascot.png" alt="BOMHort dragon mascot" class="brand-logo">
+        <img [src]="siteConfig.brandLogo" [alt]="siteConfig.brandLogoAlt" class="brand-logo">
         {{ siteConfig.brandName }}
       </a>
       <div class="nav-links">
@@ -45,9 +45,10 @@ import { GlobalSearchComponent } from './shared/global-search/global-search.comp
       padding: 0 20px;
       height: 48px;
       background: var(--nav-bg);
-      color: #fff;
+      color: var(--nav-fg, #fff);
       gap: 28px;
       flex-shrink: 0;
+      border-bottom: 1px solid var(--nav-border, transparent);
     }
     .brand {
       color: var(--nav-brand);
@@ -60,10 +61,11 @@ import { GlobalSearchComponent } from './shared/global-search/global-search.comp
       gap: 8px;
     }
     .brand-logo {
-      width: 28px;
+      /* Fixed height, free width: the mascot is portrait, a configured
+         wordmark (brandLogo) is usually landscape. */
       height: 28px;
-      /* The mascot is portrait (381x427); contain keeps it from being
-         squashed into the square box. */
+      width: auto;
+      max-width: 180px;
       object-fit: contain;
     }
     .nav-links { display: flex; gap: 2px; flex: 1; }
@@ -76,12 +78,12 @@ import { GlobalSearchComponent } from './shared/global-search/global-search.comp
       font-weight: 500;
       transition: color 0.15s, background 0.15s;
     }
-    .nav-links a:hover { color: var(--nav-link-hover); background: rgba(255,255,255,0.08); }
-    .nav-links a.active { color: #fff; background: var(--nav-link-active-bg); }
+    .nav-links a:hover { color: var(--nav-link-hover); background: var(--nav-link-hover-bg, rgba(255,255,255,0.08)); }
+    .nav-links a.active { color: var(--nav-link-active, #fff); background: var(--nav-link-active-bg); }
     .theme-toggle {
       background: none;
-      border: 1px solid rgba(255,255,255,0.15);
-      color: #d0d0d0;
+      border: 1px solid var(--nav-control-border, rgba(255,255,255,0.15));
+      color: var(--nav-link, #d0d0d0);
       width: 32px;
       height: 32px;
       border-radius: 4px;
@@ -93,7 +95,7 @@ import { GlobalSearchComponent } from './shared/global-search/global-search.comp
       transition: background 0.15s, color 0.15s;
       flex-shrink: 0;
     }
-    .theme-toggle:hover { background: rgba(255,255,255,0.1); color: #fff; }
+    .theme-toggle:hover { background: var(--nav-link-hover-bg, rgba(255,255,255,0.1)); color: var(--nav-link-hover); }
     .content { flex: 1; overflow: auto; background: var(--bg); }
     @media (max-width: 1000px) {
       app-global-search { display: none; }

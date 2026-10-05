@@ -224,6 +224,8 @@ services:
     volumes:
       - ${CUSTOM_THEME:-./ui/src/assets/custom-theme.example.css}:/usr/share/nginx/html/custom-theme.css:ro
       - ${UI_CONFIG:-./ui/public/ui-config.json}:/usr/share/nginx/html/ui-config.json:ro
+      # Logos etc. referenced from ui-config.json (brandLogo: "/brand/<file>")
+      - ${BRAND_ASSETS:-./ui/public/brand}:/usr/share/nginx/html/brand:ro
     depends_on:
       - api-gateway
 

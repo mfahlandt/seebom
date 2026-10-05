@@ -144,16 +144,16 @@ interface SearchResultItem {
       width: 100%;
       padding: 6px 12px;
       font-size: 0.85rem;
-      border: 1px solid rgba(255,255,255,0.2);
+      border: 1px solid var(--nav-control-border, rgba(255,255,255,0.2));
       border-radius: 4px;
-      background: rgba(0,0,0,0.2);
-      color: var(--nav-link-hover);
+      background: var(--nav-input-bg, rgba(0,0,0,0.2));
+      color: var(--nav-input-fg, var(--nav-link-hover));
       outline: none;
       transition: all 0.2s;
     }
     .search-input:focus {
       border-color: var(--nav-link-hover);
-      background: rgba(0,0,0,0.3);
+      background: var(--nav-input-focus-bg, rgba(0,0,0,0.3));
     }
     .search-input::placeholder { color: var(--nav-link); }
     

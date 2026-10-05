@@ -5,6 +5,9 @@ import { Title } from '@angular/platform-browser';
 
 export interface SiteConfig {
   brandName: string;
+  /** Image shown left of the brand name. Same-origin path or data: URI (CSP). */
+  brandLogo: string;
+  brandLogoAlt: string;
   pageTitle: string;
   dashboard: {
     title: string;
@@ -20,6 +23,8 @@ export interface SiteConfig {
 
 const DEFAULTS: SiteConfig = {
   brandName: 'BOMHort',
+  brandLogo: 'assets/bomhort-mascot.png',
+  brandLogoAlt: 'BOMHort dragon mascot',
   pageTitle: 'BOMHort',
   dashboard: {
     title: 'Dashboard',
@@ -60,6 +65,14 @@ export class SiteConfigService {
 
   get brandName(): string {
     return this.config.brandName;
+  }
+
+  get brandLogo(): string {
+    return this.config.brandLogo;
+  }
+
+  get brandLogoAlt(): string {
+    return this.config.brandLogoAlt;
   }
 
   get pageTitle(): string {

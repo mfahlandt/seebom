@@ -763,11 +763,20 @@ ui:
     enabled: true
     content:
       brandName: "My Platform"
+      brandLogo: "/brand/my-logo.svg"          # optional, default: BOMHort mascot
+      brandLogoAlt: "My Platform"
       pageTitle: "My Platform"
       dashboard:
         title: "Overview"
         subtitle: "Software Supply Chain Governance"
 ```
+
+`brandLogo` is rendered at 28 px height with free width, so a landscape
+wordmark works as well as a square mark. It must be same-origin (the UI's CSP
+is `img-src 'self' data:`), i.e. either a path served by the UI container or
+a `data:` URI. Locally, `BRAND_ASSETS=./my-brand make dev` mounts a directory
+at `/brand/`; in Kubernetes, mount a ConfigMap/volume with the file into the
+UI container at `/usr/share/nginx/html/brand/`.
 
 ---
 

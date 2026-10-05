@@ -23,6 +23,10 @@
   --nav-link: #b0b0b0;
   --nav-link-hover: #fff;
   --nav-link-active-bg: rgba(26, 138, 138, 0.3);
+  /* Optional nav tokens for light navbars; fall back to the dark defaults
+     in the components when unset: --nav-fg, --nav-border, --nav-link-active,
+     --nav-link-hover-bg, --nav-control-border, --nav-input-bg,
+     --nav-input-fg, --nav-input-focus-bg. */
 
   /* ── Text ─────────────────────────────────────────────────── */
   --text: #3D3D3D;

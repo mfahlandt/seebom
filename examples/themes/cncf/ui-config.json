@@ -1,5 +1,7 @@
 {
-  "brandName": "CNCF SBOM Explorer",
+  "brandName": "SBOM Explorer",
+  "brandLogo": "/brand/cncf-logo.svg",
+  "brandLogoAlt": "Cloud Native Computing Foundation",
   "pageTitle": "CNCF SBOM Explorer",
   "dashboard": {
     "title": "Dashboard",

@@ -43,7 +43,7 @@ type Tab = 'non-compliant' | 'exceptions';
             <div class="details">
               <span class="licenses">{{ v.violating_licenses.join(', ') }}</span>
               <span class="pkgs" *ngIf="v.non_compliant_packages.length">
-                ({{ v.non_compliant_packages.length | number }} packages)
+                ({{ v.non_compliant_packages.length | number }} packages<ng-container *ngIf="scopeSummary(v) as sc">: {{ sc }}</ng-container>)
               </span>
             </div>
           </div>
@@ -160,6 +160,24 @@ type Tab = 'non-compliant' | 'exceptions';
   `],
 })
 export class LicenseViolationsComponent implements OnInit {
+  /** "3 direct, 5 transitive" for a violation row; '' when no scopes are recorded. */
+  scopeSummary(v: ProjectLicenseViolation): string {
+    if (!v.package_scopes) {
+      return '';
+    }
+    let direct = 0;
+    let transitive = 0;
+    for (const pkg of v.non_compliant_packages) {
+      const scope = v.package_scopes[pkg];
+      if (scope === 'direct') direct++;
+      else if (scope === 'transitive') transitive++;
+    }
+    const parts: string[] = [];
+    if (direct) parts.push(`${direct} direct`);
+    if (transitive) parts.push(`${transitive} transitive`);
+    return parts.join(', ');
+  }
+
   violations: ProjectLicenseViolation[] = [];
   exceptionsFile: LicenseExceptionsFile = {
     version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],

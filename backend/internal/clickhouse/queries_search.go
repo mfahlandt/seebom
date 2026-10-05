@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
@@ -31,11 +32,19 @@ import (
 // apply — a statement about another product must never suppress findings
 // here. Unscoped ("global") statements are ignored: there is no fleet-wide
 // VEX scope.
-func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([]dto.VulnerabilityListItem, error) {
+//
+// scope ("" or a depgraph scope label) keeps only findings whose package is
+// pulled in that way.
+func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, scope string) ([]dto.VulnerabilityListItem, error) {
+	scopeAnd := ""
+	if pred := depthPredicate(scope, "v.dependency_depth"); pred != "" {
+		scopeAnd = " AND " + pred
+	}
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
+			v.dependency_depth,
 			ifNull(vx.vex_status, '') AS vex_status,
 			ifNull(vx.vex_justification, '') AS vex_justification,
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
@@ -62,7 +71,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([
 			WHERE s.product_purl = f.purl OR s.product_purl = '*'
 			GROUP BY f.vuln_id, f.purl
 		) AS vx ON vx.vuln_id = v.vuln_id AND vx.purl = v.purl
-		WHERE v.sbom_id = ?
+		WHERE v.sbom_id = ?`+scopeAnd+`
 		ORDER BY v.severity ASC, v.discovered_at DESC
 		LIMIT 1 BY v.vuln_id, v.purl
 	`, sbomID, sbomID, sbomID)
@@ -75,16 +84,18 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string) ([
 	for rows.Next() {
 		var item dto.VulnerabilityListItem
 		var discoveredAt, vexTimestamp time.Time
+		var depth uint16
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
-			&discoveredAt, &item.VEXStatus,
+			&discoveredAt, &depth, &item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
 			&item.VEXAuthor, &item.VEXTooling,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)
 		}
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
+		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
 		if item.VEXStatus != "" {
 			item.VEXScope = "sbom"
 		}
@@ -159,7 +170,68 @@ func (c *Client) QuerySBOMLicenses(ctx context.Context, sbomID string) ([]dto.SB
 		}
 	}
 
+	// Step 3: direct vs. transitive per listed package. Best effort - an
+	// SBOM ingested before migration 025 simply has no scopes.
+	if len(items) > 0 {
+		scopes, err := c.packageScopesForSBOMs(ctx, []string{sbomID})
+		if err != nil {
+			log.Printf("WARNING: package scopes for sbom %s: %v", sbomID, err)
+		} else if all := scopes[sbomID]; len(all) > 0 {
+			for i := range items {
+				items[i].PackageScopes = pickScopes(all, items[i].Packages, items[i].ExemptedPackages)
+			}
+		}
+	}
+
 	return items, nil
+}
+
+// packageScopesForSBOMs returns, per SBOM id, the name → scope map derived
+// from sbom_packages.package_depths. SBOMs without recorded depths are
+// absent from the result.
+func (c *Client) packageScopesForSBOMs(ctx context.Context, sbomIDs []string) (map[string]map[string]string, error) {
+	if len(sbomIDs) == 0 {
+		return map[string]map[string]string{}, nil
+	}
+	rows, err := c.Conn.Query(ctx, `
+		SELECT toString(sbom_id), package_names, package_depths
+		FROM sbom_packages FINAL
+		WHERE sbom_id IN (?)
+	`, sbomIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]map[string]string, len(sbomIDs))
+	for rows.Next() {
+		var id string
+		var names []string
+		var depths []uint16
+		if err := rows.Scan(&id, &names, &depths); err != nil {
+			return nil, err
+		}
+		if m := packageScopes(names, depths); m != nil {
+			out[id] = m
+		}
+	}
+	return out, rows.Err()
+}
+
+// pickScopes narrows a per-SBOM scope map to the names in the given lists.
+func pickScopes(all map[string]string, lists ...[]string) map[string]string {
+	var out map[string]string
+	for _, list := range lists {
+		for _, name := range list {
+			if scope, ok := all[name]; ok {
+				if out == nil {
+					out = make(map[string]string)
+				}
+				out[name] = scope
+			}
+		}
+	}
+	return out
 }
 
 // resolvePackagesByLicense returns a map of license_id → []package_name by
@@ -349,6 +421,11 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 		}
 	}
 
+	scopes, err := c.packageScopesForSBOMs(ctx, order)
+	if err != nil {
+		log.Printf("WARNING: package scopes for license violations: %v", err)
+	}
+
 	items := make([]dto.ProjectLicenseViolation, 0, len(order))
 	for _, id := range order {
 		e := agg[id]
@@ -370,6 +447,7 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 			UnknownCount:         e.unknown,
 			ViolatingLicenses:    uniqueLics,
 			NonCompliantPackages: e.packages,
+			PackageScopes:        pickScopes(scopes[id], e.packages),
 		})
 	}
 
@@ -437,8 +515,7 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 				p.package_names,
 				p.package_versions,
 				p.package_purls,
-				p.rel_source_indices,
-				p.rel_target_indices
+				p.package_depths
 			FROM (SELECT * FROM sbom_packages FINAL) AS p
 			LEFT JOIN (SELECT * FROM sboms FINAL) AS s ON s.sbom_id = p.sbom_id
 			WHERE has(p.package_purls, ?)
@@ -456,12 +533,11 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 				names        []string
 				versions     []string
 				purls        []string
-				relSources   []uint32
-				relTargets   []uint32
+				depths       []uint16
 			)
 			if err := rows.Scan(
 				&sbomID, &sourceFile, &documentName, &purlIdx,
-				&names, &versions, &purls, &relSources, &relTargets,
+				&names, &versions, &purls, &depths,
 			); err != nil {
 				rows.Close()
 				return nil, fmt.Errorf("failed to scan project row: %w", err)
@@ -476,18 +552,9 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 				}
 			}
 
-			// Determine if this is a direct (top-level) dependency.
-			// A direct dependency is one that is a target of the root package (index 0).
-			isDirect := false
-			if purlIdx > 0 {
-				depIdx := uint32(purlIdx - 1) // Convert to 0-based
-				for i, src := range relSources {
-					if src == 0 && i < len(relTargets) && relTargets[i] == depIdx {
-						isDirect = true
-						break
-					}
-				}
-			}
+			// Direct vs. transitive from the depth recorded at parse time;
+			// the nearest occurrence of the PURL counts.
+			scope, depth := scopeFields(depgraph.MinDepthForPURL(purls, depths, ps.purl))
 
 			// Check VEX status for this finding, in this SBOM.
 			//
@@ -510,15 +577,17 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 			}
 
 			items = append(items, dto.AffectedProject{
-				SBOMID:       sbomID,
-				SourceFile:   sourceFile,
-				DocumentName: documentName,
-				PURL:         ps.purl,
-				PackageName:  pkgName,
-				Version:      version,
-				Severity:     ps.severity,
-				VEXStatus:    vexStatus,
-				IsDirect:     isDirect,
+				SBOMID:          sbomID,
+				SourceFile:      sourceFile,
+				DocumentName:    documentName,
+				PURL:            ps.purl,
+				PackageName:     pkgName,
+				Version:         version,
+				Severity:        ps.severity,
+				VEXStatus:       vexStatus,
+				IsDirect:        scope == depgraph.ScopeDirect,
+				DependencyScope: scope,
+				DependencyDepth: depth,
 			})
 		}
 		rows.Close()

@@ -178,12 +178,19 @@ func (c *Client) QueryProjectSBOMs(ctx context.Context, name string, page, pageS
 // still carries the finding — which is the right answer for "is this project
 // affected", and the per-SBOM view remains available for the version-exact
 // question. AffectedSBOMs tells the reader how many versions carry the pair.
-func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string) ([]dto.VulnerabilityListItem, error) {
+//
+// depScope ("" or a depgraph scope label) keeps only findings whose package
+// is pulled in that way in at least one of the project's SBOMs.
+func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, depScope string) ([]dto.VulnerabilityListItem, error) {
+	scopeAnd := ""
+	if pred := depthPredicate(depScope, "v.dependency_depth"); pred != "" {
+		scopeAnd = " AND " + pred
+	}
 	rows, err := c.Conn.Query(ctx, fmt.Sprintf(`
 		WITH scope AS (SELECT sbom_id FROM %s AS s WHERE s.project_name = ?)
 		SELECT
 			f.vuln_id, f.severity, f.purl, f.summary, f.fixed_version,
-			f.source_file, f.discovered_at, f.affected_sboms,
+			f.source_file, f.discovered_at, f.affected_sboms, f.dependency_depth,
 			ifNull(vx.vex_status, '')            AS vex_status,
 			ifNull(vx.vex_justification, '')     AS vex_justification,
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
@@ -198,9 +205,10 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string) (
 				argMax(v.fixed_version, v.discovered_at) AS fixed_version,
 				argMax(v.source_file, v.discovered_at)   AS source_file,
 				max(v.discovered_at)                     AS discovered_at,
-				uniqExact(v.sbom_id)                     AS affected_sboms
+				uniqExact(v.sbom_id)                     AS affected_sboms,
+				min(v.dependency_depth)                  AS dependency_depth
 			FROM (SELECT * FROM vulnerabilities FINAL) AS v
-			WHERE v.sbom_id IN scope
+			WHERE v.sbom_id IN scope%s
 			GROUP BY v.vuln_id, v.purl
 		) AS f
 		LEFT JOIN (
@@ -225,7 +233,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string) (
 		ORDER BY
 			multiIf(f.severity = 'CRITICAL', 0, f.severity = 'HIGH', 1, f.severity = 'MEDIUM', 2, f.severity = 'LOW', 3, 4) ASC,
 			f.affected_sboms DESC, f.vuln_id ASC
-	`, projectSBOMs), name)
+	`, projectSBOMs, scopeAnd), name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query vulnerabilities of project %q: %w", name, err)
 	}
@@ -235,15 +243,17 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string) (
 	for rows.Next() {
 		var item dto.VulnerabilityListItem
 		var discoveredAt, vexTimestamp time.Time
+		var depth uint16
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL, &item.Summary, &item.FixedVersion,
-			&item.SourceFile, &discoveredAt, &item.AffectedSBOMs,
+			&item.SourceFile, &discoveredAt, &item.AffectedSBOMs, &depth,
 			&item.VEXStatus, &item.VEXJustification, &vexTimestamp,
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan project vulnerability row: %w", err)
 		}
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
+		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
 		if item.VEXStatus != "" {
 			item.VEXScope = "sbom"
 		}

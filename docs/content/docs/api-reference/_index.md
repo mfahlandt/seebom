@@ -92,6 +92,26 @@ Paginated responses return:
 }
 ```
 
+### Dependency scope
+
+Every finding that points at a package carries where that package sits in the
+SBOM's dependency graph, so a CVE or a copyleft license in a library you pull
+in yourself reads differently from one five levels down:
+
+| `dependency_scope` | `dependency_depth` | Meaning |
+|--------------------|--------------------|---------|
+| `root` | `0` | The product the SBOM describes (SPDX `DESCRIBES` target, CycloneDX `metadata.component`) |
+| `direct` | `1` | Declared directly by the product |
+| `transitive` | `≥ 2` | Pulled in by another dependency; the depth is the shortest path from the root |
+| `unknown` | omitted | The SBOM carries no relationship graph (flat package list) or several candidate roots, or the row was ingested before BOMHort recorded depths (migration `025`) |
+
+Depth is computed once at parse time from the document's relationships
+(`DEPENDS_ON`, `DEPENDENCY_OF`, `CONTAINS`, CycloneDX `dependsOn`, …) and stored
+per package; nothing is re-derived at query time. Endpoints that list
+vulnerabilities accept `?scope=root|direct|transitive|unknown` to filter on it —
+an invalid value is a `400`. Rows ingested before the column existed show up as
+`unknown` until `make re-scan`.
+
 ### Error Responses
 
 All errors return:
@@ -529,6 +549,12 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 |-----------|------|-------------|
 | `id` | UUID | SBOM identifier |
 
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `scope` | string | all | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
+
 **Response:** `200 OK`
 ```json
 [
@@ -540,6 +566,8 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
     "fixed_version": "v0.23.0",
     "source_file": "containerd-v1.7.2.spdx.json",
     "discovered_at": "2026-05-18T09:00:00Z",
+    "dependency_scope": "transitive",
+    "dependency_depth": 3,
     "vex_status": "not_affected",
     "vex_justification": "vulnerable_code_not_present",
     "vex_timestamp": "2026-09-01T12:00:00Z",
@@ -595,10 +623,13 @@ License breakdown for a specific SBOM, grouped by license ID with package lists.
     "package_count": 2,
     "packages": ["github.com/some/gpl-lib"],
     "exempted_packages": ["github.com/some/gpl-lib"],
-    "exemption_reason": "System library, not linked"
+    "exemption_reason": "System library, not linked",
+    "package_scopes": { "github.com/some/gpl-lib": "transitive" }
   }
 ]
 ```
+
+`package_scopes` maps each listed package to its [dependency scope](#dependency-scope); it is omitted for permissive licenses, where the distinction carries no action.
 
 ### `GET /api/v1/sboms/{id}/dependencies`
 
@@ -621,6 +652,8 @@ Dependency tree reconstructed as a flat array with parent→child index referenc
     "purl": "pkg:golang/github.com/containerd/containerd@v1.7.2",
     "license": "Apache-2.0",
     "license_source": "declared",
+    "dependency_scope": "root",
+    "dependency_depth": 0,
     "children": [1, 2, 3]
   },
   {
@@ -631,12 +664,14 @@ Dependency tree reconstructed as a flat array with parent→child index referenc
     "purl": "pkg:golang/github.com/opencontainers/runc@v1.1.12",
     "license": "Apache-2.0",
     "license_source": "github",
+    "dependency_scope": "direct",
+    "dependency_depth": 1,
     "children": [4, 5]
   }
 ]
 ```
 
-The UI reconstructs the tree by following `children` indices. Root nodes are those not referenced as children by any other node.
+The UI reconstructs the tree by following `children` indices. Root nodes are those not referenced as children by any other node. `dependency_scope` / `dependency_depth` are the stored [dependency scope](#dependency-scope) of each node — a package reachable through several paths carries the shortest.
 
 `license_source` says where `license` came from (`declared`, `github`, `npm`, `nuget`, `depsdev`, `packagist`, `pypi`, optionally with `+latest` / `+normalized`) or, when the license is still unknown, why (`first-party`, `not-published`, `no-license-upstream`, `no-purl`, `unsupported-ecosystem`, `unresolved`). It is omitted for SBOMs ingested before BOMHort recorded it. See [License Resolution](/docs/license-resolution/).
 
@@ -654,6 +689,7 @@ Paginated list of all discovered vulnerabilities across all SBOMs.
 |-----------|------|---------|-------------|
 | `page` | uint64 | 1 | Page number |
 | `page_size` | uint64 | 50 | Items per page (max 500) |
+| `scope` | string | all | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
 
 **Response:** `200 OK` — `PaginatedResponse<VulnerabilityListItem>`
 
@@ -668,6 +704,8 @@ Paginated list of all discovered vulnerabilities across all SBOMs.
       "fixed_version": "v0.23.0",
       "source_file": "etcd-v3.5.12.spdx.json",
       "discovered_at": "2026-05-15T00:00:00Z",
+      "dependency_scope": "direct",
+      "dependency_depth": 1,
       "vex_status": ""
     }
   ],
@@ -699,10 +737,14 @@ All projects affected by a specific CVE, including transitive dependency informa
     "version": "v0.21.0",
     "severity": "CRITICAL",
     "vex_status": "",
-    "is_direct": false
+    "is_direct": false,
+    "dependency_scope": "transitive",
+    "dependency_depth": 4
   }
 ]
 ```
+
+`is_direct` is kept for compatibility and is `true` exactly when `dependency_scope` is `root` or `direct`; new clients should read `dependency_scope`, which also distinguishes `unknown` from `transitive`.
 
 **Errors:**
 - `400` — Invalid vulnerability ID format
@@ -957,6 +999,8 @@ One row per distinct `(vuln_id, purl)` across every SBOM of the project, with
 `affected_sboms` (in how many versions it occurs) and the effective VEX status:
 among all statements scoped to any of the project's SBOMs that cover the pair,
 the newest wins. Same row shape as `GET /api/v1/vulnerabilities`; not paginated.
+`dependency_scope` is the shallowest depth the package has in any of the
+project's SBOMs. Accepts `?scope=` like `GET /api/v1/vulnerabilities`.
 
 ### `GET /api/v1/projects/{name}/packages`
 
@@ -993,10 +1037,13 @@ Projects with copyleft, unapproved or unknown license packages (filtered by acti
     "unapproved_count": 2,
     "unknown_count": 1,
     "violating_licenses": ["LGPL-2.1-only", "CC0-1.0", "NOASSERTION"],
-    "non_compliant_packages": ["github.com/some/lgpl-lib", "github.com/unknown/pkg"]
+    "non_compliant_packages": ["github.com/some/lgpl-lib", "github.com/unknown/pkg"],
+    "package_scopes": { "github.com/some/lgpl-lib": "direct", "github.com/unknown/pkg": "transitive" }
   }
 ]
 ```
+
+`package_scopes` gives each non-compliant package its [dependency scope](#dependency-scope).
 
 ### `GET /api/v1/license-exceptions`
 

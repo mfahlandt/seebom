@@ -81,7 +81,17 @@ export interface VulnerabilityListItem {
    * carry this (vuln_id, purl) pair. Absent on per-SBOM listings.
    */
   affected_sboms?: number;
+  /**
+   * How the affected package is pulled in: 'root', 'direct', 'transitive'
+   * or 'unknown' (no relationship graph, or ingested before depths were
+   * recorded). `dependency_depth` is the shortest path length from the
+   * described product; absent when unknown.
+   */
+  dependency_scope: DependencyScope;
+  dependency_depth?: number;
 }
+
+export type DependencyScope = 'root' | 'direct' | 'transitive' | 'unknown';
 
 export interface DependencyNode {
   index: number;
@@ -93,6 +103,8 @@ export interface DependencyNode {
   /** Where `license` came from, or why it is unknown (see shared/license-source.ts). */
   license_source?: string;
   children: number[];
+  dependency_scope: DependencyScope;
+  dependency_depth?: number;
 }
 
 export interface LicenseSourceItem {
@@ -174,6 +186,8 @@ export interface SBOMLicenseBreakdownItem {
   packages: string[];
   exempted_packages?: string[];
   exemption_reason?: string;
+  /** Package name → dependency scope; names absent are unknown. */
+  package_scopes?: Record<string, DependencyScope>;
 }
 
 export interface ProjectLicenseViolation {
@@ -186,6 +200,7 @@ export interface ProjectLicenseViolation {
   unknown_count: number;
   violating_licenses: string[];
   non_compliant_packages: string[];
+  package_scopes?: Record<string, DependencyScope>;
 }
 
 export interface AffectedProject {
@@ -197,7 +212,10 @@ export interface AffectedProject {
   version: string;
   severity: string;
   vex_status?: string;
+  /** Equivalent to `dependency_scope === 'direct'`; kept for older clients. */
   is_direct: boolean;
+  dependency_scope: DependencyScope;
+  dependency_depth?: number;
 }
 
 export interface DependencyStatsItem {

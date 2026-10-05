@@ -1,0 +1,27 @@
+-- 025_add_dependency_depth.up.sql
+-- Direct vs. transitive: how far each package is from the described product.
+--
+-- sbom_packages.package_depths is parallel to package_names (same index =
+-- same package): the length of the shortest dependency path from the SBOM's
+-- root package along DEPENDS_ON / DEPENDENCY_OF / CONTAINS (and their
+-- CycloneDX and protobom spellings).
+--
+--   0       the described product itself
+--   1       a direct dependency
+--   >= 2    a transitive dependency
+--   65535   not derivable: the document has no relationship graph, or the
+--           package is not connected to the root. Never guessed.
+--
+-- vulnerabilities.dependency_depth denormalises the smallest depth of the
+-- affected PURL so the findings lists and the CVE impact view can filter and
+-- badge without exploding the package arrays on every request.
+--
+-- Both are computed once at parse time (internal/depgraph) and written by the
+-- parsing worker; the CVE refresher reads the depth from sbom_packages when it
+-- maps new findings onto existing SBOMs.
+--
+-- Cheap ADD COLUMN, no ORDER BY change. Rows ingested before this migration
+-- have an empty array / 65535 and read as "unknown"; `make re-scan`
+-- backfills them.
+ALTER TABLE sbom_packages ADD COLUMN IF NOT EXISTS package_depths Array(UInt16) DEFAULT [];
+ALTER TABLE vulnerabilities ADD COLUMN IF NOT EXISTS dependency_depth UInt16 DEFAULT 65535;

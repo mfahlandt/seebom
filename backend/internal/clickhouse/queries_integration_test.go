@@ -102,7 +102,7 @@ func TestQueriesExecute(t *testing.T) {
 		{"QuerySBOMs/project", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "", "payment-api"); return err }},
 		{"QuerySBOMs/project+search", func() error { _, err := c.QuerySBOMs(ctx, 1, 10, "v1", "payment-api"); return err }},
 		{"QuerySBOMDetail", func() error { _, err := c.QuerySBOMDetail(ctx, someID); return err }},
-		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID); return err }},
+		{"QuerySBOMVulnerabilities", func() error { _, err := c.QuerySBOMVulnerabilities(ctx, someID, ""); return err }},
 		{"QuerySBOMLicenses", func() error { _, err := c.QuerySBOMLicenses(ctx, someID); return err }},
 		{"QuerySBOMVEXStatements", func() error { _, err := c.QuerySBOMVEXStatements(ctx, someID); return err }},
 		{"QuerySBOMDependencies", func() error { _, err := c.QuerySBOMDependencies(ctx, someID); return err }},
@@ -110,7 +110,7 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryLicenseCompliance", func() error { _, err := c.QueryLicenseCompliance(ctx); return err }},
 		{"QueryLicenseSources", func() error { _, err := c.QueryLicenseSources(ctx); return err }},
 		{"QueryProjectsWithLicenseViolations", func() error { _, err := c.QueryProjectsWithLicenseViolations(ctx, nil); return err }},
-		{"QueryVulnerabilities", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10); return err }},
+		{"QueryVulnerabilities", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10, ""); return err }},
 		{"QueryVEXStatements", func() error { _, err := c.QueryVEXStatements(ctx, 1, 10); return err }},
 		{"QueryClusters", func() error { _, err := c.QueryClusters(ctx); return err }},
 		{"QueryClusterSBOMs", func() error { _, err := c.QueryClusterSBOMs(ctx, "test", 1, 10); return err }},
@@ -130,7 +130,7 @@ func TestQueriesExecute(t *testing.T) {
 		// for an unknown name, which isEmptyResult accepts.
 		{"QueryProjectDetail", func() error { _, err := c.QueryProjectDetail(ctx, "no-such-project"); return err }},
 		{"QueryProjectSBOMs", func() error { _, err := c.QueryProjectSBOMs(ctx, "no-such-project", 1, 10); return err }},
-		{"QueryProjectVulnerabilities", func() error { _, err := c.QueryProjectVulnerabilities(ctx, "no-such-project"); return err }},
+		{"QueryProjectVulnerabilities", func() error { _, err := c.QueryProjectVulnerabilities(ctx, "no-such-project", ""); return err }},
 		{"QueryProjectPackages", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, ""); return err }},
 		{"QueryProjectPackages/search", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, "curl"); return err }},
 		// The archived-repo pair carries the purl→repo mapping rebuilt in SQL.
@@ -183,7 +183,7 @@ func TestSBOMDetailProjectionMatchesScan(t *testing.T) {
 // "aggregate function ... is found inside another aggregate function".
 func TestSBOMVulnerabilitiesVEXJoin(t *testing.T) {
 	c := testClient(t)
-	_, err := c.QuerySBOMVulnerabilities(context.Background(), uuid.New().String())
+	_, err := c.QuerySBOMVulnerabilities(context.Background(), uuid.New().String(), "")
 	if err != nil && !isEmptyResult(err) {
 		t.Fatalf("SBOM vulnerabilities query broken: %v", err)
 	}

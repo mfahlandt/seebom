@@ -23,6 +23,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
@@ -172,11 +173,19 @@ func main() {
 	// VEX status attached; there is no "effective only" filter (a suppressed
 	// finding is still worth seeing, and hiding it desynced this list from the
 	// dashboard KPI). A legacy vex_filter query parameter is ignored.
+	//
+	// ?scope=direct|transitive|root|unknown keeps only findings whose package
+	// is pulled in that way (migration 025).
 	mux.HandleFunc("GET /api/v1/vulnerabilities", func(w http.ResponseWriter, r *http.Request) {
 		page := parseUint64(r.URL.Query().Get("page"), 1)
 		pageSize := clampPageSize(parseUint64(r.URL.Query().Get("page_size"), 50))
+		scope, ok := parseScope(r.URL.Query().Get("scope"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
+			return
+		}
 
-		resp, err := chClient.QueryVulnerabilities(r.Context(), page, pageSize)
+		resp, err := chClient.QueryVulnerabilities(r.Context(), page, pageSize, scope)
 		if err != nil {
 			log.Printf("ERROR: list vulnerabilities: %v", err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch vulnerabilities")
@@ -254,7 +263,12 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid SBOM ID")
 			return
 		}
-		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID)
+		scope, ok := parseScope(r.URL.Query().Get("scope"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
+			return
+		}
+		vulns, err := chClient.QuerySBOMVulnerabilities(r.Context(), sbomID, scope)
 		if err != nil {
 			log.Printf("ERROR: sbom vulns for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch SBOM vulnerabilities")
@@ -439,7 +453,12 @@ func main() {
 			writeError(w, http.StatusBadRequest, "Invalid project name")
 			return
 		}
-		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name)
+		scope, ok := parseScope(r.URL.Query().Get("scope"))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "Invalid scope (expected direct, transitive, root or unknown)")
+			return
+		}
+		items, err := chClient.QueryProjectVulnerabilities(r.Context(), name, scope)
 		if err != nil {
 			log.Printf("ERROR: project vulnerabilities for %s: %v", sanitizeLogParam(name), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch project vulnerabilities")
@@ -871,6 +890,18 @@ func parseUint64(s string, fallback uint64) uint64 {
 }
 
 // clampPageSize enforces a maximum page size to prevent abusive queries.
+// parseScope validates the optional ?scope= dependency filter. "" means no
+// filter; anything outside the depgraph vocabulary is rejected.
+func parseScope(raw string) (string, bool) {
+	if raw == "" {
+		return "", true
+	}
+	if !depgraph.IsValidScope(raw) {
+		return "", false
+	}
+	return raw, true
+}
+
 func clampPageSize(v uint64) uint64 {
 	const maxPageSize = 500
 	if v == 0 {

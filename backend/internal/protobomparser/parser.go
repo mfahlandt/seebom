@@ -157,6 +157,14 @@ func convertDocument(doc *sbom.Document, sourceFile, sha256Hash string) (*ParseR
 		relTypes   []string
 	)
 
+	// The described product(s): protobom lists them as root elements.
+	var rootIndices []uint32
+	for _, rootID := range doc.NodeList.GetRootElements() {
+		if idx, ok := nodeIDToIndex[rootID]; ok {
+			rootIndices = append(rootIndices, idx)
+		}
+	}
+
 	for _, edge := range doc.NodeList.GetEdges() {
 		srcIdx, srcOK := nodeIDToIndex[edge.GetFrom()]
 		if !srcOK {
@@ -185,6 +193,7 @@ func convertDocument(doc *sbom.Document, sourceFile, sha256Hash string) (*ParseR
 		RelSourceIndices: relSources,
 		RelTargetIndices: relTargets,
 		RelTypes:         relTypes,
+		RootIndices:      rootIndices,
 	}
 
 	return &ParseResult{

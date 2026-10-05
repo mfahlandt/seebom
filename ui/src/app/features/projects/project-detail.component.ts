@@ -16,6 +16,7 @@ import {
 import { DonutChartComponent, DonutSegment } from '../../shared/charts/donut-chart.component';
 import { HorizontalBarChartComponent, BarItem } from '../../shared/charts/horizontal-bar-chart.component';
 import { parentSourceLabel } from '../../shared/parent-source';
+import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.component';
 
 type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
 
@@ -57,7 +58,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent],
+  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent, ScopeBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="project-detail" *ngIf="detail">
@@ -271,6 +272,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
               <span class="summary">{{ vuln.summary }}</span>
             </div>
             <span class="vex-badge" *ngIf="vuln.vex_status" [class]="'vex-' + vuln.vex_status">{{ vuln.vex_status | titlecase }}</span>
+            <app-scope-badge [scope]="vuln.dependency_scope" [depth]="vuln.dependency_depth"></app-scope-badge>
             <span class="reach" *ngIf="vuln.affected_sboms"
                   [class.all]="vuln.affected_sboms === detail.sbom_count"
                   [title]="'Present in ' + vuln.affected_sboms + ' of ' + detail.sbom_count + ' versions'">

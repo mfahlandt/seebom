@@ -9,6 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/seebom-labs/bomhort/backend/internal/apiclient"
+	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
@@ -65,7 +66,7 @@ func registerTools(s *mcp.Server, c *apiclient.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_vulnerabilities",
 		Title:       "List vulnerabilities",
-		Description: "List vulnerability findings, instance-wide or scoped to one project. Each finding carries its VEX status, so a finding suppressed as not_affected is visible and labelled rather than hidden.",
+		Description: "List vulnerability findings, instance-wide or scoped to one project. Each finding carries its VEX status, so a finding suppressed as not_affected is visible and labelled rather than hidden, and its dependency_scope (root, direct, transitive, unknown) so a CVE in a library the project pulls in itself reads differently from one buried deep in the tree.",
 		Annotations: readOnly("List vulnerabilities"),
 	}, toolListVulnerabilities(c))
 
@@ -209,6 +210,7 @@ func toolSearchPackages(c *apiclient.Client) mcp.ToolHandlerFor[searchPackagesIn
 type listVulnerabilitiesInput struct {
 	Project  string `json:"project,omitempty" jsonschema:"scope the findings to one project; omit for the whole instance"`
 	Severity string `json:"severity,omitempty" jsonschema:"keep only findings of this severity: CRITICAL, HIGH, MEDIUM, LOW or UNKNOWN"`
+	Scope    string `json:"scope,omitempty" jsonschema:"keep only findings in packages of this dependency scope: root, direct, transitive or unknown (unknown = the SBOM carries no dependency graph)"`
 	Page     uint64 `json:"page,omitempty" jsonschema:"1-based page number (default 1)"`
 	PageSize uint64 `json:"page_size,omitempty" jsonschema:"rows per page (default 25, max 500)"`
 }
@@ -231,6 +233,10 @@ func toolListVulnerabilities(c *apiclient.Client) mcp.ToolHandlerFor[listVulnera
 		if err != nil {
 			return nil, listVulnerabilitiesOutput{}, err
 		}
+		scope, err := normalizeScope(in.Scope)
+		if err != nil {
+			return nil, listVulnerabilitiesOutput{}, err
+		}
 
 		project := strings.TrimSpace(in.Project)
 		if project == "" {
@@ -240,7 +246,7 @@ func toolListVulnerabilities(c *apiclient.Client) mcp.ToolHandlerFor[listVulnera
 			if severity != "" {
 				return nil, listVulnerabilitiesOutput{}, errors.New("severity filtering requires a project; the instance-wide listing is paginated server-side")
 			}
-			resp, err := c.ListVulnerabilities(ctx, page, pageSize)
+			resp, err := c.ListVulnerabilities(ctx, page, pageSize, scope)
 			if err != nil {
 				return nil, listVulnerabilitiesOutput{}, toolError(err)
 			}
@@ -256,7 +262,7 @@ func toolListVulnerabilities(c *apiclient.Client) mcp.ToolHandlerFor[listVulnera
 		// one response — de-duplication across versions is the point of #398
 		// and cannot be done a page at a time. Paging therefore happens here,
 		// over the complete, already de-duplicated set.
-		items, err := c.ListProjectVulnerabilities(ctx, project)
+		items, err := c.ListProjectVulnerabilities(ctx, project, scope)
 		if err != nil {
 			return nil, listVulnerabilitiesOutput{}, toolError(err)
 		}
@@ -343,6 +349,20 @@ func normalizeSeverity(raw string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("unknown severity %q (want one of %s)", raw, strings.Join(knownSeverities, ", "))
+}
+
+// normalizeScope validates a dependency scope. Unlike severity it is filtered
+// server-side on both endpoints, so it is allowed instance-wide: the total
+// stays honest.
+func normalizeScope(raw string) (string, error) {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "" {
+		return "", nil
+	}
+	if !depgraph.IsValidScope(s) {
+		return "", fmt.Errorf("unknown dependency scope %q (want one of root, direct, transitive, unknown)", raw)
+	}
+	return s, nil
 }
 
 func paginate[T any](items []T, page, pageSize uint64) []T {

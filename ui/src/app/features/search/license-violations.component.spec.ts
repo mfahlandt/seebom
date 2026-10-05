@@ -118,4 +118,25 @@ describe('LicenseViolationsComponent', () => {
     expect(badges.length).toBe(1);
     expect(badges[0].textContent).toContain('2 not approved');
   });
+
+  describe('scopeSummary', () => {
+    const base = {
+      sbom_id: 'id', source_file: 'a.spdx.json', document_name: 'a',
+      copyleft_count: 0, unapproved_count: 0, unknown_count: 0, violating_licenses: [],
+    };
+
+    it('counts direct and transitive non-compliant packages', () => {
+      const component = TestBed.createComponent(LicenseViolationsComponent).componentInstance;
+      expect(component.scopeSummary({
+        ...base,
+        non_compliant_packages: ['a', 'b', 'c', 'd'],
+        package_scopes: { a: 'direct', b: 'transitive', c: 'transitive', d: 'unknown' },
+      })).toBe('1 direct, 2 transitive');
+    });
+
+    it('is empty when the row predates depth recording', () => {
+      const component = TestBed.createComponent(LicenseViolationsComponent).componentInstance;
+      expect(component.scopeSummary({ ...base, non_compliant_packages: ['a'] })).toBe('');
+    });
+  });
 });

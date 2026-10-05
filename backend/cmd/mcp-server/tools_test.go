@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -280,6 +281,46 @@ func TestListVulnerabilitiesForProjectKeepsVEXStatus(t *testing.T) {
 	}
 	if out.Vulnerabilities[1].VEXStatus != "not_affected" {
 		t.Errorf("the suppressed finding lost its vex_status: %+v", out.Vulnerabilities[1])
+	}
+}
+
+// scope is passed through to the API (server-side filter) and the rows keep
+// their dependency_scope, so an agent can tell a direct from a transitive
+// finding. An invalid scope is rejected before any HTTP call.
+func TestListVulnerabilitiesScopePassthrough(t *testing.T) {
+	var gotScope []string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/vulnerabilities", func(w http.ResponseWriter, r *http.Request) {
+		gotScope = append(gotScope, r.URL.Query().Get("scope"))
+		_, _ = w.Write([]byte(`{"data":[{"vuln_id":"CVE-2026-1","severity":"HIGH","dependency_scope":"transitive","dependency_depth":3}],"total":1,"page":1,"page_size":25}`))
+	})
+	mux.HandleFunc("/api/v1/projects/payment-service/vulnerabilities", func(w http.ResponseWriter, r *http.Request) {
+		gotScope = append(gotScope, r.URL.Query().Get("scope"))
+		_, _ = w.Write([]byte(`[{"vuln_id":"CVE-2026-2","severity":"HIGH","dependency_scope":"direct","dependency_depth":1}]`))
+	})
+	cs := newSession(t, mux)
+
+	var out listVulnerabilitiesOutput
+	decodeOutput(t, call(t, cs, "list_vulnerabilities", map[string]any{"scope": "Transitive"}), &out)
+	if out.Vulnerabilities[0].DependencyScope != "transitive" || out.Vulnerabilities[0].DependencyDepth == nil || *out.Vulnerabilities[0].DependencyDepth != 3 {
+		t.Errorf("instance-wide row lost its scope: %+v", out.Vulnerabilities[0])
+	}
+
+	decodeOutput(t, call(t, cs, "list_vulnerabilities", map[string]any{"project": "payment-service", "scope": "direct"}), &out)
+	if out.Vulnerabilities[0].DependencyScope != "direct" {
+		t.Errorf("project row lost its scope: %+v", out.Vulnerabilities[0])
+	}
+
+	if want := []string{"transitive", "direct"}; !reflect.DeepEqual(gotScope, want) {
+		t.Errorf("scope query params = %v, want %v", gotScope, want)
+	}
+
+	res := call(t, cs, "list_vulnerabilities", map[string]any{"scope": "deep"})
+	if !res.IsError {
+		t.Error("scope=deep accepted, want tool error")
+	}
+	if len(gotScope) != 2 {
+		t.Errorf("invalid scope reached the API: %v", gotScope)
 	}
 }
 

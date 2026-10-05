@@ -8,19 +8,22 @@ import {
   VulnerabilityListItem,
   SBOMLicenseBreakdownItem,
   DependencyNode,
+  DependencyScope,
   ArchivedPackageInfo,
   VEXStatementItem,
 } from '../../core/api.models';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { licenseSourceTooltip } from '../../shared/license-source';
+import { scopeOf } from '../../shared/dependency-scope';
+import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.component';
 
 type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 
 @Component({
   selector: 'app-sbom-detail',
   standalone: true,
-  imports: [CommonModule, ScrollingModule, RouterModule],
+  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sbom-detail" *ngIf="detail">
@@ -80,6 +83,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
             <span class="vex-badge" *ngIf="vuln.vex_status" [class]="'vex-' + vuln.vex_status">
               {{ vuln.vex_status | titlecase }}
             </span>
+            <app-scope-badge [scope]="vuln.dependency_scope" [depth]="vuln.dependency_depth"></app-scope-badge>
             <span class="purl">{{ vuln.purl }}</span>
           </div>
         </cdk-virtual-scroll-viewport>
@@ -147,6 +151,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
                 <h4 class="lic-pkg-title">Packages ({{ lic.packages.length | number }})</h4>
                 <div class="lic-pkg-list">
                   <div *ngFor="let pkg of lic.packages" class="lic-pkg-item">
+                    <app-scope-badge *ngIf="lic.package_scopes" [scope]="packageScope(lic, pkg)"></app-scope-badge>
                     <a *ngIf="isUrl(pkg)" [href]="pkg" target="_blank" rel="noopener" class="lic-pkg-link">
                       {{ extractPackageLabel(pkg) }} <span class="link-icon">↗</span>
                     </a>
@@ -159,6 +164,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
                 <h4 class="lic-pkg-title exempted-title">Exempted Packages ({{ lic.exempted_packages!.length | number }})</h4>
                 <div class="lic-pkg-list">
                   <div *ngFor="let pkg of lic.exempted_packages" class="lic-pkg-item exempted">
+                    <app-scope-badge *ngIf="lic.package_scopes" [scope]="packageScope(lic, pkg)"></app-scope-badge>
                     <a *ngIf="isUrl(pkg)" [href]="pkg" target="_blank" rel="noopener" class="lic-pkg-link exempted-link">
                       {{ extractPackageLabel(pkg) }} <span class="link-icon">↗</span>
                     </a>
@@ -179,6 +185,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
       <div *ngIf="activeTab === 'deps'" class="tab-content">
         <div class="dep-table-header">
           <span class="dep-col-name">Package</span>
+          <span class="dep-col-scope">Scope</span>
           <span class="dep-col-version">Version</span>
           <span class="dep-col-license">License</span>
         </div>
@@ -189,6 +196,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
               {{ node.name }}
               <span class="archived-tag" *ngIf="isArchivedPurl(node.purl)" title="This package uses an archived GitHub repository"> ARCHIVED</span>
             </span>
+            <span class="dep-scope"><app-scope-badge [scope]="node.scope" [depth]="node.depth"></app-scope-badge></span>
             <span class="dep-version">{{ node.version }}</span>
             <span class="dep-license"
                   [title]="node.licenseTitle"
@@ -391,6 +399,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .lic-pkg-item.exempted {
       background: var(--status-success-bg); border-color: var(--status-success);
     }
+    .lic-pkg-item app-scope-badge { margin-right: 6px; }
     .lic-pkg-name { color: var(--text); font-family: monospace; font-size: 0.72rem; }
     .lic-pkg-link {
       color: var(--accent); text-decoration: none; font-family: monospace; font-size: 0.72rem;
@@ -406,6 +415,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
       margin-bottom: 2px; border-bottom: 1px solid var(--border);
     }
     .dep-col-name { flex: 1; min-width: 0; }
+    .dep-col-scope, .dep-scope { width: 90px; flex-shrink: 0; }
     .dep-col-version { width: 140px; flex-shrink: 0; }
     .dep-col-license { width: 180px; flex-shrink: 0; }
     .dep-row {
@@ -610,6 +620,10 @@ export class SbomDetailComponent implements OnInit {
 
   private exemptedLicenseIds = new Set<string>();
 
+  packageScope(lic: SBOMLicenseBreakdownItem, pkg: string): DependencyScope {
+    return scopeOf(lic.package_scopes, pkg);
+  }
+
   private flattenTree(nodes: DependencyNode[], level = 0): FlatDep[] {
     const result: FlatDep[] = [];
     for (const node of nodes) {
@@ -617,6 +631,7 @@ export class SbomDetailComponent implements OnInit {
         name: node.name, version: node.version, license: node.license,
         licenseTitle: licenseSourceTooltip(node.license_source),
         purl: node.purl, level, index: node.index,
+        scope: node.dependency_scope, depth: node.dependency_depth,
       });
     }
     return result;
@@ -631,5 +646,7 @@ interface FlatDep {
   purl: string;
   level: number;
   index: number;
+  scope: DependencyScope;
+  depth?: number;
 }
 

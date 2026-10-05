@@ -18,6 +18,7 @@ import (
 
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
+	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
@@ -506,6 +507,7 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 						AffectedVersions: affectedVersions,
 						FixedVersion:     fixedVersion,
 						OSVJSON:          string(rawJSON),
+						DependencyDepth:  depgraph.MinDepthForPURL(result.Packages.PackagePURLs, result.Packages.PackageDepths, d.purl),
 					}
 					own.applyVulnerability(&v)
 					vulns = append(vulns, v)

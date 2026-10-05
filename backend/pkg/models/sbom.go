@@ -71,13 +71,24 @@ type SBOMPackages struct {
 	RelSourceIndices      []uint32 `json:"rel_source_indices"`
 	RelTargetIndices      []uint32 `json:"rel_target_indices"`
 	RelTypes              []string `json:"rel_types"`
-	Cluster               string   `json:"cluster,omitempty"`
-	Namespace             string   `json:"namespace,omitempty"`
-	Project               string   `json:"project,omitempty"`
+	// PackageDepths is parallel to PackageNames: each package's distance from
+	// the described product along the relationship graph (0 root, 1 direct,
+	// ≥2 transitive, depgraph.Unknown when not derivable). Computed once at
+	// parse time by internal/sbom; the UI and the findings tables read it to
+	// tell direct from transitive dependencies.
+	PackageDepths []uint16 `json:"package_depths"`
+	Cluster       string   `json:"cluster,omitempty"`
+	Namespace     string   `json:"namespace,omitempty"`
+	Project       string   `json:"project,omitempty"`
 	// RootIndices marks the package(s) the SBOM DESCRIBES – the product itself,
 	// not a dependency. Kept in the arrays (index 0 is the dependency-tree root)
 	// but excluded from license compliance. Not persisted to ClickHouse.
 	RootIndices []uint32 `json:"-"`
+	// DirectIndices are packages known to be direct dependencies although no
+	// root package is present in the arrays: CycloneDX keeps the product in
+	// metadata.component, so its dependsOn targets are recorded here as
+	// depth-1 seeds for the depth walk. Not persisted to ClickHouse.
+	DirectIndices []uint32 `json:"-"`
 }
 
 // Vulnerability represents a single vulnerability discovered via the OSV API.
@@ -97,9 +108,12 @@ type Vulnerability struct {
 	Aliases      []string `json:"aliases,omitempty"`
 	FixedVersion string   `json:"fixed_version"`
 	OSVJSON      string   `json:"osv_json"`
-	Cluster      string   `json:"cluster,omitempty"`
-	Namespace    string   `json:"namespace,omitempty"`
-	Project      string   `json:"project,omitempty"`
+	// DependencyDepth is the smallest depth of the affected PURL in the SBOM
+	// (see SBOMPackages.PackageDepths); depgraph.Unknown when not derivable.
+	DependencyDepth uint16 `json:"dependency_depth"`
+	Cluster         string `json:"cluster,omitempty"`
+	Namespace       string `json:"namespace,omitempty"`
+	Project         string `json:"project,omitempty"`
 }
 
 // LicenseCompliance represents the compliance status for a license within an SBOM.

@@ -223,7 +223,7 @@ func TestProjectVulnerabilitiesOneRowPerPair(t *testing.T) {
 	c := testClient(t)
 	f := insertProjectFixture(t, c)
 
-	items, err := c.QueryProjectVulnerabilities(context.Background(), f.child)
+	items, err := c.QueryProjectVulnerabilities(context.Background(), f.child, "")
 	if err != nil {
 		t.Fatalf("QueryProjectVulnerabilities: %v", err)
 	}

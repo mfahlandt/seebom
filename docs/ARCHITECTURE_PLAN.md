@@ -288,6 +288,32 @@ Resolution order, highest priority first:
    silently overriding a named value from directory structure would be
    impossible to debug.
 
+### Dependency Depth (`internal/depgraph`, migration `025`)
+
+Whether a vulnerable or copyleft package is something a project pulls in
+directly or something buried five levels down changes who has to act, so
+every package stores its **shortest distance from the SBOM root**:
+`sbom_packages.package_depths Array(UInt16)` (parallel to `package_names`)
+and the denormalised `vulnerabilities.dependency_depth UInt16`.
+
+- Computed **once at parse time** by `depgraph.Compute` (BFS over the
+  relationship arrays): roots are the SPDX `DESCRIBES` targets, protobom
+  root elements, or — for CycloneDX, where the product lives outside the
+  component array in `metadata.component` — its `dependsOn` targets are
+  seeded at depth 1. Forward edges: `DEPENDS_ON`, `CONTAINS`,
+  `*_DEPENDENCY`, `STATIC_LINK`/`DYNAMIC_LINK`; backward: `DEPENDENCY_OF`,
+  `*_DEPENDENCY_OF`, `CONTAINED_BY`, `PREREQUISITE_FOR`.
+- Without a declared root the single in-degree-0 package is used; several
+  candidates or a flat list yield `65535` (unknown) for every package. The
+  sentinel is the max value so `min()` aggregations across SBOMs naturally
+  prefer a known depth and `BETWEEN 2 AND 65534` means transitive.
+- Vocabulary exposed by the API as `dependency_scope`: `root` (0),
+  `direct` (1), `transitive` (≥ 2), `unknown`. Vulnerability endpoints
+  accept `?scope=`; license breakdowns carry `package_scopes`. The former
+  "root = index 0" heuristic in `QueryAffectedProjectsByCVE` is gone —
+  `is_direct` is now derived from the stored depth.
+- Rows ingested before the migration are `unknown` until `make re-scan`.
+
 ### Ingestion Path Layout (`internal/ingestpath`)
 
 Teams already organise buckets hierarchically. Rather than guessing that
@@ -556,3 +582,4 @@ Exemptions are written at ingest time into `exempted_packages` + `exemption_reas
 | 36 | Generic JSON file acceptance: Scanner accepts any `.json` file (not just `.spdx.json`/`.cdx.json`). Format is auto-detected at parse time by the `internal/sbom` dispatch layer. Config files (`license-policy.json`, `license-exceptions.json`, `project-groups.json`) are still excluded. | ✅ Implemented |
 | 37 | License hygiene at ingest: Yarn-Berry lockfile PURLs/names (`ws@npm:^8, ws@8.20.0`, `patch:` protocol) repaired in `internal/sbom`; free-text license spellings (`MPL 2.0`, `CC BY-SA 4.0`) rewritten to SPDX IDs by `license.Normalize`; remaining NOASSERTION resolved via deps.dev (Maven, PyPI, Cargo, Go, npm, NuGet). Licenses missing from the policy are `unapproved`, `unknown` means no license information. | ✅ Implemented |
 | 38 | License provenance (#439): Packagist and PyPI resolvers; every package records where its license came from or why it is missing (`sbom_packages.package_license_sources`, migration `024`), exposed via `GET /api/v1/licenses/sources`, the `license_source` field of the dependency tree, and the License Resolution panel in the UI. All heuristics are documented in `docs/content/docs/license-resolution/` and the page's tables are asserted against the code (`cmd/parsing-worker/docs_sync_test.go`, `golden_test.go`). | ✅ Implemented |
+| 39 | Dependency scope: each package stores its shortest depth from the SBOM root (`sbom_packages.package_depths`, `vulnerabilities.dependency_depth`, migration `025`, computed by `internal/depgraph` at parse time). Exposed as `dependency_scope` (`root`/`direct`/`transitive`/`unknown`) on vulnerability, dependency-tree and affected-project rows, `package_scopes` on license breakdowns, `?scope=` filter on vulnerability endpoints, and scope badges + filter in the UI. | ✅ Implemented |

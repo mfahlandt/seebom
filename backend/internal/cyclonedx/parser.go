@@ -228,7 +228,26 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 		relTypes   []string
 	)
 
+	// The product itself lives in metadata.component, outside the component
+	// array, so its dependsOn entry has no source index. Its targets are the
+	// direct dependencies; remember them as depth-1 seeds for the depth walk.
+	rootRef := ""
+	if doc.Metadata.Component != nil {
+		rootRef = doc.Metadata.Component.BomRef
+	}
+	var directIndices []uint32
+
 	for _, dep := range doc.Dependencies {
+		if rootRef != "" && dep.Ref == rootRef {
+			if _, inArray := bomRefToIndex[rootRef]; !inArray {
+				for _, target := range dep.DependsOn {
+					if tgtIdx, ok := bomRefToIndex[target]; ok {
+						directIndices = append(directIndices, tgtIdx)
+					}
+				}
+				continue
+			}
+		}
 		srcIdx, srcOK := bomRefToIndex[dep.Ref]
 		if !srcOK {
 			continue
@@ -255,6 +274,7 @@ func Parse(data []byte, sourceFile, sha256Hash string) (*ParseResult, error) {
 		RelSourceIndices: relSources,
 		RelTargetIndices: relTargets,
 		RelTypes:         relTypes,
+		DirectIndices:    directIndices,
 	}
 
 	return &ParseResult{

@@ -19,6 +19,7 @@ import (
 	json "github.com/goccy/go-json"
 
 	"github.com/seebom-labs/bomhort/backend/internal/cyclonedx"
+	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/internal/protobomparser"
 	"github.com/seebom-labs/bomhort/backend/internal/spdx"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
@@ -100,7 +101,17 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (*ParseResult, error) {
 		return nil, err
 	}
 	normalizeNPMIdentities(&result.Packages)
+	assignDepths(&result.Packages)
 	return result, nil
+}
+
+// assignDepths derives each package's distance from the described product
+// (direct vs. transitive) from the relationship graph. Done here, after the
+// format-specific parsers, so every backend yields the same column.
+func assignDepths(p *models.SBOMPackages) {
+	p.PackageDepths = depgraph.Compute(len(p.PackageNames),
+		p.RelSourceIndices, p.RelTargetIndices, p.RelTypes,
+		p.RootIndices, p.DirectIndices)
 }
 
 // dispatch routes the raw document to the parser backend for its format.

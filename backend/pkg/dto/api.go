@@ -76,6 +76,14 @@ type VulnerabilityListItem struct {
 	// the project's SBOMs carry this (vuln_id, purl) pair. Omitted on
 	// per-SBOM listings where it would always be 1.
 	AffectedSBOMs uint64 `json:"affected_sboms,omitempty"`
+	// DependencyScope says how the affected package is pulled in: "root",
+	// "direct", "transitive" or "unknown" (no relationship graph, or ingested
+	// before depths were recorded). DependencyDepth is the shortest path
+	// length from the described product (0 root, 1 direct, ≥2 transitive);
+	// omitted when unknown. On project-level listings both describe the
+	// SBOM where the package is nearest to the root.
+	DependencyScope string  `json:"dependency_scope"`
+	DependencyDepth *uint16 `json:"dependency_depth,omitempty"`
 }
 
 // DependencyNode represents a single node in the dependency tree for the UI.
@@ -91,6 +99,9 @@ type DependencyNode struct {
 	// before it was recorded.
 	LicenseSource string   `json:"license_source,omitempty"`
 	Children      []uint32 `json:"children"`
+	// DependencyScope / DependencyDepth: see VulnerabilityListItem.
+	DependencyScope string  `json:"dependency_scope"`
+	DependencyDepth *uint16 `json:"dependency_depth,omitempty"`
 }
 
 // LicenseSourceItem is one row of GET /api/v1/licenses/sources: how many
@@ -186,6 +197,10 @@ type SBOMLicenseBreakdownItem struct {
 	Packages         []string `json:"packages"`
 	ExemptedPackages []string `json:"exempted_packages,omitempty"`
 	ExemptionReason  string   `json:"exemption_reason,omitempty"`
+	// PackageScopes maps a package name from Packages / ExemptedPackages to
+	// its dependency scope ("direct", "transitive", …). Names absent from the
+	// map are unknown.
+	PackageScopes map[string]string `json:"package_scopes,omitempty"`
 }
 
 // ProjectLicenseViolation represents a project that has license compliance issues.
@@ -198,6 +213,8 @@ type ProjectLicenseViolation struct {
 	UnknownCount         uint64   `json:"unknown_count"`
 	ViolatingLicenses    []string `json:"violating_licenses"`
 	NonCompliantPackages []string `json:"non_compliant_packages"`
+	// PackageScopes: see SBOMLicenseBreakdownItem.
+	PackageScopes map[string]string `json:"package_scopes,omitempty"`
 }
 
 // AffectedProject represents a project affected by a specific CVE.
@@ -210,7 +227,10 @@ type AffectedProject struct {
 	Version      string `json:"version"`
 	Severity     string `json:"severity"`
 	VEXStatus    string `json:"vex_status,omitempty"`
-	IsDirect     bool   `json:"is_direct"`
+	// IsDirect is DependencyScope == "direct"; kept for existing clients.
+	IsDirect        bool    `json:"is_direct"`
+	DependencyScope string  `json:"dependency_scope"`
+	DependencyDepth *uint16 `json:"dependency_depth,omitempty"`
 }
 
 // DependencyStatsItem is a cross-project dependency usage statistic.

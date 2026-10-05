@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
@@ -284,15 +285,23 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 // latest-wins rule (#335) applies and a finding covered by several statements
 // still yields exactly one row. Scope is per SBOM (#350), and a statement
 // naming a product with no subcomponents ('*') covers every component of it.
-func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
+//
+// scope ("" or a depgraph scope label) restricts the listing to findings
+// whose package is pulled in that way (direct, transitive, …).
+func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64, scope string) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
 	if page == 0 {
 		page = 1
 	}
 	offset := (page - 1) * pageSize
 
+	scopeWhere := ""
+	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
+		scopeWhere = " WHERE " + pred
+	}
+
 	var total uint64
 	if err := c.Conn.QueryRow(ctx, `
-		SELECT count() FROM (SELECT * FROM vulnerabilities FINAL)
+		SELECT count() FROM (SELECT * FROM vulnerabilities FINAL)`+scopeWhere+`
 	`).Scan(&total); err != nil {
 		return nil, fmt.Errorf("failed to count vulnerabilities: %w", err)
 	}
@@ -301,8 +310,9 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
+			v.dependency_depth,
 			ifNull(vx.vex_status, '') AS vex_status
-		FROM (SELECT * FROM vulnerabilities FINAL) AS v
+		FROM (SELECT * FROM vulnerabilities FINAL`+scopeWhere+`) AS v
 		LEFT JOIN (
 			SELECT
 				toString(f.sbom_id) AS sbom_id, f.vuln_id AS vuln_id, f.purl AS purl,
@@ -334,14 +344,16 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 	for rows.Next() {
 		var item dto.VulnerabilityListItem
 		var discoveredAt time.Time
+		var depth uint16
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
-			&discoveredAt, &item.VEXStatus,
+			&discoveredAt, &depth, &item.VEXStatus,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vulnerability row: %w", err)
 		}
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
+		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
 		items = append(items, item)
 	}
 
@@ -432,19 +444,21 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 		relSources []uint32
 		relTargets []uint32
 		relTypes   []string
+		depths     []uint16
 	)
 
 	err := c.Conn.QueryRow(ctx, `
 		SELECT
 			package_spdx_ids, package_names, package_versions,
 			package_purls, package_licenses, package_license_sources,
-			rel_source_indices, rel_target_indices, rel_types
+			rel_source_indices, rel_target_indices, rel_types,
+			package_depths
 		FROM sbom_packages
 		WHERE sbom_id = ?
 		LIMIT 1
 	`, sbomID).Scan(
 		&spdxIDs, &names, &versions, &purls, &licenses, &sources,
-		&relSources, &relTargets, &relTypes,
+		&relSources, &relTargets, &relTypes, &depths,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sbom_packages for %s: %w", sbomID, err)
@@ -487,15 +501,18 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 			children = []uint32{}
 		}
 
+		scope, depth := scopeFields(depgraph.DepthOf(depths, i))
 		nodes[i] = dto.DependencyNode{
-			Index:         idx,
-			SPDXID:        spdxID,
-			Name:          names[i],
-			Version:       version,
-			PURL:          purl,
-			License:       lic,
-			LicenseSource: source,
-			Children:      children,
+			Index:           idx,
+			SPDXID:          spdxID,
+			Name:            names[i],
+			Version:         version,
+			PURL:            purl,
+			License:         lic,
+			LicenseSource:   source,
+			Children:        children,
+			DependencyScope: scope,
+			DependencyDepth: depth,
 		}
 	}
 

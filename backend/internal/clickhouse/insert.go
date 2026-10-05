@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -57,6 +58,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 			package_spdx_ids, package_names, package_versions,
 			package_purls, package_licenses, package_license_sources,
 			rel_source_indices, rel_target_indices, rel_types,
+			package_depths,
 			cluster, namespace, project
 		)`)
 	if err != nil {
@@ -76,6 +78,7 @@ func (c *Client) InsertSBOMPackages(ctx context.Context, pkg *models.SBOMPackage
 		pkg.RelSourceIndices,
 		pkg.RelTargetIndices,
 		pkg.RelTypes,
+		depthsFor(pkg),
 		pkg.Cluster,
 		pkg.Namespace,
 		pkg.Project,
@@ -94,6 +97,18 @@ func licenseSourcesFor(pkg *models.SBOMPackages) []string {
 	return out
 }
 
+// depthsFor returns the package depths padded with depgraph.Unknown or
+// trimmed to one entry per package, so the parallel arrays never disagree in
+// length. An SBOM parsed without depths (nil) is "unknown" throughout.
+func depthsFor(pkg *models.SBOMPackages) []uint16 {
+	out := make([]uint16, len(pkg.PackageNames))
+	n := copy(out, pkg.PackageDepths)
+	for i := n; i < len(out); i++ {
+		out[i] = depgraph.Unknown
+	}
+	return out
+}
+
 // InsertVulnerabilities batch-inserts vulnerability rows for an SBOM.
 func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulnerability) error {
 	if len(vulns) == 0 {
@@ -104,6 +119,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 		`INSERT INTO vulnerabilities (
 			discovered_at, sbom_id, source_file, purl, vuln_id,
 			severity, summary, affected_versions, fixed_version, osv_json, aliases,
+			dependency_depth,
 			cluster, namespace, project
 		)`)
 	if err != nil {
@@ -123,6 +139,7 @@ func (c *Client) InsertVulnerabilities(ctx context.Context, vulns []models.Vulne
 			v.FixedVersion,
 			v.OSVJSON,
 			v.Aliases,
+			v.DependencyDepth,
 			v.Cluster,
 			v.Namespace,
 			v.Project,

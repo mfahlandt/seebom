@@ -71,8 +71,9 @@ export class ApiService {
     return this.http.get<DependencyNode[]>(`${this.baseUrl}/sboms/${sbomId}/dependencies`);
   }
 
-  getSbomVulnerabilities(sbomId: string): Observable<VulnerabilityListItem[]> {
-    return this.http.get<VulnerabilityListItem[]>(`${this.baseUrl}/sboms/${sbomId}/vulnerabilities`);
+  getSbomVulnerabilities(sbomId: string, scope = ''): Observable<VulnerabilityListItem[]> {
+    const params = scope ? new HttpParams().set('scope', scope) : undefined;
+    return this.http.get<VulnerabilityListItem[]>(`${this.baseUrl}/sboms/${sbomId}/vulnerabilities`, { params });
   }
 
   /** VEX statements affecting one SBOM (#350): scoped first, then global. */
@@ -88,10 +89,14 @@ export class ApiService {
    * Paginated vulnerabilities. Every finding is returned with its VEX status
    * attached for display - there is no "effective only" mode.
    */
-  getVulnerabilities(page = 1, pageSize = 50): Observable<PaginatedResponse<VulnerabilityListItem>> {
-    const params = new HttpParams()
+  /** scope: '' for all findings, or a DependencyScope to keep only one kind. */
+  getVulnerabilities(page = 1, pageSize = 50, scope = ''): Observable<PaginatedResponse<VulnerabilityListItem>> {
+    let params = new HttpParams()
       .set('page', page.toString())
       .set('page_size', pageSize.toString());
+    if (scope) {
+      params = params.set('scope', scope);
+    }
     return this.http.get<PaginatedResponse<VulnerabilityListItem>>(
       `${this.baseUrl}/vulnerabilities`,
       { params }
@@ -230,9 +235,10 @@ export class ApiService {
   }
 
   /** One row per distinct (vuln_id, purl) across the project's SBOMs. */
-  getProjectVulnerabilities(name: string): Observable<VulnerabilityListItem[]> {
+  getProjectVulnerabilities(name: string, scope = ''): Observable<VulnerabilityListItem[]> {
+    const params = scope ? new HttpParams().set('scope', scope) : undefined;
     return this.http.get<VulnerabilityListItem[]>(
-      `${this.baseUrl}/projects/${encodeURIComponent(name)}/vulnerabilities`);
+      `${this.baseUrl}/projects/${encodeURIComponent(name)}/vulnerabilities`, { params });
   }
 
   getProjectPackages(

@@ -1,0 +1,14 @@
+{
+  "brandName": "CNCF SBOM Explorer",
+  "pageTitle": "CNCF SBOM Explorer",
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Software Bill of Materials across CNCF projects",
+    "description": "This instance of <strong>BOMHort</strong> ingests the SPDX and CycloneDX SBOMs published by CNCF projects, cross-references known vulnerabilities via the <a href=\"https://osv.dev\" target=\"_blank\" rel=\"noopener\">OSV database</a>, evaluates license compliance against a configurable policy, and applies <a href=\"https://openvex.dev\" target=\"_blank\" rel=\"noopener\">OpenVEX</a> statements to suppress non-applicable findings.",
+    "disclaimer": "<strong>Disclaimer:</strong> Data is provided on an \"as-is\" basis for informational purposes only. Vulnerability and license information is sourced from third-party databases (OSV, GitHub) and may be incomplete or delayed. This site is not affiliated with or otherwise sponsored by CNCF. CNCF and the CNCF logo design are registered trademarks of the Cloud Native Computing Foundation."
+  },
+  "footer": {
+    "enabled": true,
+    "text": "Powered by BOMHort · Not affiliated with or sponsored by CNCF"
+  }
+}

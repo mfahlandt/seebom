@@ -1,0 +1,120 @@
+/*
+ * BOMHort – CNCF-inspired theme
+ * ────────────────────────────────────────────────────────────
+ * Palette from https://www.cncf.io/brand-guidelines/ :
+ *   CNCF Blue      #0086FF   primary accent
+ *   CNCF Black     #000000   navigation, headings
+ *   CNCF Turquoise #93EAFF   secondary highlight
+ *   CNCF Pink      #D62293   secondary highlight (critical)
+ *   CNCF Stone     #E5E5E5   borders, muted surfaces
+ *   CNCF Cloud White #FFFFFF surfaces
+ *
+ * Typeface: Clarity City (https://github.com/vmware/clarity-city).
+ * The font files are not shipped here – install them system-wide or add
+ * an @font-face block pointing at your own hosted copy; the stack falls
+ * back to Inter / system sans-serif otherwise.
+ *
+ * Severity/status tints stay semantically readable (red = critical,
+ * orange = high, amber = medium); CNCF colours are used where no
+ * meaning is attached: accent, navigation, charts, license permissive.
+ *
+ * Usage (Docker Compose):   CUSTOM_THEME=./examples/themes/cncf/custom-theme.css make dev
+ * Usage (Kubernetes):       kubectl create configmap bomhort-theme \
+ *                             --from-file=custom-theme.css=examples/themes/cncf/custom-theme.css
+ *
+ * CNCF and the CNCF logo design are registered trademarks of the Cloud
+ * Native Computing Foundation. This theme only reuses the public colour
+ * palette and does not include the logo; it does not imply affiliation.
+ */
+
+:root {
+  --font: 'Clarity City', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --surface-alt: #f0f3f7;
+  --border: #e5e5e5;
+  --radius: 6px;
+  --radius-sm: 3px;
+
+  --accent: #0086ff;
+  --accent-hover: #006bd6;
+  --accent-orange: #d62293;
+  --accent-orange-hover: #b01c79;
+  --dark: #000000;
+
+  --nav-bg: #000000;
+  --nav-brand: #ffffff;
+  --nav-link: #b8c4d6;
+  --nav-link-hover: #93eaff;
+  --nav-link-active-bg: rgba(0, 134, 255, 0.35);
+
+  --text: #111418;
+  --text-secondary: #5b6572;
+  --text-muted: #8a94a3;
+
+  --severity-critical: #d62293;
+  --severity-critical-bg: #fde8f4;
+  --severity-high: #e8871e;
+  --severity-high-bg: #fff5e8;
+  --severity-medium: #d4a843;
+  --severity-medium-bg: #fff8e8;
+  --severity-low: #5b6572;
+  --severity-low-bg: #eef1f5;
+
+  --status-success: #0d7a5f;
+  --status-success-bg: #e6f6f0;
+  --status-error: #d62293;
+  --status-error-bg: #fde8f4;
+  --status-warning: #c07012;
+  --status-warning-bg: #fff5e8;
+  --status-info: #0086ff;
+  --status-info-bg: #e5f3ff;
+
+  --license-permissive: #0086ff;
+  --license-copyleft: #d62293;
+  --license-unapproved: #c07012;
+  --license-unknown: #8a94a3;
+
+  --chart-1: #0086ff;
+  --chart-2: #d62293;
+  --chart-3: #000000;
+  --chart-4: #93eaff;
+  --chart-5: #e8871e;
+  --chart-6: #8a94a3;
+}
+
+[data-theme="dark"] {
+  --bg: #0b0f14;
+  --surface: #141a21;
+  --surface-alt: #1b232c;
+  --border: #273038;
+  --dark: #e6ebf1;
+
+  --nav-bg: #000000;
+  --nav-brand: #ffffff;
+  --nav-link: #8f9bab;
+  --nav-link-hover: #93eaff;
+  --nav-link-active-bg: rgba(0, 134, 255, 0.4);
+
+  --text: #e6ebf1;
+  --text-secondary: #9aa6b5;
+  --text-muted: #6b7684;
+
+  --accent: #3399ff;
+  --accent-hover: #0086ff;
+
+  --severity-critical-bg: #2d1024;
+  --severity-high-bg: #2a2010;
+  --severity-medium-bg: #2a2510;
+  --severity-low-bg: #1b232c;
+
+  --status-success-bg: #0e2a22;
+  --status-error-bg: #2d1024;
+  --status-warning-bg: #2a2010;
+  --status-info-bg: #0f2238;
+
+  --license-permissive: #3399ff;
+  --chart-3: #93eaff;
+  --chart-4: #ffffff;
+}

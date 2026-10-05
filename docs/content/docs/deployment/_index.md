@@ -747,6 +747,12 @@ kubectl create configmap bomhort-custom-theme \
 kubectl rollout restart deployment bomhort-ui
 ```
 
+Write overrides as `:root:root { … }` and `:root:root[data-theme="dark"] { … }`:
+Angular appends its own stylesheet after the theme link, so a plain `:root`
+block ties on specificity and the default palette wins. A complete example
+(CNCF colour palette) lives in `examples/themes/cncf/`; locally:
+`CUSTOM_THEME=./examples/themes/cncf/custom-theme.css make dev`.
+
 ---
 
 ## 6. Site Configuration

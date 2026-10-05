@@ -2,8 +2,10 @@
  * BOMHort Custom Theme
  * ────────────────────────────────────────────────────────────
  * Override any CSS variable from styles.scss here.
- * This file is loaded AFTER the Angular bundle, so all
- * :root variables can be overridden.
+ *
+ * NOTE: Angular appends its own styles-*.css AFTER this <link> in <head>,
+ * so a plain :root block ties on specificity and loses. Use :root:root
+ * (and :root:root[data-theme="dark"]) so your overrides win.
  *
  * Mount this file into the UI container at:
  *   /usr/share/nginx/html/custom-theme.css
@@ -22,7 +24,7 @@
  */
 
 /*
-:root {
+:root:root {
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   --bg: #f4f5f7;
@@ -89,7 +91,7 @@
  * used :root:root above).
  */
 /*
-[data-theme="dark"] {
+:root:root[data-theme="dark"] {
   --bg: #121218;
   --surface: #1c1c24;
   --surface-alt: #24242e;

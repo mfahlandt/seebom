@@ -27,7 +27,7 @@
  * palette and does not include the logo; it does not imply affiliation.
  */
 
-:root {
+:root:root {
   --font: 'Clarity City', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   --bg: #f5f7fa;
@@ -84,7 +84,7 @@
   --chart-6: #8a94a3;
 }
 
-[data-theme="dark"] {
+:root:root[data-theme="dark"] {
   --bg: #0b0f14;
   --surface: #141a21;
   --surface-alt: #1b232c;

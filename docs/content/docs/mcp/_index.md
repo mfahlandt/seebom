@@ -62,6 +62,12 @@ one response — de-duplication across versions cannot be done a page at a time.
 `severity: CRITICAL` on the instance-wide listing returns an error rather than
 a number that only describes one page.
 
+`scope` (`root`, `direct`, `transitive`, `unknown`) has no such restriction:
+the API filters it server-side on both endpoints, so the total stays honest.
+Every returned finding carries `dependency_scope` and `dependency_depth`, which
+lets an agent answer "which of these CVEs are in libraries we depend on
+directly?" without reconstructing the dependency tree.
+
 ## Running it on a laptop (stdio)
 
 stdio is the default and needs no port, no token and no origin list, because

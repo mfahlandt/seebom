@@ -177,7 +177,7 @@ func TestListProjectVulnerabilitiesDecodesBareArray(t *testing.T) {
 		_, _ = w.Write([]byte(`[{"vuln_id":"CVE-2026-1","severity":"HIGH","vex_status":"not_affected"}]`))
 	}), Options{})
 
-	items, err := c.ListProjectVulnerabilities(context.Background(), "payment-service")
+	items, err := c.ListProjectVulnerabilities(context.Background(), "payment-service", "")
 	if err != nil {
 		t.Fatalf("ListProjectVulnerabilities: %v", err)
 	}

@@ -177,6 +177,18 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out any
 // pageQuery builds the page/page_size pair the API uses everywhere. Zero
 // values are omitted so the server's own defaults apply rather than this
 // client pinning them — the defaults are part of the contract, not of us.
+// scopeQuery adds ?scope= to q (allocating it when nil) unless scope is "".
+func scopeQuery(q url.Values, scope string) url.Values {
+	if scope == "" {
+		return q
+	}
+	if q == nil {
+		q = url.Values{}
+	}
+	q.Set("scope", scope)
+	return q
+}
+
 func pageQuery(page, pageSize uint64) url.Values {
 	q := url.Values{}
 	if page > 0 {
@@ -226,19 +238,22 @@ func (c *Client) ListProjectSBOMs(ctx context.Context, name string, page, pageSi
 // ListProjectVulnerabilities returns GET /api/v1/projects/{name}/vulnerabilities.
 // The endpoint is not paginated: it answers with the project's distinct
 // findings, one row per (vuln_id, purl), latest VEX statement winning.
-func (c *Client) ListProjectVulnerabilities(ctx context.Context, name string) ([]dto.VulnerabilityListItem, error) {
+// scope narrows to one dependency scope (root, direct, transitive, unknown);
+// "" means all.
+func (c *Client) ListProjectVulnerabilities(ctx context.Context, name, scope string) ([]dto.VulnerabilityListItem, error) {
 	var out []dto.VulnerabilityListItem
-	if err := c.get(ctx, "/api/v1/projects/"+url.PathEscape(name)+"/vulnerabilities", nil, &out); err != nil {
+	if err := c.get(ctx, "/api/v1/projects/"+url.PathEscape(name)+"/vulnerabilities", scopeQuery(nil, scope), &out); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
 // ListVulnerabilities returns one page of the instance-wide
-// GET /api/v1/vulnerabilities.
-func (c *Client) ListVulnerabilities(ctx context.Context, page, pageSize uint64) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
+// GET /api/v1/vulnerabilities. scope narrows to one dependency scope
+// (root, direct, transitive, unknown); "" means all.
+func (c *Client) ListVulnerabilities(ctx context.Context, page, pageSize uint64, scope string) (*dto.PaginatedResponse[dto.VulnerabilityListItem], error) {
 	var out dto.PaginatedResponse[dto.VulnerabilityListItem]
-	if err := c.get(ctx, "/api/v1/vulnerabilities", pageQuery(page, pageSize), &out); err != nil {
+	if err := c.get(ctx, "/api/v1/vulnerabilities", scopeQuery(pageQuery(page, pageSize), scope), &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

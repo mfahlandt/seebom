@@ -75,8 +75,8 @@ API Gateway (REST) → 24 Endpoints → Angular UI
 | Table | Engine | Purpose |
 |-------|--------|---------|
 | `sboms` | ReplacingMergeTree | SBOM metadata incl. `document_version` (migration `021`): the version of the described product (SPDX root `versionInfo`, CycloneDX `metadata.component.version`), extracted at parse time |
-| `sbom_packages` | MergeTree | Parallel arrays (names, PURLs, licenses, relationships) |
-| `vulnerabilities` | MergeTree | OSV results incl. `aliases` (migration `019`): every other identifier OSV lists for the entry (GHSA ↔ CVE); VEX matching accepts a statement whose `vuln_id` equals the finding's id **or** any alias |
+| `sbom_packages` | MergeTree | Parallel arrays (names, PURLs, licenses, relationships) incl. `package_depths` (migration `025`): each package's shortest distance from the SBOM root, see [Dependency depth](#dependency-depth) |
+| `vulnerabilities` | MergeTree | OSV results incl. `aliases` (migration `019`): every other identifier OSV lists for the entry (GHSA ↔ CVE); VEX matching accepts a statement whose `vuln_id` equals the finding's id **or** any alias — and `dependency_depth` (migration `025`), denormalised from the affected package |
 | `license_compliance` | SummingMergeTree | License compliance per SBOM |
 | `ingestion_queue` | ReplacingMergeTree | Job queue (job_type: sbom/vex) |
 | `dashboard_stats_mv` | SummingMergeTree (MV) | Pre-aggregated daily stats |
@@ -101,6 +101,34 @@ None of them is part of `ORDER BY`: MergeTree cannot alter a sort key in place, 
 `sboms` and `ingestion_queue` also carry `tags` (`Array(String) DEFAULT []`, migration `022`, #357): free-form grouping labels that sit *orthogonal* to the ownership triple. Where `cluster`/`namespace`/`project` answer "where does this run and who owns it", tags answer "which grouping does this project belong to" — the dimension a catalogue instance (foundation, vendor, internal platform team) needs when nothing runs in a cluster at all. Tags group projects, they do not replace them: a project keeps its identity and may carry several tags. Values are normalised at ingest (lowercase, trimmed, deduplicated, sorted) and — unlike the ownership triple — instance-wide, per-bucket and per-upload tags are **merged** rather than overridden. The distinct set is read back data-driven via `GET /api/v1/tags`; `GET /api/v1/projects?tag=<tag>` narrows the project list. `Array(String)` over `LowCardinality`: a document carries n tags, and ClickHouse's `has()` on a small string array is cheap at these cardinalities.
 
 **Parent projects** (migration `023`): `sboms` and `ingestion_queue` carry `parent` (`LowCardinality(String) DEFAULT ''`), an explicit parent assigned at ingest (bucket `parent`, the `parent` path-layout token, `?parent=`, `PARENT`); `sboms` additionally stores `root_purl` and `supplier` (`String DEFAULT ''`), parsed from the described root component (SPDX root package purl / supplier / originator; CycloneDX `metadata.component.purl`, `metadata.manufacturer`/`manufacture`/`supplier`). These are only *inputs*: the parent itself is resolved at query time in the gateway (`internal/projectgroup`) from one row of signals per project — mapping file (`PROJECT_GROUPS_FILE`), explicit assignment, tag, then automatically by repository owner, `owner/repo` document name, purl namespace and supplier, with an ambiguity guard (several top-level projects sharing an owner group nothing). Resolving late means a changed mapping file or bucket config applies without re-ingesting; the result is cached for 30 s and invalidated when the mapping file changes. `GET /api/v1/projects?group_by=parent` lists the groups with counts de-duplicated across all members' SBOMs. See [Parent projects]({{< relref "/docs/ownership" >}}#parent-projects).
+
+### Dependency depth
+
+Whether a vulnerable or copyleft package is something the project pulls in
+itself or something five levels down changes who has to act, so every package
+stores its **shortest distance from the SBOM root** (`package_depths`,
+`dependency_depth`; migration `025`).
+
+- Computed **once at parse time** by `internal/depgraph` (BFS over the
+  relationship arrays). Roots are the SPDX `DESCRIBES` targets or protobom
+  root elements; for CycloneDX, whose product lives outside the component
+  array in `metadata.component`, its `dependsOn` targets are seeded at depth 1.
+  Forward edges: `DEPENDS_ON`, `CONTAINS`, `*_DEPENDENCY`, `STATIC_LINK` /
+  `DYNAMIC_LINK`; backward: `DEPENDENCY_OF`, `*_DEPENDENCY_OF`,
+  `CONTAINED_BY`, `PREREQUISITE_FOR`.
+- Without a declared root the single in-degree-0 package is used; several
+  candidates or a flat list yield **unknown** (`65535`) for every package. The
+  sentinel is the maximum so `min()` across SBOMs prefers a known depth.
+- Exposed by the API as `dependency_scope` — `root` (0), `direct` (1),
+  `transitive` (≥ 2), `unknown` — on vulnerability, dependency-tree and
+  affected-project rows, as `package_scopes` on license breakdowns, and as a
+  `?scope=` filter on the vulnerability endpoints; the MCP
+  `list_vulnerabilities` tool passes `scope` through. The UI shows a badge
+  wherever a package is named.
+- BOMHort reports the **declared** graph. A generator that lists every module
+  as `DEPENDS_ON` of the root (a star, common for Go module SBOMs) yields
+  `direct` for all of them. Rows ingested before the migration are `unknown`
+  until re-processed.
 
 ## Ownership Data Model
 

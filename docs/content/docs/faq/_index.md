@@ -331,6 +331,24 @@ BOMHort deliberately does not apply — are on the
 SBOMs ingested before license sources were recorded show as `unrecorded`;
 re-process them to fill it in (see [full re-ingestion](#full-re-ingestion-from-scratch)).
 
+## What do "direct", "transitive" and "unknown" mean next to a package?
+
+The package's position in the SBOM's dependency graph, computed at ingest
+(see [Dependency depth](/docs/architecture/#dependency-depth)): `root` is the
+product itself, `direct` is declared by the product, `transitive` is pulled in
+by another dependency (the badge's tooltip shows the depth). Vulnerability
+pages filter on it (`?scope=`), so you can triage CVEs in your own
+dependencies before the deep ones.
+
+**Everything is "direct".** The SBOM generator listed every module as a
+`DEPENDS_ON` of the root — a star graph, common for Go module SBOMs. BOMHort
+reports the declared graph; it does not reconstruct one from `go.mod`.
+
+**Everything is "unknown".** Either the document carries no relationships
+(a flat package list), several packages could be the root, or the SBOM was
+ingested before depths were recorded (migration `025`). The latter clears up
+with a [full re-ingestion](#full-re-ingestion-from-scratch).
+
 ## What does "Not Approved" mean?
 
 The SBOM declares a license, but it is not on the policy allow-list — for

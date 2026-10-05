@@ -1,6 +1,7 @@
 {
   "brandName": "BOMHort",
   "brandLogo": "assets/bomhort-mascot.png",
+  "brandLogoDark": "",
   "brandLogoAlt": "BOMHort dragon mascot",
   "pageTitle": "BOMHort",
   "dashboard": {

@@ -749,7 +749,7 @@ All projects affected by a specific CVE, including transitive dependency informa
 ]
 ```
 
-`is_direct` is kept for compatibility and is `true` exactly when `dependency_scope` is `root` or `direct`; new clients should read `dependency_scope`, which also distinguishes `unknown` from `transitive`.
+`is_direct` is kept for compatibility and is `true` exactly when `dependency_scope` is `direct` (a `root` finding — the described product itself is vulnerable — is reported as `false`); new clients should read `dependency_scope`, which also distinguishes `unknown` from `transitive`.
 
 **Errors:**
 - `400` — Invalid vulnerability ID format

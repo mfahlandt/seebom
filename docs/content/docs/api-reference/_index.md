@@ -112,6 +112,11 @@ vulnerabilities accept `?scope=root|direct|transitive|unknown` to filter on it â
 an invalid value is a `400`. Rows ingested before the column existed show up as
 `unknown` until `make re-scan`.
 
+The scope is only as good as the document: a generator that lists every module
+as a `DEPENDS_ON` of the root (a star-shaped graph, common for Go module SBOMs)
+yields `direct` for all of them, because that is what the SBOM states. BOMHort
+reports the declared graph and does not second-guess it.
+
 ### Error Responses
 
 All errors return:

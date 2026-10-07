@@ -6,7 +6,7 @@
 
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:24.12
+    image: clickhouse/clickhouse-server:26.8
     ports:
       - "8123:8123"   # HTTP interface
       - "9000:9000"   # Native TCP

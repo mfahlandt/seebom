@@ -30,7 +30,7 @@ clickhouse:
     replicasCount: 2         # 2 replicas for HA
   installation:
     podTemplate:
-      containerImage: docker.io/clickhouse/clickhouse-server:24.12
+      containerImage: docker.io/clickhouse/clickhouse-server:26.8
       resources:
         limits:
           cpu: "2"

@@ -51,7 +51,7 @@ jobs:
         working-directory: backend
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:24.12@sha256:a65ca89ddbe8e04a05036dd7d7110a203256293b407b9359130ed5e4333f45ff
+        image: clickhouse/clickhouse-server:26.8@sha256:9b61e3c635c04ad5bb521eb4f6e61ce7585b5580814e51c25bb9e8292ce43364
         ports:
           - 9000:9000
           - 8123:8123
@@ -78,7 +78,7 @@ jobs:
             echo "── $f"
             docker run --rm --network host \
               -v "$PWD/$f:/m.sql:ro" \
-              clickhouse/clickhouse-server:24.12 \
+              clickhouse/clickhouse-server:26.8 \
               clickhouse-client --host 127.0.0.1 --database bomhort \
                 --multiquery --queries-file /m.sql
           done

@@ -1352,14 +1352,22 @@ After confirming data integrity, set `dataMigration.enabled: false` and remove t
 
 ## 12a. ClickHouse: Version and Query Limits {#clickhouse-operations}
 
-**Supported version.** The chart deploys `clickhouse/clickhouse-server:24.12`
+**Supported version.** The chart deploys `clickhouse/clickhouse-server:26.8`
 (`clickhouse.installation.podTemplate.containerImage`) — the same version CI
 runs every migration and the query smoke test against, and the one
 `docker-compose.yml` starts. The three pins are kept identical by a Helm unit
 test; until 0.8.0 the chart shipped 24.8 while CI tested 24.12 (#392), so a
-query accepted in CI could have been rejected in production. Running a
-different version is possible but untested: override `containerImage` and run
-the migrations against it first.
+query accepted in CI could have been rejected in production.
+
+26.8 is a ClickHouse **LTS** line. ClickHouse releases an LTS twice a year
+(`X.3`, `X.8`) and supports each for a year, while a regular release is
+supported for three months — and by the time 0.8.0 was cut, 24.12 and every
+25.x line had already dropped out of
+[ClickHouse's supported versions](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md).
+The rule from here on: **the chart pins the newest LTS that all migrations and
+the query smoke test pass against**, and moves to the next LTS in a minor
+release, never in a patch. Running a different version is possible but
+untested: override `containerImage` and run the migrations against it first.
 
 **Per-query limits** (#344-I). One runaway dashboard query must not starve
 ingestion and every other request, so the application user's settings profile

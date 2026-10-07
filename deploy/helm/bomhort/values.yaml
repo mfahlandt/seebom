@@ -153,11 +153,13 @@ clickhouse:
     replicasCount: 1
   installation:
     podTemplate:
-      # Supported ClickHouse version (#392). This is the version CI runs the
-      # migrations and the query smoke test against; docker-compose.yml and
+      # Supported ClickHouse version (#392): the newest LTS line (X.3 / X.8,
+      # supported upstream for a year) that every migration and the query
+      # smoke test pass on; bumped in minor releases only. This is the version
+      # CI runs the migrations and the smoke test against; docker-compose.yml and
       # .github/workflows/ci.yml must pin the same one, and
       # deploy/helm/tests/test_clickhouse_version.py fails when they drift.
-      containerImage: docker.io/clickhouse/clickhouse-server:24.12
+      containerImage: docker.io/clickhouse/clickhouse-server:26.8
       resources:
         limits:
           cpu: 1000m

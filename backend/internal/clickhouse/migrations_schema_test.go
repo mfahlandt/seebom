@@ -404,3 +404,59 @@ func TestMigrationNumbersAreUniqueAndContiguous(t *testing.T) {
 		}
 	}
 }
+
+// engineRe captures the engine family of every CREATE TABLE in the migrations.
+var engineRe = regexp.MustCompile(`(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?` +
+	"`?([a-z_0-9]+)`?" + `\s*\(.*?\)\s*ENGINE\s*=\s*([A-Za-z]+)`)
+
+// finalRe matches "<table> FINAL" in query sources, with an optional alias
+// between the two ("sbom_packages p FINAL").
+var finalRe = regexp.MustCompile(`\b([a-z_0-9]+)(?:\s+[a-z]{1,3})?\s+FINAL\b`)
+
+// TestFinalOnlyOnReplacingTables guards against the cve_refresh_log bug:
+// FINAL on a plain MergeTree is ILLEGAL_FINAL at query time, and a swallowed
+// error hid that from every environment. The engine of each table comes from
+// the migrations, so a query cannot assume an engine the schema does not have.
+func TestFinalOnlyOnReplacingTables(t *testing.T) {
+	engines := make(map[string]string)
+	files, err := filepath.Glob(filepath.Join(migrationsDir(t), "*.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range engineRe.FindAllStringSubmatch(stripSQLComments(string(raw)), -1) {
+			engines[strings.ToLower(m[1])] = m[2]
+		}
+	}
+	if engines["cve_refresh_log"] != "MergeTree" {
+		t.Fatalf("expected cve_refresh_log to be a plain MergeTree, got %q", engines["cve_refresh_log"])
+	}
+
+	sources, err := filepath.Glob("*.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range sources {
+		if strings.HasSuffix(file, "_test.go") {
+			continue
+		}
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range finalRe.FindAllStringSubmatch(string(raw), -1) {
+			table := m[1]
+			engine, known := engines[table]
+			if !known {
+				continue // alias, keyword, or prose
+			}
+			if !strings.Contains(engine, "Replacing") {
+				t.Errorf("%s: %q uses FINAL but its engine is %s (ILLEGAL_FINAL at runtime)", file, table, engine)
+			}
+		}
+	}
+}

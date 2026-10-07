@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -144,14 +145,18 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 		stats.EffectiveVulnerabilities = stats.TotalVulnerabilities
 	}
 
-	// Last CVE refresh info.
+	// Last CVE refresh info. A failure here must not take the dashboard down,
+	// but it must not vanish either: that is how the FINAL bug went unnoticed.
 	lastRefresh, err := c.QueryLastRefreshTime(ctx)
+	if err != nil {
+		log.Printf("dashboard: last CVE refresh unavailable: %v", err)
+	}
 	if err == nil && !lastRefresh.IsZero() {
 		stats.LastCVERefresh = lastRefresh.Format(time.RFC3339)
 		// Count vulns found in the most recent refresh.
 		_ = c.Conn.QueryRow(ctx, `
 			SELECT ifNull(new_vulns_found, 0)
-			FROM cve_refresh_log FINAL
+			FROM cve_refresh_log
 			WHERE status = 'completed'
 			ORDER BY finished_at DESC
 			LIMIT 1

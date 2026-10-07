@@ -107,14 +107,21 @@ func (c *Client) InsertRefreshLog(ctx context.Context, log RefreshLog) error {
 	`, log.RefreshID, log.StartedAt, log.FinishedAt, log.PURLsChecked, log.NewVulnsFound, log.Status)
 }
 
-// QueryLastRefreshTime returns the timestamp of the most recent completed CVE refresh.
+// QueryLastRefreshTime returns the timestamp of the most recent completed CVE
+// refresh, or the zero time when no refresh has completed yet.
+//
+// cve_refresh_log is a plain MergeTree, so FINAL is illegal here
+// (ILLEGAL_FINAL); it previously made this query fail on every call and the
+// swallowed error hid the dashboard's "last refresh" field for good. max()
+// over an empty table yields one row with the zero time, so a Scan error is a
+// real error and is returned as such.
 func (c *Client) QueryLastRefreshTime(ctx context.Context) (time.Time, error) {
 	var t time.Time
 	err := c.Conn.QueryRow(ctx, `
-		SELECT max(finished_at) FROM cve_refresh_log FINAL WHERE status = 'completed'
+		SELECT max(finished_at) FROM cve_refresh_log WHERE status = 'completed'
 	`).Scan(&t)
 	if err != nil {
-		return time.Time{}, nil // Not an error – just no refresh yet.
+		return time.Time{}, fmt.Errorf("query last refresh time: %w", err)
 	}
 	return t, nil
 }

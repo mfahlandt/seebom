@@ -160,7 +160,7 @@ data:
       if clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
         --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \
         --database="$NEW_CH_DATABASE" --multiquery \
-        --query="SET log_queries=0; INSERT INTO $TABLE SELECT * FROM remote('$OLD_CH_HOST:$OLD_CH_PORT', '$OLD_CH_DATABASE', '$TABLE', '$OLD_CH_USER', '$OLD_CH_PASSWORD')"; then
+        --query="SET log_queries=0; SET max_execution_time=0; SET max_memory_usage=0; INSERT INTO $TABLE SELECT * FROM remote('$OLD_CH_HOST:$OLD_CH_PORT', '$OLD_CH_DATABASE', '$TABLE', '$OLD_CH_USER', '$OLD_CH_PASSWORD')"; then
 
         NEW_ROWS=$(clickhouse-client --host="$NEW_CH_HOST" --port="$NEW_CH_PORT" \
           --user="$NEW_CH_USER" --password="$NEW_CH_PASSWORD" \

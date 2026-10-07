@@ -14,7 +14,9 @@ spec:
       app.kubernetes.io/component: parsing-worker
   template:
     metadata:
-      {{- if .Values.licenseExceptions.enabled }}
+      {{- if and .Values.licenseExceptions.enabled (not .Values.licenseExceptions.existingConfigMap) }}
+      # Not rendered with existingConfigMap: the chart cannot hash a
+      # ConfigMap it does not own, so updating it does not roll the pods.
       annotations:
         checksum/license-exceptions: {{ include (print $.Template.BasePath "/configmap-license-exceptions.yaml") . | sha256sum }}
       {{- end }}
@@ -92,13 +94,13 @@ spec:
             {{- if .Values.licenseExceptions.enabled }}
             - name: license-exceptions
               mountPath: {{ .Values.licenseExceptions.mountPath }}
-              subPath: license-exceptions.json
+              subPath: {{ ternary (.Values.licenseExceptions.existingConfigMapKey | default "license-exceptions.json") "license-exceptions.json" (not (empty .Values.licenseExceptions.existingConfigMap)) }}
               readOnly: true
             {{- end }}
             {{- if .Values.licensePolicy.enabled }}
             - name: license-policy
               mountPath: {{ .Values.licensePolicy.mountPath }}
-              subPath: license-policy.json
+              subPath: {{ ternary (.Values.licensePolicy.existingConfigMapKey | default "license-policy.json") "license-policy.json" (not (empty .Values.licensePolicy.existingConfigMap)) }}
               readOnly: true
             {{- end }}
             {{- if .Values.originalStore.fs.enabled }}
@@ -121,11 +123,11 @@ spec:
         {{- if .Values.licenseExceptions.enabled }}
         - name: license-exceptions
           configMap:
-            name: {{ .Release.Name }}-license-exceptions
+            name: {{ .Values.licenseExceptions.existingConfigMap | default (printf "%s-license-exceptions" .Release.Name) }}
         {{- end }}
         {{- if .Values.licensePolicy.enabled }}
         - name: license-policy
           configMap:
-            name: {{ .Release.Name }}-license-policy
+            name: {{ .Values.licensePolicy.existingConfigMap | default (printf "%s-license-policy" .Release.Name) }}
         {{- end }}
 

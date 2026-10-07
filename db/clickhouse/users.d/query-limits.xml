@@ -1,0 +1,15 @@
+<!--
+  Per-query limits for local development (#344-I). Mirrors the defaults of
+  clickhouse.installation.profile in deploy/helm/bomhort/values.yaml so a
+  query that would be killed in production is killed on your laptop first.
+  Override per query with SETTINGS max_execution_time=0 where a one-off
+  bulk operation legitimately needs longer.
+-->
+<clickhouse>
+  <profiles>
+    <default>
+      <max_execution_time>30</max_execution_time>
+      <max_memory_usage>536870912</max_memory_usage>
+    </default>
+  </profiles>
+</clickhouse>

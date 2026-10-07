@@ -1,4 +1,7 @@
-{{- if .Values.licensePolicy.enabled }}
+{{- if and .Values.licensePolicy.existingConfigMap .Values.licensePolicy.custom }}
+{{- fail "licensePolicy.existingConfigMap and licensePolicy.custom are mutually exclusive: either inline the policy (custom) or point at a ConfigMap you manage (existingConfigMap), not both" }}
+{{- end }}
+{{- if and .Values.licensePolicy.enabled (not .Values.licensePolicy.existingConfigMap) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

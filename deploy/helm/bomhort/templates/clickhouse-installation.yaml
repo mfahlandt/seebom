@@ -33,6 +33,26 @@ spec:
       {{ .Values.clickhouse.user }}/password: {{ .Values.clickhouse.password | quote }}
       {{- end }}
       {{ .Values.clickhouse.user }}/networks/ip: "::/0"
+    {{- $profile := (.Values.clickhouse.installation.profile | default dict) }}
+    {{- $user := .Values.clickhouse.user }}
+    {{- $profileName := ternary "default" $user (eq $user "default") }}
+    {{- if or $profile.maxExecutionTime $profile.maxMemoryUsage $profile.maxThreads }}
+    {{- if ne $user "default" }}
+      {{ $user }}/profile: {{ $profileName }}
+    {{- end }}
+    # Per-query limits (#344-I): fail one heavy query instead of starving the
+    # whole server. Tune via clickhouse.installation.profile.
+    profiles:
+      {{- if $profile.maxExecutionTime }}
+      {{ $profileName }}/max_execution_time: {{ $profile.maxExecutionTime | int64 }}
+      {{- end }}
+      {{- if $profile.maxMemoryUsage }}
+      {{ $profileName }}/max_memory_usage: {{ $profile.maxMemoryUsage | int64 }}
+      {{- end }}
+      {{- if $profile.maxThreads }}
+      {{ $profileName }}/max_threads: {{ $profile.maxThreads | int64 }}
+      {{- end }}
+    {{- end }}
   templates:
     podTemplates:
       - name: pod-template

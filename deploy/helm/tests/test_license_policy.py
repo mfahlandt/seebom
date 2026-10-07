@@ -54,6 +54,27 @@ class LicensePolicyExpressionModeTest(unittest.TestCase):
         self.assertIn('LICENSE_EXPRESSION_MODE: "permissive-wins"', self.config_map(output))
 
 
+class LicensePolicyExistingConfigMapTest(unittest.TestCase):
+    render = LicensePolicyExpressionModeTest.render
+
+    def test_default_renders_own_configmap(self):
+        output = self.render()
+        self.assertIn("name: test-license-policy", output)
+        self.assertEqual(output.count("subPath: license-policy.json"), 2)
+
+    def test_existing_configmap_is_mounted_and_none_rendered(self):
+        output = self.render({"licensePolicy": {"existingConfigMap": "org-policy", "existingConfigMapKey": "policy.json"}})
+        self.assertNotIn("configmap-license-policy.yaml", output)
+        self.assertNotIn("name: test-license-policy", output)
+        self.assertEqual(output.count("name: org-policy"), 2)
+        self.assertEqual(output.count("subPath: policy.json"), 2)
+
+    def test_existing_configmap_and_custom_together_fail(self):
+        error = self.render({"licensePolicy": {"existingConfigMap": "x", "custom": "{}"}}, success=False)
+        self.assertIn("licensePolicy.existingConfigMap", error)
+        self.assertIn("licensePolicy.custom", error)
+
+
 if __name__ == "__main__":
     unittest.main()
 

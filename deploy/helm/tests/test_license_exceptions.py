@@ -116,6 +116,33 @@ class LicenseExceptionsTemplatesTest(unittest.TestCase):
                 error = self.render({"licenseExceptions": {"custom": custom}}, success=False)
                 self.assertRegex(error, r"licenseExceptions\.custom|mustFromJson")
 
+    def test_existing_configmap_is_mounted_and_none_rendered(self):
+        # #397: GitOps users hand over a ConfigMap they sync themselves.
+        output = self.render({"licenseExceptions": {"existingConfigMap": "cncf-exceptions"}})
+        self.assertNotIn("configmap-license-exceptions.yaml", output)
+        self.assertNotIn("name: test-license-exceptions", output)
+        self.assertEqual(output.count("name: cncf-exceptions"), 2)
+        self.assertEqual(output.count("subPath: license-exceptions.json"), 2)
+        self.assertEqual(output.count('EXCEPTIONS_FILE: "/data/config/license-exceptions.json"'), 1)
+        # No checksum: the chart cannot hash a ConfigMap it does not own.
+        self.assertNotIn("checksum/license-exceptions", output)
+
+    def test_existing_configmap_key_only_applies_with_existing_configmap(self):
+        output = self.render({"licenseExceptions": {"existingConfigMap": "cncf", "existingConfigMapKey": "exceptions.json"}})
+        self.assertEqual(output.count("subPath: exceptions.json"), 2)
+        # The key is ignored while the chart renders its own ConfigMap, whose
+        # key is fixed — otherwise the mount would point at nothing.
+        output = self.render({"licenseExceptions": {"existingConfigMapKey": "exceptions.json"}})
+        self.assertEqual(output.count("subPath: license-exceptions.json"), 2)
+        self.exceptions(output)
+
+    def test_existing_configmap_and_custom_together_fail(self):
+        for custom in ({"blanketExceptions": [], "exceptions": []}, '{"blanketExceptions":[],"exceptions":[]}'):
+            with self.subTest(custom=custom):
+                error = self.render({"licenseExceptions": {"existingConfigMap": "x", "custom": custom}}, success=False)
+                self.assertIn("licenseExceptions.existingConfigMap", error)
+                self.assertIn("licenseExceptions.custom", error)
+
     def test_legacy_download_setting_requires_explicit_migration(self):
         error = self.render({"seedJob": {"cncfExceptionsURL": "https://example.org/exceptions.json"}}, success=False)
         self.assertIn("licenseExceptions.custom", error)

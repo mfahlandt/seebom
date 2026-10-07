@@ -33,7 +33,7 @@ clickhouse:
     replicasCount: 1
   installation:
     podTemplate:
-      containerImage: docker.io/clickhouse/clickhouse-server:24.8
+      containerImage: docker.io/clickhouse/clickhouse-server:24.12
       resources:
         limits:
           cpu: "1"
@@ -66,12 +66,13 @@ s3:
   #   secretKeyKey: "S3_SECRET_KEY"
 
 # ─── SBOM Source via PVC (alternative to S3) ─────────────────────────────────
-# Disable git-sync and use a one-shot seed job instead.
-# Only needed if S3 is not configured above.
+# Only needed if S3 is not configured above. Set seedJob.enabled: true to
+# have a one-shot Job clone sbomRepo into the PVC (off by default, #391).
 gitSync:
   enabled: false
 
 seedJob:
+  enabled: false
   sbomRepo: "https://github.com/my-org/sboms.git"
   sbomBranch: main
 

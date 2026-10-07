@@ -93,36 +93,42 @@ Nested keys like `k3s-io/helm-controller/0.16.14/k3s-io_helm-controller_0_16_14_
 
 ### Method 2: Seed Job (alternative, for environments without S3)
 
-Used by `values-production.yaml` when `s3.buckets` is empty.
+Opt-in (`seedJob.enabled: true`, default `false` since 0.8.0 — #391). A
+Kubernetes Job runs once per Helm revision and:
+1. Does a **shallow `git clone`** of your SBOM repo (optionally only `seedJob.path`)
+2. **Copies the tree into the PVC, structure preserved**, so `ownership.pathLayout`
+   can derive `cluster` / `namespace` / `project` from the repository layout
 
-A Kubernetes Job runs once at install time and:
-1. Does a **shallow `git clone`** of your SBOM repo into a temp directory
-2. **Flat-copies** all `.spdx.json` and `.openvex.json` files into the PVC (flattening nested directory paths into filenames to avoid collisions)
-
-License exceptions are configured separately through `licenseExceptions.custom`.
-No approvals are downloaded or enabled by default. See the
+The Job has `activeDeadlineSeconds` (default 1800) and fails instead of hanging.
+The `alpine/git` image is pinned by digest. License exceptions are configured
+separately through `licenseExceptions`; nothing is downloaded. See the
 [inactive structure example and migration guide](../license-exceptions/README.md).
 
 ```yaml
 s3:
-  buckets: ""              # disable S3
+  buckets: ""              # no S3
 
 gitSync:
-  enabled: false           # disable git-sync
+  enabled: false           # disable git-sync (mutually exclusive with the seed job)
 
 seedJob:
+  enabled: true
   sbomRepo: "https://github.com/my-org/sboms.git"
   sbomBranch: main
+  path: ""                 # subdirectory to copy; empty = whole repository
+  # secretName: seed-git-credentials   # Secret with GIT_USERNAME / GIT_PASSWORD
 
 sbomSource:
-  storageSize: 20Gi        # must be large enough for the full repo
+  storageSize: 20Gi        # must be large enough for the checkout
 ```
 
-**Refreshing:** Delete the seed job and re-run Helm upgrade:
+**Refreshing:** every `helm upgrade` creates a new Job (the name carries the
+revision). To re-seed without a values change:
 ```bash
 kubectl delete job -n bomhort -l app.kubernetes.io/component=seed-sboms
 helm upgrade bomhort deploy/helm/bomhort/ -n bomhort -f my-values.yaml
 ```
+Existing files are overwritten; the ingestion watcher skips unchanged hashes.
 
 > **Note:** Requires a `ReadWriteOnce` PVC. All pods are automatically co-scheduled on the same node via pod affinity.
 

@@ -167,6 +167,11 @@ path.
 
 ### Option B: Seed Job
 
+A one-shot Job that shallow-clones a Git repository into the SBOM PVC. Opt-in
+since 0.8.0 (`seedJob.enabled`, default `false`): before that the Job was
+rendered for every deployment without git-sync and, its clone step having been
+commented out, waited forever for a file nothing created (#391).
+
 ```yaml
 s3:
   buckets: ""
@@ -175,9 +180,23 @@ gitSync:
   enabled: false
 
 seedJob:
+  enabled: true
   sbomRepo: "https://github.com/my-org/sboms.git"
   sbomBranch: main
+  path: ""                     # subdirectory to copy; empty = whole repository
+  activeDeadlineSeconds: 1800  # the Job fails instead of hanging
+  # secretName: seed-git-credentials   # GIT_USERNAME / GIT_PASSWORD for private repos
+
+sbomSource:
+  storageSize: 20Gi            # large enough for the checkout
 ```
+
+The directory structure is preserved, so `ownership.pathLayout` can derive
+`cluster` / `namespace` / `project` from the repository layout (see §2). The
+Job runs once per Helm revision and copies over existing files; the ingestion
+watcher skips unchanged hashes, so a re-run only enqueues what changed. The
+image (`alpine/git`) is pinned by digest in `values.yaml`. `seedJob.enabled`
+together with `gitSync.enabled` fails the render — they fill different volumes.
 
 ### Option C: git-sync (small repos < 1 GB)
 
@@ -648,6 +667,74 @@ Git-backed Helm inputs. Avoid defining the same exceptions in multiple layers;
 Do not edit the managed ConfigMap with `kubectl edit` as a normal configuration
 workflow: the next Argo sync or self-heal can overwrite the change. Git is the
 source of truth for the exceptions and their review history.
+
+### Bringing your own ConfigMap (`existingConfigMap`) {#existing-configmap}
+
+Inlining a large reviewed file into `valuesObject` works, but a 180 KB
+exceptions file dwarfs the rest of the Application and turns every upstream
+refresh into a 180 KB diff in an unrelated manifest. Since 0.8.0 the chart
+can mount a ConfigMap **you** manage instead of rendering one:
+
+```yaml
+licenseExceptions:
+  enabled: true
+  existingConfigMap: cncf-license-exceptions   # must exist in the release namespace
+  existingConfigMapKey: license-exceptions.json # default; set if your key differs
+  custom: ""                                    # must stay empty
+```
+
+`existingConfigMap` and `custom` are mutually exclusive; setting both fails the
+render with a message naming both keys. `licensePolicy.existingConfigMap` /
+`licensePolicy.existingConfigMapKey` work the same way.
+
+**Rollouts are your responsibility in this mode.** The chart cannot hash a
+ConfigMap it does not own, so the `checksum/license-exceptions` annotation is
+not rendered and updating the ConfigMap does **not** restart the API gateway or
+the parsing worker. The file is a `subPath` mount, which never sees ConfigMap
+updates in place. After every change run
+
+```bash
+kubectl rollout restart deployment/bomhort-api-gateway deployment/bomhort-parsing-worker -n bomhort
+```
+
+or run a reloader (e.g. [Reloader](https://github.com/stakater/Reloader) with
+`reloader.stakater.com/auto: "true"` on both Deployments) — and re-process
+SBOMs as described above.
+
+A multi-source Argo CD Application keeps the reviewed file in its own sync path.
+The second source tracks the registry that publishes the file; a tiny Kustomize
+overlay wraps it into the ConfigMap:
+
+```yaml
+spec:
+  sources:
+    - repoURL: ghcr.io/seebom-labs/bomhort/charts   # OCI, no scheme in Argo CD
+      chart: bomhort
+      targetRevision: 0.8.0
+      helm:
+        valueFiles:
+          - $values/bomhort/values.yaml       # contains the licenseExceptions block above
+    - repoURL: https://github.com/your-org/gitops.git
+      targetRevision: main
+      ref: values
+    - repoURL: https://github.com/your-org/gitops.git
+      targetRevision: main
+      path: bomhort/license-exceptions         # kustomization.yaml, see below
+```
+
+```yaml
+# bomhort/license-exceptions/kustomization.yaml
+namespace: bomhort
+generatorOptions:
+  disableNameSuffixHash: true   # the chart references the name verbatim
+configMapGenerator:
+  - name: cncf-license-exceptions
+    files:
+      - license-exceptions.json=exceptions.json   # the reviewed file, e.g. vendored from cncf/foundation
+```
+
+The file still goes through review — it is committed to your GitOps repository —
+it just no longer lives inside the chart's values.
 
 ---
 
@@ -1260,6 +1347,46 @@ spec:
 ```
 
 After confirming data integrity, set `dataMigration.enabled: false` and remove the old `seebom` Application.
+
+---
+
+## 12a. ClickHouse: Version and Query Limits {#clickhouse-operations}
+
+**Supported version.** The chart deploys `clickhouse/clickhouse-server:24.12`
+(`clickhouse.installation.podTemplate.containerImage`) — the same version CI
+runs every migration and the query smoke test against, and the one
+`docker-compose.yml` starts. The three pins are kept identical by a Helm unit
+test; until 0.8.0 the chart shipped 24.8 while CI tested 24.12 (#392), so a
+query accepted in CI could have been rejected in production. Running a
+different version is possible but untested: override `containerImage` and run
+the migrations against it first.
+
+**Per-query limits** (#344-I). One runaway dashboard query must not starve
+ingestion and every other request, so the application user's settings profile
+caps each query:
+
+```yaml
+clickhouse:
+  installation:
+    profile:
+      maxExecutionTime: 30        # seconds; a query over the limit fails, the server survives
+      maxMemoryUsage: 536870912   # bytes; ≈ 50 % of podTemplate.resources.limits.memory
+      maxThreads: 0               # 0 = ClickHouse default (one per core)
+```
+
+Raise `maxMemoryUsage` together with the pod's memory limit; set a value to `0`
+to drop that limit. The limits apply to the configured `clickhouse.user` (a
+dedicated profile is created for non-`default` users). The one-time data
+migration Job overrides them for its bulk copy. The same defaults are mounted
+into the local Compose stack from `db/clickhouse/users.d/query-limits.xml`,
+so a query that would be killed in production is killed on a laptop first.
+
+**Scaling the gateway.** The API gateway is stateless; `apiGateway.replicas`
+(default `2`) can be raised freely behind the Service. Only
+`sbomSource.writable: true` constrains it, because a `ReadWriteOnce` PVC mounts
+read-write on one node only — see the comment on `sbomSource.accessMode`.
+Parsing workers scale with `parsingWorker.replicas`; they share the
+`ingestion_queue` and need no coordination.
 
 ---
 

@@ -153,7 +153,11 @@ clickhouse:
     replicasCount: 1
   installation:
     podTemplate:
-      containerImage: docker.io/clickhouse/clickhouse-server:24.8
+      # Supported ClickHouse version (#392). This is the version CI runs the
+      # migrations and the query smoke test against; docker-compose.yml and
+      # .github/workflows/ci.yml must pin the same one, and
+      # deploy/helm/tests/test_clickhouse_version.py fails when they drift.
+      containerImage: docker.io/clickhouse/clickhouse-server:24.12
       resources:
         limits:
           cpu: 1000m
@@ -161,6 +165,14 @@ clickhouse:
         requests:
           cpu: 1000m
           memory: 1Gi
+    # Per-query limits for the application user (#344-I), written to the
+    # user's settings profile. One runaway dashboard query otherwise takes
+    # the whole server down with it. Set maxMemoryUsage to roughly half of
+    # podTemplate.resources.limits.memory; set a value to 0 to disable it.
+    profile:
+      maxExecutionTime: 30          # seconds
+      maxMemoryUsage: 536870912     # bytes, 512 MiB = 50 % of the 1Gi default
+      maxThreads: 0                 # 0 = ClickHouse default (number of cores)
     volumeClaimTemplate:
       dataStorage: 1Gi
       logStorage: 100Mi
@@ -247,11 +259,26 @@ licenseExceptions:
   # See examples/license-exceptions/ for an inactive example to adapt and review.
   # Changes trigger API/worker rollouts; re-process SBOMs to update stored results.
   custom: ""
+  # Name of a ConfigMap you manage yourself (GitOps: a second Argo CD source
+  # tracking the reviewed file), instead of inlining it into values (#397).
+  # Mutually exclusive with custom. The chart renders no ConfigMap of its own
+  # and cannot compute a checksum for it, so updating that ConfigMap does
+  # NOT roll the API gateway and parsing worker — restart them yourself
+  # (kubectl rollout restart) or run a reloader. The file is mounted via
+  # subPath and is read at startup only.
+  existingConfigMap: ""
+  existingConfigMapKey: license-exceptions.json
 
 # License policy – defines permissive/copyleft classification (ConfigMap, read-only)
 licensePolicy:
   enabled: true
   mountPath: /data/config/license-policy.json
+  # Full policy JSON (string) replacing the built-in CNCF-derived default;
+  # e.g. --set-file licensePolicy.custom=./my-policy.json
+  custom: ""
+  # Same mechanism as licenseExceptions.existingConfigMap; same caveats.
+  existingConfigMap: ""
+  existingConfigMapKey: license-policy.json
   # How compound SPDX expressions ("Apache-2.0 AND MIT", "MIT OR GPL-2.0-only")
   # are classified. Injected as LICENSE_EXPRESSION_MODE and overrides the
   # "expressionMode" field of the policy file.
@@ -513,9 +540,24 @@ cveRefresher:
 # Seed Job (only used when gitSync.enabled=false)
 # Clones an SBOM git repo into the PVC on first install.
 seedJob:
+  # One-shot Job that shallow-clones a Git repository into the SBOM PVC
+  # (#391). Off by default: it is only meaningful with gitSync.enabled: false
+  # and a PVC that BOMHort should fill itself. S3 and pre-populated PVC
+  # deployments must not get a Job they did not ask for.
+  enabled: false
   sbomRepo: "https://github.com/my-org/sboms.git"
   sbomBranch: main
-  # License exceptions are configured via licenseExceptions.custom, not downloaded.
+  # Subdirectory of the repository to copy (empty = whole repository). The
+  # directory structure is preserved so ownership.pathLayout can derive
+  # cluster / namespace / project from it.
+  path: ""
+  # Pinned by digest; verify a new digest against the registry before bumping.
+  image: docker.io/alpine/git:v2.54.0@sha256:a4bb51f1a3553df194ce679fc1db721d8bfba2046fa1a88fe9d4ac551ffbce25
+  # The Job fails instead of hanging when the clone does not finish in time.
+  activeDeadlineSeconds: 1800
+  # For private repositories: a Secret with GIT_USERNAME / GIT_PASSWORD (token).
+  # secretName: seed-git-credentials
+  # License exceptions are configured via licenseExceptions, not downloaded.
 
 # Data Migration (one-time, from old seebom deployment to new bomhort deployment)
 # Runs as a Helm post-upgrade hook. Uses ClickHouse remote() to copy all tables

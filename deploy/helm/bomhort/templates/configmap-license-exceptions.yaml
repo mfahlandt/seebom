@@ -1,6 +1,10 @@
-{{- if .Values.licenseExceptions.enabled }}
+{{- $customSet := not (and (kindIs "string" .Values.licenseExceptions.custom) (eq .Values.licenseExceptions.custom "")) }}
+{{- if and .Values.licenseExceptions.existingConfigMap $customSet }}
+{{- fail "licenseExceptions.existingConfigMap and licenseExceptions.custom are mutually exclusive: either inline the rules (custom) or point at a ConfigMap you manage (existingConfigMap), not both" }}
+{{- end }}
+{{- if and .Values.licenseExceptions.enabled (not .Values.licenseExceptions.existingConfigMap) }}
 {{- $exceptions := dict "version" "1.0.0" "description" "No exceptions configured. Supply organization-approved rules explicitly." "blanketExceptions" (list) "exceptions" (list) }}
-{{- if not (and (kindIs "string" .Values.licenseExceptions.custom) (eq .Values.licenseExceptions.custom "")) }}
+{{- if $customSet }}
 {{- if kindIs "string" .Values.licenseExceptions.custom }}
 {{- $exceptions = mustFromJson .Values.licenseExceptions.custom }}
 {{- else }}

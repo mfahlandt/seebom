@@ -36,7 +36,7 @@ clickhouse:
     replicasCount: 2
   installation:
     podTemplate:
-      containerImage: docker.io/clickhouse/clickhouse-server:24.8
+      containerImage: docker.io/clickhouse/clickhouse-server:24.12
       resources:
         limits:
           cpu: "2"
@@ -82,8 +82,9 @@ s3:
 gitSync:
   enabled: false
 
-# Kept only as the PVC fallback; S3 above is the source of truth.
+# PVC fallback only; S3 above is the source of truth. Opt in with enabled: true.
 seedJob:
+  enabled: false
   sbomRepo: "https://github.com/cncf/sbom.git"
   sbomBranch: main
 

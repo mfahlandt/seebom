@@ -108,7 +108,7 @@ func TestLicensePipelineGolden(t *testing.T) {
 	}
 
 	sources, _, err := resolvePackageLicenses(context.Background(), github, resolvers,
-		pkgs.PackagePURLs, pkgs.PackageLicenses, pkgs.RootIndices)
+		pkgs.PackagePURLs, pkgs.PackageLicenses, pkgs.PackageLicenseSources, pkgs.RootIndices)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +163,7 @@ var licenseGolden = map[string]goldenWant{
 	"golden-app": {"NOASSERTION", license.ReasonFirstParty, license.CategoryUnknown, true},
 	// Declared in the SBOM.
 	"declared-mit":        {"MIT", "declared", license.CategoryPermissive, false},
+	"concluded-wins":      {"Apache-2.0", "concluded", license.CategoryPermissive, false},
 	"declared-freetext":   {"Apache-2.0", "declared+normalized", license.CategoryPermissive, false},
 	"declared-deprecated": {"GPL-2.0-or-later", "declared+normalized", license.CategoryCopyleft, false},
 	"declared-or":         {"MIT OR GPL-3.0-only", "declared", license.CategoryPermissive, false},

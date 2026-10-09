@@ -17,10 +17,13 @@ an unknown license into an approved one without anyone having decided so.
 
 Two principles hold throughout:
 
-1. **A declared license always wins.** Resolution only touches packages whose
-   license is `NOASSERTION`, `NONE` or empty. It never overrides what the SBOM
-   states. Free-text normalization rewrites how a declared license is spelled,
-   not which license it is.
+1. **A license stated in the SBOM always wins.** Resolution only touches
+   packages whose license is `NOASSERTION`, `NONE` or empty. It never
+   overrides what the SBOM states. Where an SPDX document states two things —
+   `licenseDeclared` and a differing `licenseConcluded` — the creator's
+   conclusion is taken ([D16](#d16-a-differing-licenseconcluded-beats-licensedeclared)).
+   Free-text normalization rewrites how a license is spelled, not which
+   license it is.
 2. **Every package says where its license came from, or why it has none.** The
    parsing worker stores a *license source* next to each package license
    (`sbom_packages.package_license_sources`, migration `024`,
@@ -36,7 +39,7 @@ insert, so the stored package licenses are already final
 
 | Step | What happens | Source recorded |
 |------|--------------|-----------------|
-| 1. Parse | Declared licenses are read from the SBOM. Broken Yarn Berry PURLs are repaired here (see [D7](#d7-repair-yarn-berry-purls)). | `declared` |
+| 1. Parse | Licenses are read from the SBOM; a differing SPDX `licenseConcluded` beats `licenseDeclared` (see [D16](#d16-a-differing-licenseconcluded-beats-licensedeclared)). Broken Yarn Berry PURLs are repaired here (see [D7](#d7-repair-yarn-berry-purls)). | `declared`, `concluded` |
 | 2. GitHub | For unknown licenses whose PURL maps to a GitHub repository, the repository license is used. | `github` |
 | 3. Registries | Still-unknown packages are offered to the registry resolvers, **in this order**: npm → NuGet → deps.dev → Packagist → PyPI. The first resolver that returns a license wins. | `npm`, `nuget`, `depsdev`, `packagist`, `pypi` |
 | 4. Normalize | Every license (declared or resolved) is rewritten to its SPDX form (see [D2](#d2-normalize-only-unambiguous-free-text)). If that changed it, `+normalized` is appended. | `…+normalized` |
@@ -53,6 +56,7 @@ up at most once across all workers and restarts.
 | Value | Kind | Meaning |
 |-------|------|---------|
 | `declared` | origin | The SBOM itself stated the license. |
+| `concluded` | origin | The SBOM creator concluded a license that differs from the one the package declared (SPDX `licenseConcluded` ≠ `licenseDeclared`); the conclusion was taken. |
 | `github` | origin | The GitHub repository license (`/repos/{owner}/{repo}` and `/license` API). |
 | `npm` | origin | registry.npmjs.org version manifest. |
 | `nuget` | origin | NuGet V3 catalog entry (`licenseExpression`, well-known `licenseUrl`). |
@@ -271,6 +275,31 @@ it off, and which test pins it.
   (`TestResolvePackageLicenses_GitHubRateLimitAborts`),
   `internal/clickhouse/queue_defer_integration_test.go`.
 
+### D16. A differing `licenseConcluded` beats `licenseDeclared`
+
+- **Decision:** An SPDX package's license is `licenseConcluded` when it is
+  usable (not `NOASSERTION`, `NONE` or empty) **and** differs from
+  `licenseDeclared`; the package then carries the source `concluded`.
+  Otherwise `licenseDeclared` is used, with `licenseConcluded` as the
+  fallback when the declaration is unusable — the result is `declared`
+  either way. The same rule applies to the protobom backend
+  (`Licenses` vs `LicenseConcluded`). CycloneDX has no equivalent field pair.
+- **Why:** In SPDX, `licenseDeclared` is what the package author or the
+  shipped files say; `licenseConcluded` is what the SBOM creator concluded
+  after looking at the artifact. Where they disagree, the conclusion is the
+  deliberate statement. A scanner that walks a license classifier's test
+  corpus declares 148 licenses `AND`-ed together for
+  `github.com/google/licenseclassifier/v2` and concludes `Apache-2.0`;
+  preferring the declaration turned an Apache-2.0 module into a copyleft
+  violation on a public instance. This is not a guess — both values come from
+  the SBOM, and the one the creator vouched for is taken.
+- **Risk:** A creator that concludes wrongly is believed. The declaration is
+  still in the original document (`GET /api/v1/sboms/{id}/download`).
+- **Switch:** none; the declared value is a parser input, not a resolver.
+- **Test:** `internal/license/source_test.go` (`TestChoose`),
+  `internal/spdx/parser_test.go`, `internal/protobomparser/parser_test.go`,
+  golden row `concluded-wins`.
+
 ## Deliberately not guessed
 
 | Input | Stays | Why |
@@ -359,6 +388,7 @@ otherwise.
 |---------|------|---------|--------|----------|------------------|
 | `golden-app` | SBOM root | `NOASSERTION` | `first-party` | unknown | excluded |
 | `declared-mit` | Declared SPDX ID | `MIT` | `declared` | permissive | checked |
+| `concluded-wins` | `licenseConcluded: Apache-2.0`, `licenseDeclared` lists five licenses | `Apache-2.0` | `concluded` | permissive | checked |
 | `declared-freetext` | Declared `Apache License 2.0` | `Apache-2.0` | `declared+normalized` | permissive | checked |
 | `declared-deprecated` | Declared `GPL-2.0+` | `GPL-2.0-or-later` | `declared+normalized` | copyleft | checked |
 | `declared-or` | Choice | `MIT OR GPL-3.0-only` | `declared` | permissive | checked |

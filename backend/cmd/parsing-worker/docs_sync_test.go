@@ -69,7 +69,7 @@ func TestDocsLicenseResolutionInSync(t *testing.T) {
 		}
 
 		// Registry origins are listed in chain order.
-		wantOrigins := []string{license.SourceDeclared, license.SourceGitHub}
+		wantOrigins := []string{license.SourceDeclared, license.SourceConcluded, license.SourceGitHub}
 		for _, rr := range buildRegistryResolvers(&config.Config{}, nil) {
 			wantOrigins = append(wantOrigins, rr.name)
 		}

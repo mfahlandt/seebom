@@ -11,6 +11,7 @@ import (
 	json "github.com/goccy/go-json"
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
@@ -343,12 +344,15 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 	// so relationship indices below always point at retained packages.
 	spdxIDToIndex := make(map[string]uint32, len(doc.Packages))
 	var (
-		spdxIDs     []string
-		names       []string
-		versions    []string
-		purls       []string
-		licenses    []string
-		rootIndices []uint32
+		spdxIDs  []string
+		names    []string
+		versions []string
+		purls    []string
+		licenses []string
+		// Parallel to licenses; "concluded" where the creator's conclusion
+		// overrode the declaration, "" otherwise (see chooseLicense).
+		licenseSources []string
+		rootIndices    []uint32
 	)
 	for _, pkg := range doc.Packages {
 		// Find PURL from external references (needed before name cleaning).
@@ -369,12 +373,9 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 		name := cleanPackageName(pkg.Name, purl, pkg.SPDXID)
 		names = append(names, name)
 		versions = append(versions, pkg.VersionInfo)
-		// Prefer declared license, fall back to concluded.
-		lic := pkg.LicenseDeclared
-		if lic == "" || lic == "NOASSERTION" {
-			lic = pkg.LicenseConcluded
-		}
+		lic, src := license.Choose(pkg.LicenseConcluded, pkg.LicenseDeclared)
 		licenses = append(licenses, lic)
+		licenseSources = append(licenseSources, src)
 	}
 	// Build relationship arrays.
 	var (
@@ -394,18 +395,20 @@ func Parse(r io.Reader, sourceFile, sha256Hash string) (result *ParseResult, err
 	}
 
 	packages := models.SBOMPackages{
-		IngestedAt:       now,
-		SBOMID:           sbomID,
-		SourceFile:       sourceFile,
-		PackageSPDXIDs:   spdxIDs,
-		PackageNames:     names,
-		PackageVersions:  versions,
-		PackagePURLs:     purls,
-		PackageLicenses:  licenses,
-		RelSourceIndices: relSources,
-		RelTargetIndices: relTargets,
-		RelTypes:         relTypes,
-		RootIndices:      rootIndices,
+		IngestedAt:      now,
+		SBOMID:          sbomID,
+		SourceFile:      sourceFile,
+		PackageSPDXIDs:  spdxIDs,
+		PackageNames:    names,
+		PackageVersions: versions,
+		PackagePURLs:    purls,
+		PackageLicenses: licenses,
+		// Only "concluded" is set here; the worker fills in the rest.
+		PackageLicenseSources: licenseSources,
+		RelSourceIndices:      relSources,
+		RelTargetIndices:      relTargets,
+		RelTypes:              relTypes,
+		RootIndices:           rootIndices,
 	}
 
 	return &ParseResult{

@@ -85,6 +85,15 @@ func TestParse_SPDX(t *testing.T) {
 				"externalRefs": [
 					{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:golang/foo@1.0.0"}
 				]
+			},
+			{
+				"SPDXID": "SPDXRef-Package-classifier",
+				"name": "classifier",
+				"versionInfo": "2.0.0",
+				"downloadLocation": "NOASSERTION",
+				"licenseConcluded": "Apache-2.0",
+				"licenseDeclared": "AFL-1.1 AND Apache-2.0 AND MIT",
+				"externalRefs": []
 			}
 		],
 		"relationships": []
@@ -108,5 +117,21 @@ func TestParse_SPDX(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected to find 'foo' in packages, got: %v", result.Packages.PackageNames)
+	}
+
+	// A differing licenseConcluded beats licenseDeclared and is marked as such
+	// (docs: License Resolution, D16); agreeing values stay unmarked.
+	for i, name := range result.Packages.PackageNames {
+		lic, src := result.Packages.PackageLicenses[i], result.Packages.PackageLicenseSources[i]
+		switch name {
+		case "foo":
+			if lic != "Apache-2.0" || src != "" {
+				t.Errorf("foo: license %q source %q, want Apache-2.0 / \"\"", lic, src)
+			}
+		case "classifier":
+			if lic != "Apache-2.0" || src != "concluded" {
+				t.Errorf("classifier: license %q source %q, want Apache-2.0 / concluded", lic, src)
+			}
+		}
 	}
 }

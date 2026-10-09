@@ -45,6 +45,21 @@
       ]
     },
     {
+      "SPDXID": "SPDXRef-concluded-wins",
+      "name": "concluded-wins",
+      "versionInfo": "2.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "Apache-2.0",
+      "licenseDeclared": "AFL-1.1 AND AGPL-3.0-only AND Apache-2.0 AND MIT AND GPL-3.0-only",
+      "externalRefs": [
+        {
+          "referenceCategory": "PACKAGE-MANAGER",
+          "referenceType": "purl",
+          "referenceLocator": "pkg:golang/github.com/example/concluded-wins/v2@v2.0.0"
+        }
+      ]
+    },
+    {
       "SPDXID": "SPDXRef-declared-freetext",
       "name": "declared-freetext",
       "versionInfo": "1.0.0",
@@ -348,6 +363,11 @@
       "spdxElementId": "SPDXRef-root",
       "relationshipType": "DEPENDS_ON",
       "relatedSpdxElement": "SPDXRef-declared-mit"
+    },
+    {
+      "spdxElementId": "SPDXRef-root",
+      "relationshipType": "DEPENDS_ON",
+      "relatedSpdxElement": "SPDXRef-concluded-wins"
     },
     {
       "spdxElementId": "SPDXRef-root",

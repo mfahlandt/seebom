@@ -9,6 +9,9 @@ import "strings"
 // modifiers:
 //
 //	declared              the SBOM itself stated the license
+//	concluded             the SBOM creator concluded a license that differs
+//	                      from the one the package declared (SPDX
+//	                      licenseConcluded ≠ licenseDeclared)
 //	github                GitHub repository license API
 //	npm / nuget / depsdev / packagist / pypi
 //	                      the package registry of that name
@@ -21,8 +24,9 @@ import "strings"
 // A package whose license is still unknown carries the reason instead, so the
 // UI can tell an actionable gap from one where looking further makes no sense.
 const (
-	SourceDeclared = "declared"
-	SourceGitHub   = "github"
+	SourceDeclared  = "declared"
+	SourceConcluded = "concluded"
+	SourceGitHub    = "github"
 
 	ModifierLatest     = "latest"
 	ModifierNormalized = "normalized"
@@ -99,4 +103,34 @@ func IsUnresolvedReason(source string) bool {
 		}
 	}
 	return false
+}
+
+// Choose picks a package's license from the two SPDX license fields.
+//
+// concluded is the SBOM creator's conclusion after looking at the artifact;
+// declared is what the package author (or the files it ships) stated. When
+// both are usable and disagree, the conclusion is the deliberate one — a
+// scanner that finds the SPDX corpus inside a license classifier declares
+// 148 licenses and concludes Apache-2.0 — so it wins and the package carries
+// SourceConcluded. When they agree, or only one is usable, the declared value
+// (or the one that exists) is returned with source "" and the pipeline records
+// it as SourceDeclared. NOASSERTION, NONE and "" never win over a real value in
+// the other field.
+func Choose(concluded, declared string) (lic, source string) {
+	switch {
+	case usableLicense(concluded) && usableLicense(declared) && concluded != declared:
+		return concluded, SourceConcluded
+	case usableLicense(declared):
+		return declared, ""
+	case usableLicense(concluded):
+		return concluded, ""
+	case declared != "":
+		return declared, ""
+	default:
+		return concluded, ""
+	}
+}
+
+func usableLicense(v string) bool {
+	return v != "" && v != "NOASSERTION" && v != "NONE"
 }

@@ -16,6 +16,9 @@ describe('license-source', () => {
       'deps.dev (taken from the latest release, not the exact version; normalized to an SPDX identifier)',
     );
     expect(licenseSourceTooltip('declared')).toBe('Source: Declared in the SBOM');
+    expect(licenseSourceTooltip('concluded')).toBe(
+      'Source: Concluded by the SBOM creator (differs from the declared license)',
+    );
   });
 
   it('marks unresolved reasons as unresolved', () => {

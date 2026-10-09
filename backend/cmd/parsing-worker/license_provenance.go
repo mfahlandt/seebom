@@ -18,6 +18,9 @@ type githubLookup func(ctx context.Context, purl string) (string, error)
 // pipeline on one SBOM's parallel package arrays, in place, and returns the
 // per-package license source (sbom_packages.package_license_sources):
 //
+//  1. the parser's choice between SPDX licenseConcluded and licenseDeclared
+//     (license.Choose); parserSources carries "concluded" where the
+//     conclusion overrode the declaration, "" otherwise
 //  2. GitHub repository license for packages without one
 //     2b. package registries (npm, NuGet, deps.dev, Packagist, PyPI), in order
 //     2c. free-text spellings normalised to SPDX ("MPL 2.0" → "MPL-2.0")
@@ -30,11 +33,15 @@ type githubLookup func(ctx context.Context, purl string) (string, error)
 // function returns it and the caller must not insert anything — licenses may
 // already be partially rewritten. Resolution runs before every ClickHouse
 // insert, so aborting here leaves no trace of the SBOM.
-func resolvePackageLicenses(ctx context.Context, github githubLookup, resolvers []registryResolver, purls, licenses []string, roots []uint32) (sources []string, counts map[string]int, err error) {
+func resolvePackageLicenses(ctx context.Context, github githubLookup, resolvers []registryResolver, purls, licenses, parserSources []string, roots []uint32) (sources []string, counts map[string]int, err error) {
 	sources = make([]string, len(licenses))
 	for i, lic := range licenses {
-		if !isUnknownLicense(lic) {
-			sources[i] = license.SourceDeclared
+		if isUnknownLicense(lic) {
+			continue
+		}
+		sources[i] = license.SourceDeclared
+		if i < len(parserSources) && parserSources[i] != "" {
+			sources[i] = parserSources[i]
 		}
 	}
 

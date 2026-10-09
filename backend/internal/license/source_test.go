@@ -59,3 +59,26 @@ func TestIsUnresolvedReason(t *testing.T) {
 		}
 	}
 }
+
+func TestChoose(t *testing.T) {
+	tests := []struct {
+		name, concluded, declared string
+		wantLic, wantSource       string
+	}{
+		{"differing conclusion wins", "Apache-2.0", "AFL-1.1 AND Apache-2.0 AND MIT", "Apache-2.0", SourceConcluded},
+		{"agreeing values are declared", "MIT", "MIT", "MIT", ""},
+		{"declared only", "NOASSERTION", "MIT", "MIT", ""},
+		{"declared only, concluded empty", "", "MIT", "MIT", ""},
+		{"conclusion as fallback", "MIT", "NOASSERTION", "MIT", ""},
+		{"NONE never beats a real value", "NONE", "MIT", "MIT", ""},
+		{"NOASSERTION never beats a real value", "NOASSERTION", "GPL-3.0-only", "GPL-3.0-only", ""},
+		{"both unusable keeps declared", "NOASSERTION", "NOASSERTION", "NOASSERTION", ""},
+		{"both empty", "", "", "", ""},
+	}
+	for _, tt := range tests {
+		lic, src := Choose(tt.concluded, tt.declared)
+		if lic != tt.wantLic || src != tt.wantSource {
+			t.Errorf("%s: Choose(%q, %q) = (%q, %q), want (%q, %q)", tt.name, tt.concluded, tt.declared, lic, src, tt.wantLic, tt.wantSource)
+		}
+	}
+}

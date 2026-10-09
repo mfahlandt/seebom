@@ -1,6 +1,7 @@
 package spdx
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -140,6 +141,8 @@ func TestParse_DeterministicSBOMID(t *testing.T) {
 
 func TestParse_LicenseFallback(t *testing.T) {
 	// When licenseDeclared is NOASSERTION, should fallback to licenseConcluded.
+	// When both are usable and differ, licenseConcluded wins and the package
+	// is marked "concluded" (docs: License Resolution, D16).
 	doc := `{
 		"spdxVersion": "SPDX-2.3",
 		"name": "license-test",
@@ -149,7 +152,11 @@ func TestParse_LicenseFallback(t *testing.T) {
 			{"SPDXID": "SPDXRef-A", "name": "pkg", "versionInfo": "1.0",
 			 "licenseConcluded": "MIT", "licenseDeclared": "NOASSERTION", "externalRefs": []},
 			{"SPDXID": "SPDXRef-B", "name": "pkg2", "versionInfo": "1.0",
-			 "licenseConcluded": "NOASSERTION", "licenseDeclared": "NOASSERTION", "externalRefs": []}
+			 "licenseConcluded": "NOASSERTION", "licenseDeclared": "NOASSERTION", "externalRefs": []},
+			{"SPDXID": "SPDXRef-C", "name": "licenseclassifier", "versionInfo": "2.0",
+			 "licenseConcluded": "Apache-2.0", "licenseDeclared": "AFL-1.1 AND Apache-2.0 AND MIT", "externalRefs": []},
+			{"SPDXID": "SPDXRef-D", "name": "pkg4", "versionInfo": "1.0",
+			 "licenseConcluded": "MIT", "licenseDeclared": "MIT", "externalRefs": []}
 		],
 		"relationships": []
 	}`
@@ -163,6 +170,13 @@ func TestParse_LicenseFallback(t *testing.T) {
 	}
 	if result.Packages.PackageLicenses[1] != "NOASSERTION" {
 		t.Errorf("expected NOASSERTION when both are NOASSERTION, got %s", result.Packages.PackageLicenses[1])
+	}
+	if got := result.Packages.PackageLicenses[2]; got != "Apache-2.0" {
+		t.Errorf("expected differing licenseConcluded to win, got %s", got)
+	}
+	wantSources := []string{"", "", "concluded", ""}
+	if got := result.Packages.PackageLicenseSources; !reflect.DeepEqual(got, wantSources) {
+		t.Errorf("license sources = %v, want %v", got, wantSources)
 	}
 }
 

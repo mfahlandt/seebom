@@ -16,6 +16,7 @@ import (
 	"github.com/protobom/protobom/pkg/reader"
 	"github.com/protobom/protobom/pkg/sbom"
 
+	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/sbomname"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
@@ -119,11 +120,12 @@ func convertDocument(doc *sbom.Document, sourceFile, sha256Hash string) (*ParseR
 	nodeIDToIndex := make(map[string]uint32, len(doc.NodeList.GetNodes()))
 
 	var (
-		spdxIDs  []string
-		names    []string
-		versions []string
-		purls    []string
-		licenses []string
+		spdxIDs        []string
+		names          []string
+		versions       []string
+		purls          []string
+		licenses       []string
+		licenseSources []string
 	)
 
 	for i, node := range doc.NodeList.GetNodes() {
@@ -145,9 +147,9 @@ func convertDocument(doc *sbom.Document, sourceFile, sha256Hash string) (*ParseR
 		}
 		purls = append(purls, purl)
 
-		// Extract license: prefer declared licenses, fall back to concluded.
-		lic := extractNodeLicense(node)
+		lic, src := extractNodeLicense(node)
 		licenses = append(licenses, lic)
+		licenseSources = append(licenseSources, src)
 	}
 
 	// Build relationship arrays from edges.
@@ -182,18 +184,20 @@ func convertDocument(doc *sbom.Document, sourceFile, sha256Hash string) (*ParseR
 	}
 
 	packages := models.SBOMPackages{
-		IngestedAt:       now,
-		SBOMID:           sbomID,
-		SourceFile:       sourceFile,
-		PackageSPDXIDs:   spdxIDs,
-		PackageNames:     names,
-		PackageVersions:  versions,
-		PackagePURLs:     purls,
-		PackageLicenses:  licenses,
-		RelSourceIndices: relSources,
-		RelTargetIndices: relTargets,
-		RelTypes:         relTypes,
-		RootIndices:      rootIndices,
+		IngestedAt:      now,
+		SBOMID:          sbomID,
+		SourceFile:      sourceFile,
+		PackageSPDXIDs:  spdxIDs,
+		PackageNames:    names,
+		PackageVersions: versions,
+		PackagePURLs:    purls,
+		PackageLicenses: licenses,
+		// Only "concluded" is set here; the worker fills in the rest.
+		PackageLicenseSources: licenseSources,
+		RelSourceIndices:      relSources,
+		RelTargetIndices:      relTargets,
+		RelTypes:              relTypes,
+		RootIndices:           rootIndices,
 	}
 
 	return &ParseResult{
@@ -202,21 +206,17 @@ func convertDocument(doc *sbom.Document, sourceFile, sha256Hash string) (*ParseR
 	}, nil
 }
 
-// extractNodeLicense extracts the best license string from a protobom Node.
-func extractNodeLicense(node *sbom.Node) string {
-	// Protobom stores declared licenses in the Licenses field.
-	lics := node.GetLicenses()
-	if len(lics) > 0 {
-		return strings.Join(lics, " AND ")
+// extractNodeLicense picks the license of a protobom Node and, where the
+// creator's conclusion overrode the declaration, the source "concluded"
+// (license.Choose). Protobom keeps declared licenses in Licenses and the
+// conclusion in LicenseConcluded.
+func extractNodeLicense(node *sbom.Node) (lic, source string) {
+	declared := strings.Join(node.GetLicenses(), " AND ")
+	lic, source = license.Choose(node.GetLicenseConcluded(), declared)
+	if lic == "" {
+		lic = "NOASSERTION"
 	}
-
-	// Fall back to concluded license.
-	concluded := node.GetLicenseConcluded()
-	if concluded != "" && concluded != "NOASSERTION" && concluded != "NONE" {
-		return concluded
-	}
-
-	return "NOASSERTION"
+	return lic, source
 }
 
 // detectFormat tries to determine the original format from protobom metadata.

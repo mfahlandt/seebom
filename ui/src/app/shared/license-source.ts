@@ -7,6 +7,7 @@
 
 const ORIGIN_LABELS: Record<string, string> = {
   declared: 'Declared in the SBOM',
+  concluded: 'Concluded by the SBOM creator (differs from the declared license)',
   github: 'GitHub repository license',
   npm: 'npm registry',
   nuget: 'NuGet registry',

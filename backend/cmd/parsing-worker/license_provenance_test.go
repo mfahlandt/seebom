@@ -97,7 +97,7 @@ func TestResolvePackageLicenses(t *testing.T) {
 		"pkg:npm/from-npm@1.0.0": {license: "ISC", latest: true},
 	}}}
 
-	sources, counts, err := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil)
+	sources, counts, err := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestResolvePackageLicenses(t *testing.T) {
 func TestResolvePackageLicensesWithoutGitHub(t *testing.T) {
 	licenses := []string{"NOASSERTION", "GPL-2.0+"}
 	sources, counts, _ := resolvePackageLicenses(context.Background(), nil, nil,
-		[]string{"pkg:cargo/c@1", "pkg:cargo/d@1"}, licenses, []uint32{})
+		[]string{"pkg:cargo/c@1", "pkg:cargo/d@1"}, licenses, nil, []uint32{})
 	if sources[0] != license.ReasonUnresolved || sources[1] != "declared+normalized" || licenses[1] != "GPL-2.0-or-later" {
 		t.Errorf("got licenses %v sources %v", licenses, sources)
 	}
@@ -148,7 +148,7 @@ func TestResolvePackageLicenses_GitHubRateLimitAborts(t *testing.T) {
 		"pkg:npm/from-npm@1.0.0": {license: "ISC"},
 	}, onLookup: func() { registryCalls++ }}}
 
-	sources, counts, err := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil)
+	sources, counts, err := resolvePackageLicenses(context.Background(), github, []registryResolver{npm}, purls, licenses, nil, nil)
 	if !errors.Is(err, gh.ErrRateLimited) {
 		t.Fatalf("err = %v, want ErrRateLimited", err)
 	}

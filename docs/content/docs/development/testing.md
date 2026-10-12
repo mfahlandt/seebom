@@ -224,12 +224,12 @@ npx ng test --watch=false
 
 | Spec File | Tests | What's Covered |
 |-----------|-------|---------------|
-| `app.spec.ts` | 6 | App creation, navbar, navigation |
+| `app.spec.ts` | 8 | App creation, navbar, navigation, global loading bar, router navigation counted as loading |
 | `api.service.spec.ts` | 18 | HTTP methods incl. license sources, error handling, pagination params |
 | `archived-packages.component.spec.ts` | 10 | Data loading, grouped display |
 | `dashboard.component.spec.ts` | 3 | Component creation, data loading, Not Approved license segment |
 | `fleet-view.component.spec.ts` | 3 | Cluster → namespace → project tree |
-| `license-overview.component.spec.ts` | 4 | Category cards, License Resolution panel: resolved share, unknown reasons with hints, first-party excluded |
+| `license-overview.component.spec.ts` | 6 | Category cards (placeholders while loading, error state), License Resolution panel: resolved share, unknown reasons with hints, first-party excluded |
 | `project-detail.component.spec.ts` | 12 | Project detail tabs and stats |
 | `project-list.component.spec.ts` | 18 | Project loading, search, tags, grouping |
 | `parent-group-list.component.spec.ts` | 6 | Parent → project grouping |
@@ -242,9 +242,11 @@ npx ng test --watch=false
 | `license-violations.component.spec.ts` | 7 | Violations tab, exceptions tab, not-approved badge |
 | `package-search.spec.ts` | 8 | Search, expandable results, detail navigation |
 | `version-skew.spec.ts` | 3 | Paginated loading, search |
-| `vulnerability-list.component.spec.ts` | 2 | Component creation, vuln list loading |
+| `vulnerability-list.component.spec.ts` | 5 | Vuln list loading, scope filter, loading / empty / error states |
 | `global-search.component.spec.ts` | 5 | Navbar search box |
 | `license-source.spec.ts` | 5 | License source labels, tooltips, reason hints |
+| `loading.service.spec.ts` | 8 | Global loading state: show delay, slow hint, concurrent requests; HTTP interceptor incl. error, unsubscribe, `SKIP_GLOBAL_LOADING` |
+| `loading-bar.component.spec.ts` | 3 | Loading bar visibility, slow-request hint, ARIA attributes |
 | **Total** | **144** | **21 spec files** |
 
 ### Test Patterns (Angular)

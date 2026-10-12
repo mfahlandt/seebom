@@ -25,24 +25,24 @@ interface GroupedProject {
       <div class="categories">
         <div class="category-card permissive">
           <h3>Permissive</h3>
-          <span class="count">{{ getCategoryCount('permissive') | number }}</span>
+          <span class="count">{{ loading ? '…' : (getCategoryCount('permissive') | number) }}</span>
         </div>
         <div class="category-card copyleft">
           <h3>Copyleft</h3>
-          <span class="count">{{ getCategoryCount('copyleft') | number }}</span>
+          <span class="count">{{ loading ? '…' : (getCategoryCount('copyleft') | number) }}</span>
         </div>
         <div class="category-card unapproved" title="Declared license that is not on the policy allow-list">
           <h3>Not Approved</h3>
-          <span class="count">{{ getCategoryCount('unapproved') | number }}</span>
+          <span class="count">{{ loading ? '…' : (getCategoryCount('unapproved') | number) }}</span>
         </div>
         <div class="category-card unknown clickable" (click)="openResolution()"
              title="No license could be determined (NOASSERTION / NONE) — click to see why">
           <h3>Unknown</h3>
-          <span class="count">{{ getCategoryCount('unknown') | number }}</span>
+          <span class="count">{{ loading ? '…' : (getCategoryCount('unknown') | number) }}</span>
         </div>
         <div class="category-card exempted">
           <h3>Exempted</h3>
-          <span class="count">{{ getExemptedCount() | number }}</span>
+          <span class="count">{{ loading ? '…' : (getExemptedCount() | number) }}</span>
         </div>
       </div>
 
@@ -110,6 +110,9 @@ interface GroupedProject {
           </button>
         </div>
       </div>
+
+      <p *ngIf="loading" class="list-state">Loading licenses…</p>
+      <p *ngIf="error" class="list-state error">Could not load license compliance data. Please try again.</p>
 
       <div class="license-list">
         <div *ngFor="let item of licenses; trackBy: trackByLicense"
@@ -246,6 +249,8 @@ interface GroupedProject {
     .sort-arrow { margin-left: 2px; font-size: 0.68rem; }
 
     /* License Cards */
+    .list-state { padding: 16px 0; margin: 0; color: var(--text-muted); font-size: 0.85rem; }
+    .list-state.error { color: var(--severity-critical); }
     .license-list { display: flex; flex-direction: column; gap: 4px; }
     .license-card {
       background: var(--surface); border: 1px solid var(--border);
@@ -336,6 +341,9 @@ interface GroupedProject {
 })
 export class LicenseOverviewComponent implements OnInit {
   licenses: LicenseComplianceItem[] = [];
+  /** True until the compliance list has arrived; the cards would show 0 otherwise. */
+  loading = true;
+  error = false;
   resolvedSources: LicenseSourceItem[] = [];
   unresolvedSources: LicenseSourceItem[] = [];
   resolvedTotal = 0;
@@ -378,11 +386,19 @@ export class LicenseOverviewComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.api.getLicenseCompliance().subscribe((data) => {
-      this.rawLicenses = data;
-      this.buildGroupedCache();
-      this.applySort();
-      this.cdr.markForCheck();
+    this.api.getLicenseCompliance().subscribe({
+      next: (data) => {
+        this.rawLicenses = data;
+        this.buildGroupedCache();
+        this.applySort();
+        this.loading = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.loading = false;
+        this.error = true;
+        this.cdr.markForCheck();
+      },
     });
     this.api.getLicenseSources().subscribe((items) => {
       this.resolvedSources = items.filter((s) => s.resolved);

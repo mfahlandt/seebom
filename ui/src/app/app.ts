@@ -1,14 +1,20 @@
-import { Component, OnInit } from '@angular/core';
-import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
+import { Component, DestroyRef, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import {
+  Router, RouterOutlet, RouterLink, RouterLinkActive,
+  NavigationStart, NavigationEnd, NavigationCancel, NavigationError,
+} from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { SiteConfigService } from './core/site-config.service';
 import { ApiService } from './core/api.service';
+import { LoadingService } from './core/loading.service';
 import { GlobalSearchComponent } from './shared/global-search/global-search.component';
+import { LoadingBarComponent } from './shared/loading-bar/loading-bar.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, GlobalSearchComponent],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, GlobalSearchComponent, LoadingBarComponent],
   template: `
     <nav class="navbar">
       <a class="brand" routerLink="/">
@@ -33,6 +39,7 @@ import { GlobalSearchComponent } from './shared/global-search/global-search.comp
         {{ dark ? '☀' : '☾' }}
       </button>
     </nav>
+    <app-loading-bar />
     <main class="content">
       <router-outlet />
     </main>
@@ -121,12 +128,19 @@ export class App implements OnInit {
    */
   hasFleet = false;
 
+  private readonly router = inject(Router);
+  private readonly loading = inject(LoadingService);
+  private readonly destroyRef = inject(DestroyRef);
+
   constructor(
     readonly siteConfig: SiteConfigService,
     private readonly api: ApiService,
   ) {}
 
   ngOnInit(): void {
+    this.trackNavigation();
+
+
     const saved = localStorage.getItem('bomhort-theme');
     if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
       this.dark = true;
@@ -144,6 +158,26 @@ export class App implements OnInit {
       error: () => {
         this.hasFleet = false;
       },
+    });
+  }
+
+  /**
+   * Routes are lazy-loaded, so a navigation can wait on a chunk download
+   * before any API request starts. Count it as loading too.
+   */
+  private trackNavigation(): void {
+    let navigating = false;
+    this.router.events.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((event) => {
+      if (event instanceof NavigationStart && !navigating) {
+        navigating = true;
+        this.loading.begin();
+      } else if (
+        (event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError)
+        && navigating
+      ) {
+        navigating = false;
+        this.loading.end();
+      }
     });
   }
 

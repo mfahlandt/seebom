@@ -79,4 +79,38 @@ describe('LicenseOverviewComponent', () => {
     fixture.detectChanges();
     expect(el.querySelector('.resolution-content')).toBeNull();
   });
+
+  /** Before the data arrives the cards must not claim "0 copyleft". */
+  it('shows placeholders instead of zero counts while loading', () => {
+    const fixture = TestBed.createComponent(LicenseOverviewComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    const counts = () => Array.from(el.querySelectorAll('.category-card .count')).map((c) => c.textContent?.trim());
+
+    expect(fixture.componentInstance.loading).toBe(true);
+    expect(counts()).toEqual(['…', '…', '…', '…', '…']);
+    expect(el.querySelector('.list-state')?.textContent).toContain('Loading licenses');
+
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/licenses/compliance').flush([]);
+    http.expectOne('/api/v1/licenses/sources').flush([]);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.loading).toBe(false);
+    expect(counts()).toEqual(['0', '0', '0', '0', '0']);
+    expect(el.querySelector('.list-state')).toBeNull();
+  });
+
+  it('shows an error when the compliance list cannot be loaded', () => {
+    const fixture = TestBed.createComponent(LicenseOverviewComponent);
+    fixture.detectChanges();
+    const http = TestBed.inject(HttpTestingController);
+    http.expectOne('/api/v1/licenses/compliance').flush('boom', { status: 500, statusText: 'Server Error' });
+    http.expectOne('/api/v1/licenses/sources').flush([]);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(fixture.componentInstance.loading).toBe(false);
+    expect(el.querySelector('.list-state.error')?.textContent).toContain('Could not load license compliance data');
+  });
 });

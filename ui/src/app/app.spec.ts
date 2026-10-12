@@ -1,8 +1,10 @@
 import { TestBed } from '@angular/core/testing';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import { vi } from 'vitest';
 import { App } from './app';
+import { LoadingService } from './core/loading.service';
 
 describe('App', () => {
   let httpMock: HttpTestingController;
@@ -134,6 +136,36 @@ describe('App', () => {
     expect(links[8].textContent).toContain('Dependencies');
     expect(links[9].textContent).toContain('Pkg Search');
     expect(links[10].textContent).toContain('Version Skew');
+  });
+
+  it('renders the global loading bar', () => {
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).querySelector('app-loading-bar')).toBeTruthy();
+    flushClusters([]);
+  });
+
+  /** Lazy routes download a chunk before any API call; that wait counts too. */
+  it('counts a router navigation as loading until it settles', async () => {
+    const loading = TestBed.inject(LoadingService);
+    const begin = vi.spyOn(loading, 'begin');
+    const end = vi.spyOn(loading, 'end');
+    const fixture = TestBed.createComponent(App);
+    fixture.detectChanges();
+    flushClusters([]);
+    begin.mockClear();
+    end.mockClear();
+
+    await TestBed.inject(Router).navigateByUrl('/');
+    expect(begin).toHaveBeenCalledTimes(1);
+    expect(end).toHaveBeenCalledTimes(1);
+    expect(loading.pending()).toBe(0);
+
+    // An unknown route ends in NavigationError and must not leak the count.
+    await TestBed.inject(Router).navigateByUrl('/does-not-exist').catch(() => undefined);
+    expect(begin).toHaveBeenCalledTimes(2);
+    expect(end).toHaveBeenCalledTimes(2);
+    expect(loading.pending()).toBe(0);
   });
 });
 

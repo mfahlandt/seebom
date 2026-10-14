@@ -18,6 +18,14 @@ This guide covers deploying BOMHort to a Kubernetes cluster using Helm.
 - Helm 3.x
 - Container images pushed to a registry (e.g. `ghcr.io/seebom-labs/bomhort/*`)
 
+### Supported ClickHouse versions {#clickhouse-versions}
+
+The supported floor is the **ClickHouse 24.8 LTS** line (#392). The chart installs `clickhouse/clickhouse-server:24.8.14.39`, pinned by digest so a re-pushed tag cannot change what gets installed. LTS because production should run a release that keeps receiving fixes.
+
+CI runs the migrations and every API query against that exact image and against 24.12, the version `docker-compose.yml` uses for local development. A query that only works on the newer version fails CI instead of production. `deploy/helm/tests/test_clickhouse_version.py` fails if the chart, the CI matrix and docker-compose drift apart.
+
+Running a newer ClickHouse via `clickhouse.installation.podTemplate.containerImage` works, but only 24.8 and 24.12 are tested. Older than 24.8 is unsupported.
+
 ### Chart source: published release or working tree
 
 The examples on this page install from the working tree (`deploy/helm/bomhort/`). For a published release, use the OCI chart instead — it deploys the images of exactly that release:

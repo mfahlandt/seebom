@@ -66,14 +66,10 @@ s3:
   #   secretKeyKey: "S3_SECRET_KEY"
 
 # ─── SBOM Source via PVC (alternative to S3) ─────────────────────────────────
-# Disable git-sync and use a one-shot seed job instead.
-# Only needed if S3 is not configured above.
+# Only needed if S3 is not configured above. The chart creates the PVC empty;
+# copy SBOMs into it (kubectl cp) or enable git-sync instead.
 gitSync:
   enabled: false
-
-seedJob:
-  sbomRepo: "https://github.com/my-org/sboms.git"
-  sbomBranch: main
 
 sbomSource:
   pvcName: bomhort-sbom-data

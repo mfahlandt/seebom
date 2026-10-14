@@ -117,7 +117,7 @@ bomhort/
         ├── cronjob-ingestion-watcher.yaml  # git-sync initContainer
         ├── cronjob-cve-refresher.yaml      # Daily CVE refresh (configurable)
         ├── job-migrate.yaml                # DB migration job (runs at install/upgrade)
-        ├── job-seed-sboms.yaml             # Git-clone seed job for large SBOM repos
+        ├── validate-removed-values.yaml    # Fails the render on removed values (seedJob, #391)
         ├── pvc-sbom-data.yaml              # PVC for SBOM storage
         ├── service-api-gateway.yaml
         ├── service-mcp-server.yaml         # Only rendered for mcp.transport=http

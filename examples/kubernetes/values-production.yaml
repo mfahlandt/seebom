@@ -1,7 +1,7 @@
 # BOMHort – Production Helm Values
 #
 # Suitable for a real Kubernetes cluster (EKS, GKE, AKS, self-hosted).
-# Default ingestion: S3 buckets (set s3.buckets). Fallback: seed job into PVC.
+# Default ingestion: S3 buckets (set s3.buckets). Fallback: a PVC you populate.
 # HA replicas, ClusterIP services.
 #
 # Usage:
@@ -47,7 +47,7 @@ github:
   token: ""   # pass via --set or reference an existing K8s Secret
 
 # ─── S3 Bucket Ingestion (default, recommended) ─────────────────────────────
-# Ingest SBOMs directly from S3 buckets. No PVC, git-sync, or seed job needed.
+# Ingest SBOMs directly from S3 buckets. No PVC or git-sync needed.
 # Works alongside local files if both are configured.
 s3:
   # Example: ingest from two SBOM buckets
@@ -63,14 +63,10 @@ s3:
   #   secretKeyKey: "S3_SECRET_KEY"
 
 # ─── SBOM Source via PVC (alternative to S3) ─────────────────────────────────
-# The seed job does a shallow git clone into a PVC on first install.
 # Only needed if S3 is not available. For S3-based ingestion, set s3.buckets above.
+# The chart creates the PVC empty; populate it yourself (CI job, kubectl cp).
 gitSync:
   enabled: false
-
-seedJob:
-  sbomRepo: "https://github.com/my-org/sboms.git" # ← change to your SBOM repo
-  sbomBranch: main
 
 sbomSource:
   pvcName: bomhort-sbom-data

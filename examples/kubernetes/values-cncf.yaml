@@ -82,11 +82,6 @@ s3:
 gitSync:
   enabled: false
 
-# Kept only as the PVC fallback; S3 above is the source of truth.
-seedJob:
-  sbomRepo: "https://github.com/cncf/sbom.git"
-  sbomBranch: main
-
 sbomSource:
   pvcName: bomhort-sbom-data
   mountPath: /data/sboms

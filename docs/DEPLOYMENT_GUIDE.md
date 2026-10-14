@@ -29,7 +29,7 @@ BOMHort supports multiple SBOM ingestion methods. **S3 bucket ingestion** is the
 
 ### Option A: S3 Buckets (default, recommended)
 
-Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS). The Ingestion Watcher streams object listings with pagination (no full listing in memory) and the Parsing Workers fetch objects on-demand. No PVCs, git-sync sidecars, or seed jobs required.
+Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS). The Ingestion Watcher streams object listings with pagination (no full listing in memory) and the Parsing Workers fetch objects on-demand. No PVCs or git-sync sidecars required.
 
 **Single public bucket:**
 
@@ -96,32 +96,18 @@ s3:
 
 Nested keys are fully supported (e.g. `k3s-io/helm-controller/0.16.14/k3s-io_helm-controller_0_16_14_spdx.json`).
 
-### Option B: Seed Job (alternative for environments without S3)
+### Option B: Seed Job (removed in 0.8.0)
 
-A Kubernetes Job runs at install time, does a shallow `git clone`, and flat-copies all SBOM files into a PVC. Suitable when your SBOMs live in a Git repo and S3 is not available.
+Charts up to 0.7.x rendered a seed job whenever git-sync was disabled. Its
+`git clone` had been commented out since March 2026, so it cloned nothing and
+waited forever for a file nothing created — blocking `helm install --wait` for
+S3 users too. It was removed in 0.8.0
+([#391](https://github.com/seebom-labs/BOMHort/issues/391)).
 
-```yaml
-s3:
-  buckets: ""    # disable S3
-
-gitSync:
-  enabled: false
-
-seedJob:
-  sbomRepo: "https://github.com/my-org/sboms.git"
-  sbomBranch: main
-
-sbomSource:
-  storageSize: 20Gi
-```
-
-The seed job flattens nested directory structures (`org/project/version/file.spdx.json` → `org_project_version_file.spdx.json`) to avoid filename collisions.
-
-**To refresh SBOMs**, delete the seed job and re-run Helm upgrade:
-```bash
-kubectl delete job -n bomhort -l app.kubernetes.io/component=seed-sboms
-helm upgrade bomhort deploy/helm/bomhort/ -n bomhort -f my-values.yaml
-```
+Values that still contain a `seedJob` block now **fail the render** with a
+message pointing here. Remove the block and pick one of the other options: S3
+(Option A) for any size, git-sync (Option C) for small repos, or a PVC you
+populate yourself (Option D) for large Git repos without S3.
 
 > **Note:** When using a PVC, the SBOM volume is `ReadWriteOnce` (RWO). The Helm chart automatically adds pod affinity to co-schedule all workloads on the same node.
 
@@ -142,7 +128,7 @@ gitSync:
   timeout: 120
 ```
 
-> **⚠️  Limitation:** git-sync struggles with large repos. Past a few GB it times out or gets OOM-killed. Use S3 or the seed job instead.
+> **⚠️  Limitation:** git-sync struggles with large repos. Past a few GB it times out or gets OOM-killed. Use S3 or a pre-populated PVC instead.
 
 ### Option D: Pre-populated PVC (manual / CI pipeline)
 
@@ -780,7 +766,7 @@ ingress:
 | What | Where | How to Change |
 |---|---|---|
 | **SBOMs (S3)** | S3-compatible buckets | Configure `s3.buckets` in Helm values, CronJob streams objects |
-| **SBOMs (volume)** | PVC via seed job or git-sync | Push to Git, seed job clones or git-sync re-syncs |
+| **SBOMs (volume)** | PVC via git-sync or populated by you | Push to Git (git-sync re-syncs) or copy into the PVC |
 | **VEX files** | Same S3 bucket or directory as SBOMs | Place `*.openvex.json` or `*.vex.json` alongside SBOMs |
 | **License Exceptions** | `bomhort-license-exceptions` ConfigMap | `licenseExceptions.custom` → Helm rollout of API + workers → re-process existing SBOMs |
 | **License Policy** | `bomhort-license-policy` ConfigMap | `kubectl edit configmap` → restart API + Workers |

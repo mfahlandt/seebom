@@ -93,7 +93,7 @@ ownership:
 
 # S3 bucket ingestion (default, recommended)
 # Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS).
-# No PVC, git-sync, or seed job required. Streams object listings with pagination.
+# No PVC or git-sync required. Streams object listings with pagination.
 # The Parsing Workers fetch objects on-demand via s3:// URIs.
 # Set s3.buckets to a JSON array of bucket configs. Leave empty to use volume-based alternatives.
 s3:
@@ -166,6 +166,8 @@ clickhouse:
       logStorage: 100Mi
 
 # SBOM source via PVC (alternative to S3, for environments without S3 access)
+# With gitSync.enabled=false the chart creates this PVC empty; filling it
+# (a CI job, kubectl cp, push uploads with sbomSource.writable) is up to you.
 sbomSource:
   pvcName: bomhort-sbom-data
   mountPath: /data/sboms
@@ -509,13 +511,6 @@ cveRefresher:
     limits:
       cpu: 500m
       memory: 512Mi
-
-# Seed Job (only used when gitSync.enabled=false)
-# Clones an SBOM git repo into the PVC on first install.
-seedJob:
-  sbomRepo: "https://github.com/my-org/sboms.git"
-  sbomBranch: main
-  # License exceptions are configured via licenseExceptions.custom, not downloaded.
 
 # Data Migration (one-time, from old seebom deployment to new bomhort deployment)
 # Runs as a Helm post-upgrade hook. Uses ClickHouse remote() to copy all tables

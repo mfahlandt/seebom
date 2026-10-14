@@ -104,7 +104,7 @@ jobs:
           CLICKHOUSE_HOST: 127.0.0.1
           CLICKHOUSE_PORT: "9000"
           CLICKHOUSE_DATABASE: bomhort
-        run: go test ./internal/clickhouse/ -count=1 -run 'TestQueriesExecute|TestSBOMDetailProjectionMatchesScan|TestSBOMVulnerabilitiesVEXJoin|TestClusterSBOMsQuery|TestProjectRowsUsePrimaryKey|TestQueryLimitsReachTheServer|TestFindingsCarryCVEAndAliases|TestAffectedProjectsByAnyAlias|TestVEXStatementsAndSearchCarryAliases|TestStreamVulnerabilitiesMatchesPagedListing' -v
+        run: go test ./internal/clickhouse/ -count=1 -run 'TestQueriesExecute|TestSBOMDetailProjectionMatchesScan|TestSBOMVulnerabilitiesVEXJoin|TestClusterSBOMsQuery|TestProjectRowsUsePrimaryKey|TestQueryLimitsReachTheServer|TestFindingsCarryCVEAndAliases|TestAffectedProjectsByAnyAlias|TestVEXStatementsAndSearchCarryAliases|TestStreamVulnerabilitiesMatchesPagedListing|TestLicenseRecheckQueries' -v
 
   frontend:
     name: Frontend (Angular)

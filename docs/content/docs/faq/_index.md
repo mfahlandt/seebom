@@ -109,10 +109,13 @@ A full re-ingestion (truncate + re-ingest) is required when:
 | Enabled/disabled **GitHub license resolution** (`skipGitHubResolve`) | Unknown licenses need re-resolution |
 | Enabled/disabled **npm / NuGet / deps.dev / Packagist / PyPI license resolution** (`skipNPMResolve`, `skipNuGetResolve`, `skipDepsDevResolve`, `skipPackagistResolve`, `skipPyPIResolve`) | Unknown package-registry licenses need re-resolution |
 | Upgraded **parsing logic** (new image version) | Existing SBOMs may parse differently (e.g., new in-toto attestation support or improved license resolution with well-known Go module mappings) |
-| Changed **license exceptions** | Exception matching is applied during ingestion |
 | Added a **GitHub token** (`GITHUB_TOKEN`) | Previously rate-limited resolution may have missed packages — a re-ingestion with the token resolves all licenses |
 
 For these changes, a simple incremental re-trigger will **not** reprocess existing files because the SHA-256 hashes haven't changed.
+
+Changed **license exceptions** are not on this list: the workers re-check the
+stored results of every SBOM when the rules change, without re-ingesting
+anything. See [Retroactive application](/docs/deployment/#retroactive-application).
 
 {{% alert title="Tip" color="success" %}}
 Changes to **VEX files** do **not** require a full re-ingestion. VEX matching is applied at query time. Simply add or update your `.openvex.json` files and trigger an incremental re-ingestion to pick them up. Note that statements are scoped to the SBOM whose product they describe (#350): the worker maps the OpenVEX product `@id` to an SBOM (or use `?sbom_id=` on upload); statements whose product matches no SBOM are stored **unscoped** and suppress **nothing** — there is no global or fleet-wide VEX scope. Check the worker logs for the warning. If the product's SBOM merely had not been ingested yet, the VEX rescue pass (migration `020`) scopes the statement automatically once it arrives.

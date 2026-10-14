@@ -139,7 +139,7 @@ type IngestionJob struct {
 	SourceFile   string     `json:"source_file"`
 	SHA256Hash   string     `json:"sha256_hash"`
 	Status       string     `json:"status"`   // pending, processing, done, failed
-	JobType      string     `json:"job_type"` // sbom, vex
+	JobType      string     `json:"job_type"` // sbom, vex, license_recheck
 	ClaimedBy    string     `json:"claimed_by"`
 	ClaimedAt    *time.Time `json:"claimed_at,omitempty"`
 	FinishedAt   *time.Time `json:"finished_at,omitempty"`
@@ -163,6 +163,9 @@ type IngestionJob struct {
 	// Parent carries an explicit parent assignment (bucket config, path
 	// layout, ?parent=) from the watcher or gateway to the parsing worker.
 	Parent string `json:"parent,omitempty"`
+	// RetryAfter keeps a newly enqueued job unclaimable until then. Zero
+	// means immediately.
+	RetryAfter time.Time `json:"retry_after,omitempty"`
 }
 
 // StoredDocument is a row in document_store (#256): the reference to the
@@ -196,6 +199,10 @@ const (
 const (
 	JobTypeSBOM = "sbom"
 	JobTypeVEX  = "vex"
+	// JobTypeLicenseRecheck re-applies the current license exceptions to the
+	// stored license_compliance rows. SHA256Hash holds the digest of the
+	// exceptions document it was enqueued for.
+	JobTypeLicenseRecheck = "license_recheck"
 )
 
 // VEXProductWide is the sentinel stored in vex_statements.product_purl for a

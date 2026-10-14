@@ -24,6 +24,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/osv"
 	"github.com/seebom-labs/bomhort/backend/internal/osvutil"
+	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 	"github.com/seebom-labs/bomhort/backend/internal/sbom"
 	"github.com/seebom-labs/bomhort/backend/internal/vex"
@@ -63,20 +64,6 @@ func main() {
 		license.SetExpressionMode(mode)
 	}
 	log.Printf("License expression mode: %s", license.GetExpressionMode())
-
-	// Load license exceptions if available (try config path, then SBOM dir fallback).
-	var exceptionsIndex *license.ExceptionIndex
-	sbomDirExceptionsPath := cfg.SBOMDir + "/license-exceptions.json"
-	if idx, err := license.LoadExceptionsWithFallback(cfg.ExceptionsFile, sbomDirExceptionsPath); err == nil {
-		exceptionsIndex = idx
-		log.Printf("Loaded license exceptions (%d blanket, %d specific)",
-			len(idx.Raw.BlanketExceptions), len(idx.Raw.Exceptions))
-	} else {
-		if !errors.Is(err, os.ErrNotExist) {
-			log.Fatalf("Invalid license exceptions configuration: %v", err)
-		}
-		log.Printf("No license exceptions loaded (tried %s, %s): %v", cfg.ExceptionsFile, sbomDirExceptionsPath, err)
-	}
 
 	// Initialize GitHub license resolver for unknown licenses.
 	var ghResolver *gh.Resolver
@@ -151,6 +138,50 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// License exceptions: a mounted file (ConfigMap) by default, or a remote
+	// document (EXCEPTIONS_SOURCE). Kept current while the worker runs; a
+	// change queues a recheck of the stored results.
+	exceptions, err := license.WatchExceptions(rulesource.Options{
+		Source: cfg.ExceptionsSource,
+		Paths:  []string{cfg.ExceptionsFile, cfg.SBOMDir + "/license-exceptions.json"},
+		Token:  cfg.ExceptionsSourceToken,
+		S3:     objectGetter(s3c),
+	})
+	if err != nil {
+		log.Fatalf("Invalid license exceptions source: %v", err)
+	}
+	if _, err := exceptions.Refresh(ctx); err != nil {
+		// A worker that cannot read its rules would store results that the
+		// next recheck has to undo — refuse to start instead, like a missing
+		// ConfigMap does.
+		log.Fatalf("Invalid license exceptions configuration: %v", err)
+	}
+	logExceptions(exceptions.Current())
+	delay := recheckDelay(cfg.ExceptionsRefreshInterval, exceptions.Remote())
+	if err := ensureLicenseRecheck(ctx, chClient, exceptions.Current().Digest, delay, time.Now()); err != nil {
+		log.Printf("WARNING: could not check for a pending license recheck: %v", err)
+	}
+	go exceptions.Run(ctx, cfg.ExceptionsRefreshInterval, func(s rulesource.Snapshot[*license.ExceptionIndex]) {
+		logExceptions(s)
+		if err := ensureLicenseRecheck(ctx, chClient, s.Digest, delay, time.Now()); err != nil {
+			log.Printf("ERROR: license exceptions changed, but the recheck could not be queued (retrying): %v", err)
+		}
+	})
+	go func() {
+		t := time.NewTicker(recheckPollInterval(cfg.ExceptionsRefreshInterval))
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			if err := ensureLicenseRecheck(ctx, chClient, exceptions.Current().Digest, delay, time.Now()); err != nil && ctx.Err() == nil {
+				log.Printf("ERROR: could not check for a pending license recheck: %v", err)
+			}
+		}
+	}()
+
 	// Handle graceful shutdown.
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
@@ -186,24 +217,27 @@ func main() {
 
 		log.Printf("Claimed %d jobs, processing...", len(jobs))
 
+		// Status writes outlive a shutdown signal: a job left 'processing'
+		// by a cancelled write is never claimed again.
+		statusCtx := context.WithoutCancel(ctx)
 		for _, job := range jobs {
-			if err := processJob(ctx, cfg, chClient, osvClient, exceptionsIndex, ghResolver, registryResolvers, s3c, originals, job); err != nil {
+			if err := processJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, s3c, originals, job); err != nil {
 				var deferErr *deferError
 				if errors.As(err, &deferErr) {
 					log.Printf("Deferred %s until %s: %v", job.SourceFile, deferErr.until.Format(time.RFC3339), deferErr.cause)
-					if dErr := chClient.DeferJob(ctx, job, deferErr.until, deferErr.Error()); dErr != nil {
+					if dErr := chClient.DeferJob(statusCtx, job, deferErr.until, deferErr.Error()); dErr != nil {
 						log.Printf("ERROR: Failed to defer job: %v", dErr)
 					}
 					continue
 				}
 				log.Printf("ERROR: Failed to process %s: %v", job.SourceFile, err)
-				if failErr := chClient.FailJob(ctx, job, err.Error()); failErr != nil {
+				if failErr := chClient.FailJob(statusCtx, job, err.Error()); failErr != nil {
 					log.Printf("ERROR: Failed to mark job as failed: %v", failErr)
 				}
 				continue
 			}
 
-			if err := chClient.CompleteJob(ctx, job); err != nil {
+			if err := chClient.CompleteJob(statusCtx, job); err != nil {
 				log.Printf("ERROR: Failed to mark job as done: %v", err)
 			} else {
 				log.Printf("Completed: %s", job.SourceFile)
@@ -212,7 +246,7 @@ func main() {
 	}
 }
 
-func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, s3c *s3client.Client, originals docstore.Store, job models.IngestionJob) error {
+func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, rules *license.ExceptionsWatcher, ghResolver *gh.Resolver, registryResolvers []registryResolver, s3c *s3client.Client, originals docstore.Store, job models.IngestionJob) error {
 	// Determine how to open the file: S3 URI or local path.
 	openFile := func() (io.ReadCloser, error) {
 		if strings.HasPrefix(job.SourceFile, "s3://") {
@@ -231,9 +265,16 @@ func processJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Cl
 	}
 
 	// Branch on job type.
-	if job.JobType == models.JobTypeVEX {
+	switch job.JobType {
+	case models.JobTypeVEX:
 		return processVEXJob(ctx, chClient, openFile, job)
+	case models.JobTypeLicenseRecheck:
+		return runLicenseRecheckJob(ctx, chClient, job, rules.Current(), recheckPollInterval(cfg.ExceptionsRefreshInterval))
 	}
+
+	// Read at check time, not now: a job that runs long still applies the
+	// rules current when its results are written.
+	exceptions := func() *license.ExceptionIndex { return rules.Current().Value }
 
 	return processSBOMJob(ctx, cfg, chClient, osvClient, exceptions, ghResolver, registryResolvers, openFile, originals, job)
 }
@@ -328,7 +369,7 @@ func excludeIndices(names, licenses []string, skip []uint32) ([]string, []string
 	return outNames, outLics
 }
 
-func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), originals docstore.Store, job models.IngestionJob) error {
+func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhouse.Client, osvClient *osv.Client, exceptions func() *license.ExceptionIndex, ghResolver *gh.Resolver, registryResolvers []registryResolver, openFile func() (io.ReadCloser, error), originals docstore.Store, job models.IngestionJob) error {
 
 	// 1. Read the whole document once. The bytes are needed twice — for the
 	// parser and for the Tier-2 original capture (#256) — and sbom.Parse reads
@@ -548,7 +589,9 @@ func processSBOMJob(ctx context.Context, cfg *config.Config, chClient *clickhous
 	// packages are not dependencies and must not show up in the license
 	// breakdown, e.g. as NOASSERTION findings.
 	licNames, licLicenses := excludeIndices(result.Packages.PackageNames, result.Packages.PackageLicenses, licenseCheckSkips(result.Packages.RootIndices, result.Packages.PackagePURLs))
-	licResults := license.CheckWithExceptions(licNames, licLicenses, exceptions, result.SBOM.DocumentName)
+	// Read the rules here, not at job start: a long job must not store
+	// results against rules that a recheck has already moved past.
+	licResults := license.CheckWithExceptions(licNames, licLicenses, exceptions(), result.SBOM.DocumentName)
 	if len(licResults) > 0 {
 		licModels := make([]models.LicenseCompliance, len(licResults))
 		for i, lr := range licResults {

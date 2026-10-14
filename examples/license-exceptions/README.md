@@ -45,8 +45,18 @@ licenseExceptions:
 ```
 
 For Docker Compose, put your reviewed configuration in
-`sboms/license-exceptions.json` and recreate/restart both `api-gateway` and
-`parsing-worker`. For standalone binaries, point `EXCEPTIONS_FILE` to the file.
+`sboms/license-exceptions.json`. The containers re-read it every
+`EXCEPTIONS_REFRESH_INTERVAL` (default `60s`). Docker bind-mounts a single file
+by inode, so an editor that saves by replacing the file is not seen inside the
+container — restart `api-gateway` and `parsing-worker` in that case. For
+standalone binaries, point `EXCEPTIONS_FILE` to the file, or `EXCEPTIONS_SOURCE`
+to an `https://` URL or `s3://bucket/key` (with `EXCEPTIONS_SOURCE_TOKEN` as an
+optional bearer token).
+
+Changes apply to SBOMs already ingested: the workers re-check every stored
+compliance result against the new rules (a `license_recheck` job), so granting
+or revoking an exception needs no re-scan. See
+[Retroactive application](../../docs/content/docs/deployment/_index.md#retroactive-application).
 
 ### Argo CD
 
@@ -55,16 +65,14 @@ in your Application instead of a local `helm upgrade --set-file` command.
 The [Argo CD example and checklist](../../docs/content/docs/deployment/_index.md#argo-cd-gitops)
 show an inactive `valuesObject` example and explain the required chart/image revisions.
 
-An exception change updates the ConfigMap and both Deployment pod-template
-checksums. Sync all three resources so API and worker pods receive the new file;
-unchanged values do not trigger extra rollouts. Manage approvals in Git, not by
-editing the live ConfigMap. An Argo sync does not re-process existing SBOMs;
-the migration and re-scan requirements below still apply.
+An exception change updates only the ConfigMap; the running pods reload it and
+re-check stored results. Manage approvals in Git, not by editing the live
+ConfigMap.
 
 For a large reviewed file (such as the CNCF foundation exceptions), keep it out
 of the Application: manage it as its own ConfigMap from a second source and set
-`licenseExceptions.existingConfigMap` instead of `custom`. Content changes then
-need a manual restart of both Deployments; see the
+`licenseExceptions.existingConfigMap` instead of `custom`, or point
+`licenseExceptions.source` at the file's https URL and skip the ConfigMap; see the
 [multi-source example](../../docs/content/docs/deployment/_index.md#reviewed-rules-from-their-own-source-existingconfigmap).
 
 ## Matching contract
@@ -116,7 +124,9 @@ primary file allows fallback to `SBOM_DIR/license-exceptions.json`. Invalid JSON
 incorrect structure, or an unreadable file is an error, not permission to load
 another list. The worker stops on invalid configuration; exception-related API
 requests return HTTP 500 instead of pretending there are no configured rules.
-Missing optional files still mean no exceptions.
+Missing optional files still mean no exceptions. A remote `source` is different:
+a missing document is an error, and an unreachable one keeps the last rules
+that loaded.
 
 To disable all approvals, keep the ConfigMap enabled and supply empty lists.
 `licenseExceptions.enabled: false` only disables the Helm mount; a deliberately

@@ -44,20 +44,22 @@ bomhort/
 │   │   ├── vex/               # OpenVEX parser (with URL normalization)
 │   │   ├── clickhouse/
 │   │   │   ├── client.go      # Connection + hash dedup
-│   │   │   ├── queue.go       # ClickHouse queue (job_type: sbom|vex)
+│   │   │   ├── queue.go       # ClickHouse queue (job_type: sbom|vex|license_recheck)
 │   │   │   ├── insert.go      # Batch INSERTs (SBOM, Packages, Vulns, Licenses, VEX)
 │   │   │   ├── queries.go     # Dashboard, SBOM list, vuln list, license, VEX, deps
 │   │   │   ├── queries_projects.go # Project listing (depth-aware key derivation)
 │   │   │   ├── queries_project_groups.go # Parent grouping: per-project signals, grouped listing
 │   │   │   ├── queries_search.go  # SBOM detail, CVE impact, license violations, dep stats
 │   │   │   ├── queries_refresh.go # CVE Refresh: PURL dedup, reverse-lookup, refresh log
-│   │   │   └── queries_github_cache.go # GitHub license cache read/write
+│   │   │   ├── queries_github_cache.go # GitHub license cache read/write
+│   │   │   └── queries_license_recheck.go # Stored compliance rows + latest recheck job
 │   │   ├── github/            # GitHub API client for license resolution (PURL→license)
 │   │   ├── npm/ nuget/ depsdev/ packagist/ pypi/ # Registry license resolvers (see docs: License Resolution)
 │   │   ├── osv/               # OSV API client (rate-limited, exponential backoff retry)
 │   │   ├── osvutil/           # Shared OSV helpers (severity, fixed version, affected versions)
 │   │   ├── s3/                # S3-compatible bucket client (AWS S3, MinIO, GCS)
-│   │   ├── license/           # License compliance + externalized policy + exceptions
+│   │   ├── license/           # License compliance + externalized policy + exceptions (+ Reevaluate)
+│   │   ├── rulesource/        # Rules documents from file / https / s3, polled with last-known-good
 │   │   ├── projectgroup/      # Parent (product) resolution: mapping file, explicit, tag, owner signals
 │   │   ├── repo/              # Filesystem scanner (SBOM + VEX, SHA256)
 │   │   └── config/            # Environment-based configuration
@@ -157,9 +159,11 @@ Parsing Workers (N replicas)
        ├── S3 files:    s3.GetObject(bucket, key) → io.ReadCloser
        ├── job_type=sbom: go-json → OSV Batch (rate-limited) → License Check → Batch INSERT
        │                 → VEX rescue: re-resolve unscoped statements against the new SBOM
-       └── job_type=vex:  OpenVEX Parse (URL normalization) → resolve product @id to SBOM
-                          (scoped; unresolvable → unscoped, product_ref persisted for rescue)
-                          → INSERT vex_statements
+       ├── job_type=vex:  OpenVEX Parse (URL normalization) → resolve product @id to SBOM
+       │                  (scoped; unresolvable → unscoped, product_ref persisted for rescue)
+       │                  → INSERT vex_statements
+       └── job_type=license_recheck: re-evaluate stored license_compliance rows against
+                          the current exceptions → INSERT only the changed rows
        ▼
 ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_statements
        │
@@ -385,7 +389,7 @@ one bucket is nested and another flat.
 
 | `vulnerabilities` | MergeTree | (sbom_id, purl, vuln_id) | OSV results |
 | `license_compliance` | SummingMergeTree | (sbom_id, license_id) | License compliance per SBOM (+exempted_packages, exemption_reason) |
-| `ingestion_queue` | ReplacingMergeTree | (job_id) | Job queue (job_type: sbom/vex); `retry_after` (migration `026`) parks a job until a time, e.g. a GitHub rate-limit reset |
+| `ingestion_queue` | ReplacingMergeTree | (job_id) | Job queue (job_type: sbom/vex/license_recheck; a recheck's `sha256_hash` is the digest of the exceptions it applies); `retry_after` (migration `026`) parks a job until a time, e.g. a GitHub rate-limit reset |
 | `dashboard_stats_mv` | SummingMergeTree (MV) | (stat_date) | Pre-aggregated daily stats |
 | `vex_statements` | ReplacingMergeTree | (vuln_id, product_purl, vex_id) | OpenVEX statements |
 | `cve_refresh_log` | MergeTree | (started_at, refresh_id) | CVE refresh run history (timestamp, results, status) |
@@ -525,9 +529,11 @@ The HTTP transport is remote tool execution, so both guards are mandatory rather
 
 **License Exceptions** (`license-exceptions.json`): Operator-managed blanket and package/license/project rules, empty by default. No automatic CNCF download or project-to-blanket promotion. An inactive structure example lives in `examples/license-exceptions/`. Blanket exceptions retain SPDX modifier-prefix matching (e.g. `MPL-2.0` matches `MPL-2.0-no-copyleft-exception`). Package rules match case-sensitive exact names or complete slash-delimited suffixes; optional project restrictions use the exact SBOM document name in both worker and API filtering. Multiple project rules are preserved and matching order is deterministic. Scope descriptions and dates remain audit metadata, not executable conditions.
 
-The first existing exception file is authoritative, even when empty. Fallback to the SBOM directory occurs only when the primary is missing. Unknown JSON fields, malformed structure, and read errors are surfaced (worker startup failure / exception-related API HTTP 500), not silently replaced by another list. Helm `licenseExceptions.custom` accepts a YAML object or JSON string and validates the two required arrays. ConfigMap checksums roll out API and worker pods together to refresh their `subPath` mounts; no live ConfigMap watch is assumed. Alternatively `licenseExceptions.existingConfigMap` / `licensePolicy.existingConfigMap` (#397) mount a ConfigMap the operator manages (Argo CD multi-source, kustomize `configMapGenerator`); the chart then renders no ConfigMap of its own, `custom` alongside it fails the render, and the pod annotation carries the ConfigMap name instead of a checksum — a content change needs a new name (generator hash suffix) or a manual rollout.
+The first existing exception file is authoritative, even when empty. Fallback to the SBOM directory occurs only when the primary is missing. Unknown JSON fields, malformed structure, and read errors are surfaced (worker startup failure / exception-related API HTTP 500), not silently replaced by another list. Helm `licenseExceptions.custom` accepts a YAML object or JSON string and validates the two required arrays. Alternatively `licenseExceptions.existingConfigMap` / `licensePolicy.existingConfigMap` (#397) mount a ConfigMap the operator manages (Argo CD multi-source, kustomize `configMapGenerator`); the chart then renders no ConfigMap of its own and `custom` alongside it fails the render. A third option, `licenseExceptions.source` (`EXCEPTIONS_SOURCE`), reads the rules from an `https://` URL (optional bearer token, ETag, 10 MiB cap) or an `s3://bucket/key` object instead of any ConfigMap.
 
-Exemptions are written at ingest time into `exempted_packages` + `exemption_reason` columns and considered at query time. Existing SBOMs must be re-processed after changes: filtering stored violations cannot restore previously exempted packages after revocation. A watcher run alone does not bypass hash deduplication. Read-only — no write API (frontend is public), no schema changes or automatic data resets.
+**Live reload and retroactive application.** The exceptions ConfigMap is mounted as a directory (never `subPath`, which does not see updates), and the API gateway and workers re-read the rules every `EXCEPTIONS_REFRESH_INTERVAL` (default 60s) through `internal/rulesource`: last-known-good on transport errors, an invalid document is reported (gateway HTTP 500) but never replaces good rules, a remote document that is missing is an error rather than "no exceptions". When a worker sees a new digest it enqueues one `license_recheck` job — deterministic id from the previous recheck's id plus the digest, so replicas seeing the same change collide on one job and a revert to an earlier version still counts — parked via `retry_after` for 2 × the interval (+90s for a mounted ConfigMap) so every replica has reloaded first. The job streams `license_compliance FINAL`, re-splits each row's stored `non_compliant_packages` + `exempted_packages` under the new rules (`license.Reevaluate`, property-tested against a fresh `CheckWithExceptions`) and inserts only rows whose outcome changed; `ReplacingMergeTree(checked_at)` makes them replace the old ones. No re-parse, no registry or OSV traffic, no schema change. Policy changes (recategorisation) still need a re-scan.
+
+Exemptions are written at ingest time into `exempted_packages` + `exemption_reason` columns, rewritten by the license recheck when the rules change, and considered at query time. Read-only — no write API (frontend is public), no schema changes or automatic data resets.
 
 **Permissive Licenses:** Packages with permissive licenses (MIT, Apache-2.0, BSD) are **never** tracked as non-compliant.
 
@@ -539,7 +545,8 @@ Exemptions are written at ingest time into `exempted_packages` + `exemption_reas
 **Configuration:**
 - Local: JSON files in `sboms/`, mounted via Docker Compose
 - K8s: ConfigMaps (`bomhort-license-policy`, `bomhort-license-exceptions`)
-- Argo CD: Git-backed `helm.valueFiles` or `helm.valuesObject` supplies `licenseExceptions.custom`. Rendering changes the exception ConfigMap and the deterministic `checksum/license-exceptions` annotation on both Deployment pod templates. Sync applies these resources and triggers Kubernetes rollouts without a Helm upgrade hook. Chart and API/worker images must contain the fixes; syncing does not re-process stored SBOMs. See the [Argo CD deployment checklist](content/docs/deployment/_index.md#argo-cd-gitops).
+- Remote: `licenseExceptions.source` (https URL or `s3://bucket/key`), no ConfigMap
+- Argo CD: Git-backed `helm.valueFiles` or `helm.valuesObject` supplies `licenseExceptions.custom`. Rendering changes only the exception ConfigMap; the pods reload it and stored results are re-checked, without a rollout or a Helm upgrade hook. See the [Argo CD deployment checklist](content/docs/deployment/_index.md#argo-cd-gitops).
 
 ## 10a. GitHub Dependency Health
 

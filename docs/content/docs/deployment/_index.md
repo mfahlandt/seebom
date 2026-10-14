@@ -531,7 +531,19 @@ The same applied to `cluster` when #131 shipped.
 
 ## 3. License Exceptions
 
-License exceptions suppress specific license violations. They are stored in a **ConfigMap** that is mounted read-only into the API Gateway and Workers.
+License exceptions suppress specific license violations. They come from exactly
+one source, which the API Gateway and the workers re-read every
+`licenseExceptions.refreshInterval` (default `60s`):
+
+| Source | Set | Use when |
+|--------|-----|----------|
+| Chart-rendered ConfigMap | `licenseExceptions.custom` (default) | the rules live in your Helm values |
+| Your own ConfigMap | `licenseExceptions.existingConfigMap` | a second GitOps source / kustomize manages the reviewed file |
+| URL or S3 object | `licenseExceptions.source` | the rules live outside the cluster, e.g. in a governance repository |
+
+ConfigMaps are mounted as a directory (no `subPath`), so an edit reaches the
+running pods without a restart. **Granting or revoking an exception applies to
+every SBOM already ingested** — see [Retroactive application](#retroactive-application).
 
 **No exceptions are enabled or downloaded by default.** Adapt the inactive
 `examples/license-exceptions/license-exceptions.example.json` structure to your
@@ -571,11 +583,60 @@ stops the worker and returns HTTP 500 from exception-related API endpoints.
 Keep the ConfigMap enabled with empty lists to disable approvals; disabling the
 mount alone does not disable the legacy SBOM-directory fallback.
 
-Helm changes restart **both** API and workers via checksums. Direct ConfigMap
-edits require manually restarting both deployments because of `subPath` mounts.
-**Re-process existing SBOMs** to update stored compliance data, especially after
-revoking approvals; a watcher run alone skips unchanged hashes. Back up data
-before a full re-scan; development reset helpers delete ingested data.
+A change needs neither a restart nor a re-scan: the pods reload the rules and
+the stored results of existing SBOMs are re-checked automatically. Changes to
+the [license policy](#4-license-policy) — which licenses count as copyleft — are
+different and still need a re-scan.
+
+### Retroactive application
+
+When the workers see a new version of the rules (compared by SHA-256 digest),
+one of them enqueues a `license_recheck` job. It re-evaluates every stored
+`license_compliance` row under the new rules and rewrites only the rows whose
+outcome changed: a granted exception moves packages from *non-compliant* to
+*exempted*, a revoked one moves them back. No SBOM is re-parsed and no
+registry or OSV lookup is repeated.
+
+- The job waits `2 × refreshInterval` (plus 90 s for a mounted ConfigMap, the
+  kubelet's sync delay) before it runs, so every replica has reloaded first and
+  SBOMs ingested in between are already checked against the new rules.
+- Replicas coordinate through the queue: several workers seeing the same change
+  enqueue one job. Reverting to an earlier version is a change like any other.
+- A recheck runs only on a worker that has loaded the rules it was queued for;
+  a worker still on older rules defers it. A failed recheck, or one whose worker
+  died mid-run (still `processing` after an hour), is queued again within one
+  `refreshInterval`. The worker log reports
+  `License recheck: N stored results checked, M updated`.
+- With `refreshInterval: 0` the rules are read once at startup; a restart then
+  re-checks stored results against them.
+
+### Exceptions from outside the cluster: `source`
+
+```yaml
+licenseExceptions:
+  source: https://raw.githubusercontent.com/your-org/governance/main/license-exceptions.json
+  sourceTokenSecret:          # optional, for a private repository
+    name: governance-token
+    key: token                # sent as "Authorization: Bearer <token>"
+  refreshInterval: 5m
+```
+
+`source` also accepts `s3://bucket/key`, read with the [S3 credentials](#option-a-s3-buckets-default-recommended)
+the chart already passes to the pods. It is mutually exclusive with `custom` and
+`existingConfigMap`, and nothing is mounted. Only `https://` is accepted; responses
+over 10 MiB are rejected, and the URL is never logged (it may carry a signed
+query string).
+
+- **Unreachable source:** the pods keep the last rules that loaded and retry.
+  Workers do not start until the first load succeeds; the API gateway starts and
+  answers exception-related endpoints with HTTP 503 until then.
+- **Invalid document:** treated like an invalid file — the API returns HTTP 500
+  for exception-related endpoints, the workers keep the last good rules and log
+  the error, and nothing is re-checked until a valid document is published.
+- **Missing document (404 / no such key):** an error, never "no exceptions":
+  approvals do not silently disappear because a path moved.
+- Keep an `s3://` rules object out of buckets the ingestion watcher scans, or put
+  it in a bucket with `skipScan: true`, so it is not picked up as an SBOM.
 
 For upgrades, remove `seedJob.cncfExceptionsURL` (also from retained Helm values)
 and supply reviewed rules explicitly. `"All CNCF Projects"` is now a literal
@@ -585,8 +646,8 @@ is unchanged.
 ### Argo CD (GitOps)
 
 License exception updates also work when Argo CD renders the chart with
-`helm template`: the rollout mechanism does **not** depend on running
-`helm upgrade` or on a Helm upgrade hook.
+`helm template`: nothing depends on running `helm upgrade` or on a Helm
+upgrade hook.
 
 Keep exceptions in your GitOps repository, either in a Helm values file referenced
 by `spec.source.helm.valueFiles` or directly in `spec.source.helm.valuesObject`.
@@ -627,13 +688,11 @@ Git-backed Helm inputs. Avoid defining the same exceptions in multiple layers;
 **What happens on a change:**
 
 1. Commit the reviewed values and let Argo refresh the desired manifests.
-2. The rendered ConfigMap data changes, together with
-   `spec.template.metadata.annotations.checksum/license-exceptions` on **both**
-   the API Gateway and parsing-worker Deployments. Checksums are deterministic:
-   unchanged configuration does not cause repeated rollouts.
+2. Only the rendered ConfigMap data changes; the Deployments stay as they are.
 3. At the next sync (manual or automated according to your Application policy),
-   Argo applies the ConfigMap and both Deployment changes. Kubernetes rolls out
-   new pods, refreshing the read-only `subPath` mounts. No manual restart is needed.
+   Argo applies the ConfigMap. The kubelet updates the mounted file, the pods
+   reload it, and stored results are [re-checked](#retroactive-application).
+   No restart and no re-scan is needed.
 
 **Deployment checklist:**
 
@@ -642,15 +701,10 @@ Git-backed Helm inputs. Avoid defining the same exceptions in multiple layers;
   in older binaries. Local, unpushed changes are not available to Argo.
 - Remove `seedJob.cncfExceptionsURL` from all GitOps values and parameter overrides;
   the chart rejects this retired option with a migration hint.
-- For an exception-only change, check the Argo diff for the ConfigMap and both
-  Deployment checksum annotations. Sync all affected resources, not just the
-  ConfigMap, and do not configure diff/sync rules that suppress the checksum changes.
-- Wait for both Deployments to become healthy. Verify the configured rules through
-  `GET /api/v1/license-exceptions` or the UI's **Configured Exceptions** tab.
-- **Re-process existing SBOMs separately** to update stored compliance results.
-  Argo syncing and pod rollouts do not perform a license re-scan; the ingestion
-  watcher skips unchanged hashes. Plan and back up any full re-scan, particularly
-  when revoking old approvals.
+- For an exception-only change, the Argo diff shows the ConfigMap only.
+- Verify the configured rules through `GET /api/v1/license-exceptions` or the
+  UI's **Configured Exceptions** tab, and the worker log for the
+  `License recheck` line once the recheck has run.
 
 Do not edit the managed ConfigMap with `kubectl edit` as a normal configuration
 workflow: the next Argo sync or self-heal can overwrite the change. Git is the
@@ -696,14 +750,14 @@ The chart then renders no exceptions ConfigMap and mounts the named one, mapping
 `existingConfigMap` fails the render. If the referenced ConfigMap does not
 exist, the pods do not start: running without the reviewed rules would be worse.
 
-**Rollouts are your responsibility in this mode.** The chart cannot hash a
-ConfigMap it does not render, so the `checksum/license-exceptions` annotation is
-replaced by `bomhort.io/license-exceptions-configmap: <name>` — switching to a
-different ConfigMap rolls both Deployments, editing the content of the same one
-does not. After the ConfigMap changes, restart both Deployments
-(`kubectl rollout restart deployment/<release>-api-gateway deployment/<release>-parsing-worker`)
-and re-process SBOMs as above. If that is too easy to forget, keep using
-`custom`, where Argo rolls the pods for you.
+Edits to that ConfigMap reach the running pods like edits to the chart's own:
+no restart, no re-scan. Keep `disableNameSuffixHash: true` as above — a
+generator hash suffix would give every revision a new name, and changing the
+name in the chart values rolls the pods instead of reloading.
+
+If the reviewed file lives in a repository Argo does not manage, skip the
+ConfigMap entirely and point [`source`](#exceptions-from-outside-the-cluster-source)
+at it.
 
 ---
 
@@ -1371,7 +1425,7 @@ kubectl exec -it $(kubectl get pod -l app.kubernetes.io/component=api-gateway -o
 | **SBOMs (volume)** | PVC via git-sync or populated by you | Push to Git (git-sync re-syncs) or copy into the PVC |
 | **SBOMs (push/CI-CD)** | `skipScan` S3 bucket, or PVC | `POST /api/v1/sboms/upload` — see [Option E](#option-e-push-model-uploads-cicd) |
 | **VEX files** | Same S3 bucket or directory | Place `*.openvex.json` alongside SBOMs |
-| **License Exceptions** | ConfigMap (chart-rendered, or your own via `existingConfigMap`) | `licenseExceptions.custom` in Git → Helm upgrade / [Argo sync](#argo-cd-gitops) → API + worker rollout → re-process existing SBOMs. With [`existingConfigMap`](#reviewed-rules-from-their-own-source-existingconfigmap): new ConfigMap name or `kubectl rollout restart` |
+| **License Exceptions** | ConfigMap (chart-rendered, or your own via `existingConfigMap`), or a URL / S3 object via `source` | Update the ConfigMap or the remote file → pods reload within `refreshInterval` → stored results [re-checked automatically](#retroactive-application) |
 | **License Policy** | ConfigMap (chart-rendered, or your own via `existingConfigMap`) | `kubectl edit configmap` (or update your own ConfigMap) → restart API + Workers |
 | **Custom Theme** | ConfigMap | `kubectl create configmap` → restart UI |
 | **Site Config** | ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |

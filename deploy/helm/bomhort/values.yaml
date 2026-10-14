@@ -248,25 +248,50 @@ gitSync:
   # For private repos, mount a Secret with SSH key or token:
   # secretName: git-sync-credentials
 
-# License exceptions (mounted as ConfigMap, read-only). No approvals by default.
+# License exceptions. No approvals by default.
+#
+# Exactly one source: custom (rendered into a ConfigMap), existingConfigMap,
+# or source (a URL / S3 object the pods fetch themselves). The API gateway and
+# the workers re-read the rules every refreshInterval; when they change, the
+# stored compliance results of every SBOM already ingested are re-checked
+# against them in the background (a license_recheck job) — granting or
+# revoking an exception needs no restart and no re-scan. Changes to
+# licensePolicy (which licenses count as copyleft) still need a re-scan.
 licenseExceptions:
   enabled: true
-  mountPath: /data/config/license-exceptions.json
+  # File the pods read. Its directory is mounted from the ConfigMap as a whole
+  # (no subPath, so updates arrive in the running pods), so it must not be
+  # shared with another mount such as the license policy in /data/config.
+  mountPath: /data/config/license-exceptions/license-exceptions.json
   # YAML object or JSON string; both blanketExceptions and exceptions must be arrays.
   # Alternatively: --set-file licenseExceptions.custom=./my-exceptions.json
   # See examples/license-exceptions/ for an inactive example to adapt and review.
-  # Changes trigger API/worker rollouts; re-process SBOMs to update stored results.
   custom: ""
   # Name of a ConfigMap you manage yourself (e.g. a second Argo CD source
   # tracking a reviewed exceptions file). When set, the chart renders no
   # exceptions ConfigMap and mounts this one instead. Mutually exclusive with
-  # custom. The chart cannot hash a ConfigMap it does not render, so editing
-  # its content does NOT roll the API gateway and workers: restart them
-  # (kubectl rollout restart) and re-process SBOMs. A missing ConfigMap keeps
-  # the pods from starting rather than running without the reviewed rules.
+  # custom. Edits reach the running pods within about a minute (kubelet sync)
+  # plus refreshInterval. A missing ConfigMap keeps the pods from starting
+  # rather than running without the reviewed rules.
   existingConfigMap: ""
   # Key inside existingConfigMap that holds the exceptions JSON.
   existingConfigMapKey: license-exceptions.json
+  # Read the rules from outside the cluster instead of a ConfigMap:
+  #   https://raw.githubusercontent.com/my-org/governance/main/license-exceptions.json
+  #   s3://my-governance-bucket/bomhort/license-exceptions.json  (uses the s3.* credentials)
+  # Mutually exclusive with custom and existingConfigMap. Only https is
+  # accepted. An unreachable source keeps the last rules that loaded; the
+  # workers refuse to start until the first load succeeds. Keep an s3://
+  # object out of buckets the ingestion watcher scans (or use a skipScan
+  # bucket) so it is not picked up as an SBOM.
+  source: ""
+  # Secret holding a bearer token for an https source (private repositories).
+  sourceTokenSecret:
+    name: ""
+    key: token
+  # How often the rules are re-read (Go duration). 0 disables reloading: the
+  # rules are then read once at startup.
+  refreshInterval: 60s
 
 # License policy – defines permissive/copyleft classification (ConfigMap, read-only)
 licensePolicy:

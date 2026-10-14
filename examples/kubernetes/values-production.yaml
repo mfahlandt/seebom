@@ -78,7 +78,7 @@ sbomSource:
 # (permissive SPDX IDs pass, everything else needs an exception)
 licenseExceptions:
   enabled: true
-  mountPath: /data/config/license-exceptions.json
+  mountPath: /data/config/license-exceptions/license-exceptions.json
   custom: "" # No approvals by default; see examples/license-exceptions/.
 
 licensePolicy:

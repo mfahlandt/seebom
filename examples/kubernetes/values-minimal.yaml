@@ -80,7 +80,7 @@ sbomSource:
 # ─── License Config ─────────────────────────────────────────────────────────
 licenseExceptions:
   enabled: true
-  mountPath: /data/config/license-exceptions.json
+  mountPath: /data/config/license-exceptions/license-exceptions.json
 
 licensePolicy:
   enabled: true

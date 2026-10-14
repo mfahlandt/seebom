@@ -35,7 +35,9 @@ data:
   SKIP_PACKAGIST_RESOLVE: {{ .Values.parsingWorker.skipPackagistResolve | default false | quote }}
   SKIP_PYPI_RESOLVE: {{ .Values.parsingWorker.skipPyPIResolve | default false | quote }}
   SBOM_LIMIT: {{ .Values.ingestionWatcher.sbomLimit | quote }}
-  EXCEPTIONS_FILE: {{ .Values.licenseExceptions.mountPath | quote }}
+  EXCEPTIONS_FILE: {{ include "bomhort.licenseExceptions.file" . | quote }}
+  EXCEPTIONS_SOURCE: {{ include "bomhort.licenseExceptions.source" . | quote }}
+  EXCEPTIONS_REFRESH_INTERVAL: {{ include "bomhort.licenseExceptions.refreshInterval" . | quote }}
   {{- /* projectGroups may be absent on `helm upgrade --reuse-values` from a
        chart that predates it; treat that as disabled (automatic grouping
        still works without a mapping file). */}}

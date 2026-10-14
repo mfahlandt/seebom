@@ -93,18 +93,25 @@ func LoadExceptions(path string) (*ExceptionIndex, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read exceptions file %s: %w", path, err)
 	}
+	return ParseExceptions(data, path)
+}
 
+// ParseExceptions decodes and indexes the content of a license-exceptions.json
+// document. name only labels error messages (a path, URL or s3:// URI), so the
+// same strict rules apply whether the rules came from a file or a remote
+// source.
+func ParseExceptions(data []byte, name string) (*ExceptionIndex, error) {
 	var ef *ExceptionsFile
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&ef); err != nil {
-		return nil, fmt.Errorf("failed to parse exceptions file %s: %w", path, err)
+		return nil, fmt.Errorf("failed to parse exceptions file %s: %w", name, err)
 	}
 	if err := decoder.Decode(new(any)); err != io.EOF {
-		return nil, fmt.Errorf("exceptions file %s must contain exactly one JSON object", path)
+		return nil, fmt.Errorf("exceptions file %s must contain exactly one JSON object", name)
 	}
 	if ef == nil || ef.BlanketExceptions == nil || ef.Exceptions == nil {
-		return nil, fmt.Errorf("exceptions file %s must contain blanketExceptions and exceptions arrays (use [] for none)", path)
+		return nil, fmt.Errorf("exceptions file %s must contain blanketExceptions and exceptions arrays (use [] for none)", name)
 	}
 
 	return BuildIndex(ef), nil

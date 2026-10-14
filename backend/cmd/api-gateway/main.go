@@ -27,6 +27,7 @@ import (
 	"github.com/seebom-labs/bomhort/backend/internal/docstore"
 	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/repo"
+	"github.com/seebom-labs/bomhort/backend/internal/rulesource"
 	s3client "github.com/seebom-labs/bomhort/backend/internal/s3"
 	"github.com/seebom-labs/bomhort/backend/internal/sourcerepo"
 	tagpkg "github.com/seebom-labs/bomhort/backend/internal/tags"
@@ -117,8 +118,19 @@ func main() {
 		log.Printf("Push-model upload storage: local filesystem (%s/pushed)", cfg.SBOMDir)
 	}
 
-	exceptionsPath := cfg.ExceptionsFile
-	sbomDirExceptionsPath := cfg.SBOMDir + "/license-exceptions.json"
+	var exceptionsS3 rulesource.ObjectGetter
+	if s3c != nil {
+		exceptionsS3 = s3c
+	}
+	exceptions, err := watchExceptions(context.Background(), rulesource.Options{
+		Source: cfg.ExceptionsSource,
+		Paths:  []string{cfg.ExceptionsFile, cfg.SBOMDir + "/license-exceptions.json"},
+		Token:  cfg.ExceptionsSourceToken,
+		S3:     exceptionsS3,
+	}, cfg.ExceptionsRefreshInterval)
+	if err != nil {
+		log.Fatalf("Invalid license exceptions source: %v", err)
+	}
 
 	// Load license policy (permissive/copyleft classification).
 	if perm, copy, err := license.LoadPolicy(cfg.LicensePolicyFile); err == nil {
@@ -320,8 +332,7 @@ func main() {
 
 	// Projects with non-compliant licenses (filtered by exceptions).
 	mux.HandleFunc("GET /api/v1/projects/license-compliance", func(w http.ResponseWriter, r *http.Request) {
-		// Load current exceptions for filtering (try config path, then SBOM dir).
-		excIdx, ok := loadRequestExceptions(w, exceptionsPath, sbomDirExceptionsPath)
+		excIdx, ok := requestExceptions(w, exceptions)
 		if !ok {
 			return
 		}
@@ -552,7 +563,7 @@ func main() {
 	})
 
 	// ── License Exceptions (read-only from config file or SBOM dir) ────
-	mux.HandleFunc("GET /api/v1/license-exceptions", licenseExceptionsHandler(exceptionsPath, sbomDirExceptionsPath))
+	mux.HandleFunc("GET /api/v1/license-exceptions", licenseExceptionsHandler(exceptions))
 
 	// ── License Policy (read-only, permissive/copyleft classification) ─
 	mux.HandleFunc("GET /api/v1/license-policy", func(w http.ResponseWriter, r *http.Request) {

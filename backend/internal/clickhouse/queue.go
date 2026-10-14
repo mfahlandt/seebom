@@ -50,7 +50,7 @@ func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) er
 			job.TargetSBOMID,
 			job.Tags,
 			job.Parent,
-			time.Time{},
+			job.RetryAfter,
 		); err != nil {
 			return fmt.Errorf("failed to append queue job: %w", err)
 		}

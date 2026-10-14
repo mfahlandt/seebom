@@ -1101,7 +1101,8 @@ Projects with copyleft, unapproved or unknown license packages (filtered by acti
 
 ### `GET /api/v1/license-exceptions`
 
-Configured license exception document (read-only, loaded from config file).
+Configured license exception document (read-only, loaded from the configured
+file, URL or S3 object and reloaded every `EXCEPTIONS_REFRESH_INTERVAL`).
 Includes pending/revoked rules for inspection; only `approved` and `allowlisted`
 rules affect checks.
 By default both arrays are empty. No CNCF approvals are automatically loaded.
@@ -1130,11 +1131,15 @@ Field names are **camelCase**, and `package` is a package name, not a PURL prefi
 or glob. A package rule retains its package restriction even when `project` is
 empty or `"*"`. Otherwise `project` matches the exact SBOM document name.
 
-**Configuration errors:** `500 Internal Server Error` for malformed or unreadable
-exception files (also on `GET /api/v1/projects/license-compliance`). Missing optional
-files return an empty document. An existing empty primary file takes precedence
-over any fallback file. Configuration changes require re-processing existing SBOMs
-for stored compliance results to become consistent across endpoints.
+**Configuration errors** (also on `GET /api/v1/projects/license-compliance`):
+`500 Internal Server Error` when the current exceptions document is malformed —
+even if an earlier version loaded, so a broken edit is never hidden behind stale
+rules. `503 Service Unavailable` when no version could be read yet (unreadable
+file, unreachable or missing remote source); once one has loaded, a later
+outage keeps serving it. Missing optional files return an empty document. An
+existing empty primary file takes precedence over any fallback file. Stored
+compliance results follow configuration changes automatically: the workers
+re-check them in the background ([Retroactive application](/docs/deployment/#retroactive-application)).
 
 ### `GET /api/v1/license-policy`
 

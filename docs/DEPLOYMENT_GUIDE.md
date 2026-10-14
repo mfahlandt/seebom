@@ -331,7 +331,13 @@ kubectl create job --from=cronjob/bomhort-ingestion-watcher reingest-$(date +%s)
 
 ## 3. License Exceptions – Whitelisting Known Violations
 
-License exceptions suppress specific license violations. They are stored in a **ConfigMap** that is mounted read-only into the API Gateway and Workers.
+License exceptions suppress specific license violations. They come from one
+source: a chart-rendered ConfigMap (`licenseExceptions.custom`), your own
+ConfigMap (`licenseExceptions.existingConfigMap`), or an https URL / `s3://`
+object (`licenseExceptions.source`). The API Gateway and the workers re-read
+them every `licenseExceptions.refreshInterval` (default `60s`), and stored
+results of SBOMs already ingested are re-checked when they change. See
+[License Exceptions](content/docs/deployment/_index.md#3-license-exceptions).
 
 ### Configure reviewed exceptions through Helm
 
@@ -368,20 +374,20 @@ rule. Use `blanketExceptions` only for genuinely organization-wide approvals.
 
 ### Apply changes and migrate
 
-Helm checksums trigger rollouts of **both** API Gateway and workers when the
-exception ConfigMap changes. For emergency direct ConfigMap edits, restart both
-deployments manually; subsequent Helm upgrades overwrite such edits.
+No rollout is needed: ConfigMaps are mounted as a directory, so edits reach
+the running pods, which reload them. Direct ConfigMap edits work the same way
+but are overwritten by the next Helm upgrade.
 
 Remove the former `seedJob.cncfExceptionsURL` setting from existing values;
 the chart rejects it with instructions to use `licenseExceptions.custom` instead.
 Review old `"All CNCF Projects"` rules explicitly: that value now has only literal
 project-name semantics, not global approval semantics.
 
-**Re-process existing SBOMs** after changing exceptions, particularly removals.
-Query-time filtering alone cannot recover previously exempted packages from stored
-results, and the watcher skips unchanged hashes. Back up data and plan a re-scan;
-development full-reset helpers are destructive and are not a production
-license-only refresh mechanism.
+**No re-scan is needed.** When the rules change, a worker enqueues a
+`license_recheck` job that re-evaluates every stored compliance result and
+rewrites the ones whose outcome changed — revoked approvals included. See
+[Retroactive application](content/docs/deployment/_index.md#retroactive-application).
+License *policy* changes still need a re-scan.
 
 ### Argo CD (GitOps)
 
@@ -391,22 +397,18 @@ Applications, configure the entry that renders the Helm chart.
 See the [Argo CD example and deployment checklist](content/docs/deployment/_index.md#argo-cd-gitops).
 
 Argo only needs to render and sync the chart: changed exceptions alter the
-ConfigMap and checksum annotations on both API and worker pod templates, so
-Kubernetes rolls out both Deployments during sync. No Helm upgrade hook or manual
-restart is required. Sync all affected resources and keep edits in Git rather
-than modifying the live ConfigMap.
+ConfigMap only, the pods reload it, and stored results are re-checked. No Helm
+upgrade hook, restart or re-scan is required. Keep edits in Git rather than
+modifying the live ConfigMap.
 
 Deploy a chart revision and API/worker images that include the fixes, and remove
-`seedJob.cncfExceptionsURL` from all Argo values/parameters. A successful Argo sync
-does **not** re-process existing SBOMs; plan that separately to refresh stored
-compliance results after changing or revoking approvals.
+`seedJob.cncfExceptionsURL` from all Argo values/parameters.
 
 To keep a large reviewed file out of the Application, set
 `licenseExceptions.existingConfigMap` (and/or `licensePolicy.existingConfigMap`)
 to a ConfigMap managed by a second source; the chart then mounts it instead of
-rendering its own. It is mutually exclusive with `custom`, and content changes
-need a manual rollout because the chart cannot hash a ConfigMap it does not
-render. See the [multi-source example](content/docs/deployment/_index.md#reviewed-rules-from-their-own-source-existingconfigmap).
+rendering its own. It is mutually exclusive with `custom`; content changes are
+reloaded like the chart's own ConfigMap. See the [multi-source example](content/docs/deployment/_index.md#reviewed-rules-from-their-own-source-existingconfigmap).
 
 ---
 
@@ -801,7 +803,7 @@ ingress:
 | **SBOMs (S3)** | S3-compatible buckets | Configure `s3.buckets` in Helm values, CronJob streams objects |
 | **SBOMs (volume)** | PVC via git-sync or populated by you | Push to Git (git-sync re-syncs) or copy into the PVC |
 | **VEX files** | Same S3 bucket or directory as SBOMs | Place `*.openvex.json` or `*.vex.json` alongside SBOMs |
-| **License Exceptions** | `bomhort-license-exceptions` ConfigMap, or your own via `licenseExceptions.existingConfigMap` | `licenseExceptions.custom` → Helm rollout of API + workers → re-process existing SBOMs (own ConfigMap: new name or manual rollout) |
+| **License Exceptions** | `bomhort-license-exceptions` ConfigMap, your own via `licenseExceptions.existingConfigMap`, or a URL / S3 object via `licenseExceptions.source` | Update the rules → pods reload within `refreshInterval` → stored results re-checked automatically |
 | **License Policy** | `bomhort-license-policy` ConfigMap, or your own via `licensePolicy.existingConfigMap` | `kubectl edit configmap` → restart API + Workers |
 | **Custom Theme** | `bomhort-custom-theme` ConfigMap | `kubectl create configmap` → restart UI |
 | **Site Config** | `bomhort-ui-config` ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |

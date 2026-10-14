@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/seebom-labs/bomhort/backend/internal/ingestpath"
 	"github.com/seebom-labs/bomhort/backend/internal/tags"
@@ -100,6 +101,16 @@ type Config struct {
 	SBOMLimit            int    // Max number of SBOMs to enqueue (0 = unlimited)
 	IgnorePrefix         string // Files with this prefix are skipped during local scan (default "_")
 	ExceptionsFile       string // Path to license-exceptions.json
+	// ExceptionsSource replaces ExceptionsFile with a remote document: an
+	// https:// URL or an s3://bucket/key URI (the bucket must be in
+	// S3_BUCKETS). Empty means ExceptionsFile. ExceptionsSourceToken is sent
+	// as a bearer token to an HTTPS source.
+	ExceptionsSource      string
+	ExceptionsSourceToken string
+	// ExceptionsRefreshInterval is how often the exceptions are re-read, so
+	// a ConfigMap edit or a new remote version takes effect without a
+	// restart. 0 disables polling.
+	ExceptionsRefreshInterval time.Duration
 	// ProjectGroupsFile is the optional mapping file that assigns projects
 	// to parents explicitly (internal/projectgroup). A missing file means
 	// "no explicit rules"; the automatic grouping still applies.
@@ -286,6 +297,14 @@ func Load() (*Config, error) {
 	default:
 		return nil, fmt.Errorf("invalid ORIGINAL_STORE_BACKEND %q (want auto|s3|fs|none)", cfg.OriginalStoreBackend)
 	}
+
+	cfg.ExceptionsSource = strings.TrimSpace(getEnv("EXCEPTIONS_SOURCE", ""))
+	cfg.ExceptionsSourceToken = getEnv("EXCEPTIONS_SOURCE_TOKEN", "")
+	interval, err := time.ParseDuration(getEnv("EXCEPTIONS_REFRESH_INTERVAL", "60s"))
+	if err != nil || interval < 0 {
+		return nil, fmt.Errorf("invalid EXCEPTIONS_REFRESH_INTERVAL %q (want a duration such as 60s, or 0 to disable)", os.Getenv("EXCEPTIONS_REFRESH_INTERVAL"))
+	}
+	cfg.ExceptionsRefreshInterval = interval
 
 	switch cfg.LicenseExpressionMode {
 	case "", "strict", "permissive-wins", "off":

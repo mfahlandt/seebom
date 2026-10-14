@@ -81,10 +81,14 @@ class ExistingConfigMapTest(unittest.TestCase):
                     entry = volume(deployment, name)
                     self.assertIn("name: reviewed-rules", entry)
                     self.assertIn("- key: %s\n" % file, entry)
-                    # The mount keeps its subPath, so the path inside the
-                    # volume must stay the file name the binaries expect.
+                    # The path inside the volume must stay the file name the
+                    # binaries expect.
                     self.assertIn("path: %s" % file, entry)
-                    self.assertIn("subPath: %s" % file, deployment)
+                    if key == "licenseExceptions":
+                        # A directory mount, so edits reach the running pods.
+                        self.assertNotIn("subPath: %s" % file, deployment)
+                    else:
+                        self.assertIn("subPath: %s" % file, deployment)
 
     def test_existing_configmap_key_is_mapped_to_the_expected_file(self):
         for key, (name, file) in CASES.items():
@@ -108,18 +112,14 @@ class ExistingConfigMapTest(unittest.TestCase):
                 self.assertIn("%s.existingConfigMap" % key, error)
                 self.assertIn("%s.custom" % key, error)
 
-    def test_rollout_annotation_follows_the_source(self):
-        docs = self.render()
-        for deployment in self.deployments(docs).values():
-            self.assertIn("checksum/license-exceptions:", deployment)
-            self.assertNotIn("bomhort.io/license-exceptions-configmap", deployment)
-
-        docs = self.render({"licenseExceptions": {"existingConfigMap": "reviewed-rules"}})
-        for deployment in self.deployments(docs).values():
-            # Content of an external ConfigMap cannot be hashed at render
-            # time; switching to another one must still roll the pods.
-            self.assertNotIn("checksum/license-exceptions:", deployment)
-            self.assertIn('bomhort.io/license-exceptions-configmap: "reviewed-rules"', deployment)
+    def test_exceptions_never_roll_the_pods(self):
+        # Edits to either ConfigMap reach the pods through the directory
+        # mount; the binaries reload and re-check stored results themselves.
+        for values in ({}, {"licenseExceptions": {"existingConfigMap": "reviewed-rules"}}):
+            docs = self.render(values)
+            for deployment in self.deployments(docs).values():
+                self.assertNotIn("checksum/license-exceptions", deployment)
+                self.assertNotIn("bomhort.io/license-exceptions-configmap", deployment)
 
     def test_disabled_ignores_existing_configmap(self):
         for key, (name, _) in CASES.items():

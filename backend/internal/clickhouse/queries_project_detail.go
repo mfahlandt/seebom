@@ -87,10 +87,9 @@ func (c *Client) QueryProjectDetail(ctx context.Context, name string) (*dto.Proj
 		FROM %s AS s
 		INNER JOIN (
 			SELECT p.sbom_id AS sbom_id, arrayJoin(%s) AS pkg_key
-			FROM (SELECT * FROM sbom_packages FINAL) AS p
+			FROM %s AS p
 		) AS pk ON pk.sbom_id = s.sbom_id
-		WHERE s.project_name = ?
-	`, projectSBOMs, packageKeyExpr), name).Scan(&d.PackageCount); err != nil {
+	`, projectSBOMs, packageKeyExpr, projectRows("*", "sbom_packages", "s.project_name = ?")), name).Scan(&d.PackageCount); err != nil {
 		return nil, fmt.Errorf("failed to count packages of %q: %w", name, err)
 	}
 
@@ -103,13 +102,12 @@ func (c *Client) QueryProjectDetail(ctx context.Context, name string) (*dto.Proj
 			SELECT v.vuln_id, v.purl,
 				argMax(v.severity, multiIf(v.severity = 'CRITICAL', 4, v.severity = 'HIGH', 3, v.severity = 'MEDIUM', 2, v.severity = 'LOW', 1, 0)) AS severity
 			FROM %s AS s
-			INNER JOIN (SELECT sbom_id, vuln_id, purl, severity FROM vulnerabilities FINAL) AS v
+			INNER JOIN %s AS v
 				ON v.sbom_id = s.sbom_id
-			WHERE s.project_name = ?
 			GROUP BY v.vuln_id, v.purl
 		)
 		GROUP BY severity
-	`, projectSBOMs), name)
+	`, projectSBOMs, projectRows("sbom_id, vuln_id, purl, severity", "vulnerabilities", "s.project_name = ?")), name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query severity breakdown of %q: %w", name, err)
 	}
@@ -141,11 +139,10 @@ func (c *Client) QueryProjectDetail(ctx context.Context, name string) (*dto.Proj
 	licRows, err := c.Conn.Query(ctx, fmt.Sprintf(`
 		SELECT lc.category, sum(lc.package_count)
 		FROM %s AS s
-		INNER JOIN (SELECT sbom_id, category, package_count FROM license_compliance FINAL) AS lc
+		INNER JOIN %s AS lc
 			ON lc.sbom_id = s.sbom_id
-		WHERE s.project_name = ?
 		GROUP BY lc.category
-	`, projectSBOMs), name)
+	`, projectSBOMs, projectRows("sbom_id, category, package_count", "license_compliance", "s.project_name = ?")), name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query license breakdown of %q: %w", name, err)
 	}

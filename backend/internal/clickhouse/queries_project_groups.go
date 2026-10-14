@@ -321,21 +321,19 @@ func (c *Client) enrichGroupStats(ctx context.Context, items []dto.ProjectGroupI
 		FROM %s AS s
 		INNER JOIN (
 			SELECT p.sbom_id AS sbom_id, arrayJoin(%s) AS pkg_key
-			FROM (SELECT * FROM sbom_packages FINAL) AS p
+			FROM %s AS p
 		) AS pk ON pk.sbom_id = s.sbom_id
-		WHERE s.project_name IN (?)
 		GROUP BY grp
-	`, projectSBOMs, packageKeyExpr)
+	`, projectSBOMs, packageKeyExpr, projectRows("*", "sbom_packages", "s.project_name IN (?)"))
 	pkgs := c.groupCounts(ctx, "package", pkgQuery, memberNames, groupOf)
 
 	vulnQuery := fmt.Sprintf(`
 		SELECT transform(toString(s.project_name), ?, ?, '') AS grp, uniqExact(v.vuln_id, v.purl) AS vuln_count
 		FROM %s AS s
-		INNER JOIN (SELECT sbom_id, vuln_id, purl FROM vulnerabilities FINAL) AS v
+		INNER JOIN %s AS v
 			ON v.sbom_id = s.sbom_id
-		WHERE s.project_name IN (?)
 		GROUP BY grp
-	`, projectSBOMs)
+	`, projectSBOMs, projectRows("sbom_id, vuln_id, purl", "vulnerabilities", "s.project_name IN (?)"))
 	vulns := c.groupCounts(ctx, "vulnerability", vulnQuery, memberNames, groupOf)
 
 	for i := range items {

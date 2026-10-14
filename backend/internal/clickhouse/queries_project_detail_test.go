@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -357,5 +358,46 @@ func TestTagsMarkParentProjects(t *testing.T) {
 	}
 	if !sawParent || !sawSubprojects {
 		t.Errorf("expected both fixture tags in the listing, saw parent=%v subprojects=%v", sawParent, sawSubprojects)
+	}
+}
+
+// TestProjectRowsUsePrimaryKey is the guard for #344-E: project-scoped stats
+// must read only the selected projects' SBOMs from the large tables. Moving
+// the project filter back to an outer WHERE of the JOIN would still return
+// correct numbers — and silently scan the whole table again — so the
+// assertion is on the plan, not on the result. The fixture is needed because
+// ClickHouse skips index analysis entirely for an empty table.
+func TestProjectRowsUsePrimaryKey(t *testing.T) {
+	c := testClient(t)
+	f := insertProjectFixture(t, c)
+	ctx := context.Background()
+
+	for _, table := range []string{"sbom_packages", "vulnerabilities"} {
+		t.Run(table, func(t *testing.T) {
+			rows, err := c.Conn.Query(ctx, "EXPLAIN indexes = 1 SELECT count() FROM "+
+				projectRows("sbom_id", table, "s.project_name IN (?)"), []string{f.child})
+			if err != nil {
+				t.Fatalf("EXPLAIN: %v", err)
+			}
+			defer rows.Close()
+
+			var plan strings.Builder
+			reading := ""
+			for rows.Next() {
+				var line string
+				if err := rows.Scan(&line); err != nil {
+					t.Fatalf("scan: %v", err)
+				}
+				plan.WriteString(line + "\n")
+				if strings.Contains(line, "ReadFromMergeTree (") {
+					reading = line
+				}
+				if strings.HasSuffix(reading, "."+table+")") &&
+					strings.Contains(line, "Condition:") && strings.Contains(line, "sbom_id in") {
+					return
+				}
+			}
+			t.Errorf("%s is not read through its sbom_id primary key:\n%s", table, plan.String())
+		})
 	}
 }

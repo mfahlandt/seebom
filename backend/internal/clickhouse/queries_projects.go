@@ -67,6 +67,27 @@ const projectSBOMs = `(
 	FROM (SELECT * FROM sboms FINAL) AS s
 )`
 
+// projectRows reads table with FINAL, restricted to the SBOMs of the projects
+// matching filter (a predicate over projectSBOMs' columns, aliased `s`, e.g.
+// "s.project_name IN (?)").
+//
+// This is the right-hand side for every project-scoped JOIN against
+// sbom_packages, vulnerabilities and license_compliance (#344-E). ClickHouse
+// does not push a WHERE on the left side of a JOIN into the right side, so
+// `projectSBOMs JOIN (SELECT … FROM sbom_packages FINAL) … WHERE project_name
+// IN (…)` read and exploded the whole table for a page of fifty projects.
+// Filtering on sbom_id here instead hits the primary key of all three tables,
+// so only the granules of the selected projects' SBOMs are read.
+//
+// The JOIN then needs no outer WHERE: only the selected SBOMs have rows on
+// the right, so the placeholder count of the query is unchanged.
+func projectRows(columns, table, filter string) string {
+	return fmt.Sprintf(`(
+		SELECT %s FROM %s FINAL
+		WHERE sbom_id IN (SELECT s.sbom_id FROM %s AS s WHERE %s)
+	)`, columns, table, projectSBOMs, filter)
+}
+
 // packageKeyExpr is the de-duplication identity of a component (#398): the
 // PURL, or name@version for packages without one. Requires the aliased
 // relation `p` over sbom_packages.
@@ -197,9 +218,10 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 // reported roughly ten times its real size — numbers that grew with upload
 // frequency rather than with content.
 //
-// Scope (#344-E): only the projects on the current page are aggregated. The
-// previous version scanned sbom_packages and vulnerabilities for *every*
-// project in the estate on each page view and threw away all but fifty rows.
+// Scope (#344-E): only the projects on the current page are aggregated, and
+// only their SBOMs are read from sbom_packages and vulnerabilities (see
+// projectRows). Earlier versions scanned both tables for the whole estate on
+// every page view and threw away all but fifty rows.
 //
 // Errors are logged and leave the counts at zero rather than failing the
 // listing: a slow or unavailable stats path must not take the project list
@@ -218,11 +240,10 @@ func (c *Client) enrichProjectStats(ctx context.Context, items []dto.ProjectList
 		FROM %s AS s
 		INNER JOIN (
 			SELECT p.sbom_id AS sbom_id, arrayJoin(%s) AS pkg_key
-			FROM (SELECT * FROM sbom_packages FINAL) AS p
+			FROM %s AS p
 		) AS pk ON pk.sbom_id = s.sbom_id
-		WHERE s.project_name IN (?)
 		GROUP BY s.project_name
-	`, projectSBOMs, packageKeyExpr)
+	`, projectSBOMs, packageKeyExpr, projectRows("*", "sbom_packages", "s.project_name IN (?)"))
 
 	pkgMap := make(map[string]uint64, len(items))
 	if rows, err := c.Conn.Query(ctx, pkgQuery, names); err != nil {
@@ -242,11 +263,10 @@ func (c *Client) enrichProjectStats(ctx context.Context, items []dto.ProjectList
 	vulnQuery := fmt.Sprintf(`
 		SELECT s.project_name, uniqExact(v.vuln_id, v.purl) AS vuln_count
 		FROM %s AS s
-		INNER JOIN (SELECT sbom_id, vuln_id, purl FROM vulnerabilities FINAL) AS v
+		INNER JOIN %s AS v
 			ON v.sbom_id = s.sbom_id
-		WHERE s.project_name IN (?)
 		GROUP BY s.project_name
-	`, projectSBOMs)
+	`, projectSBOMs, projectRows("sbom_id, vuln_id, purl", "vulnerabilities", "s.project_name IN (?)"))
 
 	vulnMap := make(map[string]uint64, len(items))
 	if rows, err := c.Conn.Query(ctx, vulnQuery, names); err != nil {

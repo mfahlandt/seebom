@@ -1,6 +1,6 @@
 # BOMHort Product Roadmap
 
-> Last updated: 2026-10-04
+> Last updated: 2026-10-14
 > Project Board: https://github.com/orgs/seebom-labs/projects/1
 > Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5)  [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6)  [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1)  [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2)  [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3)  [v2.0.0](https://github.com/seebom-labs/BOMHort/milestone/4)
 
@@ -73,15 +73,15 @@ Everything that was blocking 1.0 on 2026-09-24, minus the tag. Order within the 
 | # | Issue | Type | Why here |
 |---|-------|------|----------|
 | ~~#399~~ | ~~**BOMHort MCP server** — read-only tool surface over the REST API (`cmd/mcp-server`), SDK `>= v1.4.1`, stdio default~~ | New component + new `values.yaml` block (`mcp.*`) | ✅ Five read-only tools (`list_projects`, `get_project`, `search_packages`, `list_vulnerabilities`, `get_sbom`) over `internal/apiclient` — a REST consumer, no ClickHouse credentials. SDK on `v1.8.0`. stdio default; Streamable HTTP refuses to start (and `helm template` refuses to render) without a bearer token and a non-wildcard Origin allow-list. Full reasoning and the SDK advisory table are in [Prioritization Rationale](#why-399-mcp-server-before-the-freeze-when-its-purely-additive). |
-| **#58** | Aggregated SBOM View — N versions of one project as one expandable row | UI + query | UI half of #398 (✅); same de-dup semantics. |
+| ~~#58~~ | ~~Aggregated SBOM View — N versions of one project as one expandable row~~ | UI + query | ✅ The SBOM Explorer reads by project, not by document (#431); same de-dup semantics as #398. |
 | ~~#355~~ | ~~`source_repo` extraction yields 0 % on real SBOMs — `documentNamespace` fallback~~ | Parser | ✅ `documentNamespace` last-resort fallback (strict: forge host or forge path shape only), release/tag/commit URL handling in `sourcerepo`, CycloneDX `distribution` counterpart. Existing rows need a re-parse to pick it up. |
-| **#397** | `licenseExceptions.existingConfigMap` + `licensePolicy.existingConfigMap` | Helm values | Values shape; GitOps users otherwise inline ~180 KB into an Argo `Application` (cncf/automation#703). |
-| **#391** | Seed job never seeds — gate (`seedJob.enabled`) or remove | Helm values | Ships broken since March, rendered by our own `values-production.yaml`. |
-| **#392** | Chart ships ClickHouse 24.8, CI tests 24.12 — decide the supported floor | Helm values + CI matrix | Support policy starts at 1.0; the floor must be a written decision. |
-| **#344** E + I | `enrichProjectStats` per page (E — lands on #398's semantics), ClickHouse `max_threads`/`max_memory_usage`/`max_execution_time` in values (I) | Query + Helm values | E was sequenced behind #398, which shipped; I is values shape. A–D, F–H stay additive (post-1.0 MVs/indexes). |
-| **#412** | Expose the CVE id and OSV aliases in API, UI and lookups | DTO + query, **no migration** | Register item that costs nothing: `aliases` exist since `019`. Makes every finding answer "which CVE" before the register lands. |
-| **#266** | CSV export for vulnerabilities (stdlib `encoding/csv`) | New endpoint | Register item, `good first issue`. Column list grows in v0.9.0 as fields arrive; the endpoint shape is set here. |
-| **#439** | License resolution with provenance — deps.dev/Packagist/PyPI resolvers, `unapproved` category, per-package license source | Migration `024` + new endpoint + DTO field | `license_source` on dependency nodes and `GET /api/v1/licenses/sources` are contract surface, so they land before the freeze. Every heuristic is documented on the License Resolution docs page, which a test keeps in sync with the code. |
+| ~~#397~~ | ~~`licenseExceptions.existingConfigMap` + `licensePolicy.existingConfigMap`~~ | Helm values | ✅ Both rule files mount from a reviewed, externally managed ConfigMap; the chart renders no ConfigMap of its own then. GitOps users no longer inline ~180 KB into an Argo `Application` (cncf/automation#703). |
+| ~~#391~~ | ~~Seed job never seeds — gate (`seedJob.enabled`) or remove~~ | Helm values | ✅ Removed, not gated: the job never seeded, so there was nothing to keep behind a flag. Leftover `seedJob` keys in user values are ignored. |
+| ~~#392~~ | ~~Chart ships ClickHouse 24.8, CI tests 24.12 — decide the supported floor~~ | Helm values + CI matrix | ✅ Floor is the 24.8 LTS line: the chart pins `24.8.14.39` by digest, CI runs migrations and every query against 24.8 **and** 24.12, and a Helm test fails when chart, CI matrix and docker-compose drift. Written down on the deployment page (*Supported ClickHouse versions*). |
+| ~~#344~~ E + I | ~~`enrichProjectStats` per page (E — lands on #398's semantics), ClickHouse `max_threads`/`max_memory_usage`/`max_execution_time` in values (I)~~ | Query + Helm values | ✅ E: project stats read only the selected projects' SBOMs. I: `apiGateway.queryLimits.*` (30 s / 512 MiB / unset threads by default), applied to the gateway only — workers and CronJobs stay unbounded. A–D, F–H stay additive (post-1.0 MVs/indexes); #344 stays open for them. |
+| ~~#412~~ | ~~Expose the CVE id and OSV aliases in API, UI and lookups~~ | DTO + query, **no migration** | ✅ `cve_id` + `aliases` on findings, VEX statements and search results; affected-projects and global search accept any alias. UI leads with the CVE. |
+| ~~#266~~ | ~~CSV export for vulnerabilities (stdlib `encoding/csv`)~~ | New endpoint | ✅ `GET /api/v1/reports/vulnerabilities?format=csv[&scope=]`, streamed, formula-injection safe, `cve_id` first. Column list grows in v0.9.0 as fields arrive; the endpoint shape is set here. |
+| ~~#439~~ | ~~License resolution with provenance — deps.dev/Packagist/PyPI resolvers, `unapproved` category, per-package license source~~ | Migration `024` + new endpoint + DTO field | ✅ `license_source` on dependency nodes and `GET /api/v1/licenses/sources` are contract surface, so they land before the freeze. Every heuristic is documented on the License Resolution docs page, which a test keeps in sync with the code. |
 
 **Exit criteria:** an MCP client can ask `get_project` and get de-duplicated numbers; every `values.yaml` key 1.0 promises to keep exists; `source_repo` > 90 % on the CNCF corpus; a CSV of findings with CVE ids can be downloaded.
 
@@ -110,7 +110,7 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 | **#62** | Auditor report bundle | Endpoint | **Moved from v1.1.0.** 1.0 scope: CSV + JSON bundle per project/fleet with a manifest (`sha256`, `generated_at`, `last_refreshed_at`, policy versions). **PDF only after the `gofpdf` vs `pdfcpu` decision** — not a 1.0 blocker. |
 | **#419** | Cryptographic **library** inventory from existing SBOMs (`crypto-libraries.json`, PURL match) | `030_create_crypto_libraries` (new table) | New. Works on every SBOM already ingested, no CBOM needed; first defensible answer to "cryptographic inventory" (#420) and the CRA "state-of-the-art encryption" evidence. Small. The CBOM block stays in v1.1.0. |
 | **#145** | Versioned documentation | Docs infra | Must ship **with** the tag. |
-| — | Migration guide + `values.yaml` stability review | Process | Covers every new key since v0.7: `mcp.*` (#399), `existingConfigMap` (#397), `seedJob.enabled` (#391), ClickHouse limits (#344-I), image pin (#392), `kev.*`/`epss.*` feed URLs and skips (#410, #64), `remediationPolicy.*` (#411), `cryptoLibraries.*` (#419). |
+| — | Migration guide + `values.yaml` stability review | Process | Covers every new key since v0.7: `mcp.*` (#399), `existingConfigMap` (#397), `seedJob` **removed** (#391), `apiGateway.queryLimits.*` (#344-I), image pin (#392), `kev.*`/`epss.*` feed URLs and skips (#410, #64), `remediationPolicy.*` (#411), `cryptoLibraries.*` (#419). |
 | — | `AGENTS.md` dependency list | Docs | 5 → 6 direct dependencies (`modelcontextprotocol/go-sdk >= v1.4.1`). No further dependency for the register: KEV/EPSS are HTTP + JSON/CSV, stdlib. |
 | — | December soak | Process | v0.9.0 runs on the CNCF instance for four weeks before the tag; register numbers are compared against the questionnaire answers given by hand. |
 
@@ -120,8 +120,8 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 
 - API contract frozen (no breaking changes without major version bump)
 - ClickHouse schema stable (no `ORDER BY`/type changes; `ADD COLUMN` and new tables remain allowed)
-- Helm chart values stable — including `mcp.*`, `existingConfigMap`, `seedJob.enabled`, ClickHouse limits, `kev.*`, `epss.*`, `remediationPolicy.*`, `cryptoLibraries.*`
-- Supported ClickHouse version floor decided, written down and covered by CI (#392)
+- Helm chart values stable — including `mcp.*`, `existingConfigMap`, `seedJob` removal, `apiGateway.queryLimits.*`, `kev.*`, `epss.*`, `remediationPolicy.*`, `cryptoLibraries.*`
+- Supported ClickHouse version floor decided, written down and covered by CI (#392) ✅ 24.8 LTS
 - Support policy (current − 2) takes effect
 - Versioned documentation enabled (#145)
 - **A CRA-grade vulnerability register is exportable per deployed version, and a readiness score is computed from it (#414, #141)**
@@ -131,7 +131,7 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 - [x] ~~Schema wave `014`–`022`~~ (#256, #138, #332, #334, #57 column, #350, #357)
 - [x] ~~One row per `(vuln_id, purl)` — latest VEX wins (#335)~~ · ~~`cluster` in `SBOMListItem` (#177)~~
 - [x] ~~Project-centric read model + de-duplicated counts (#398)~~
-- [ ] **v0.8.0:** ~~MCP server + `mcp.*` (#399)~~ ✅ · Aggregated SBOM View (#58) · ~~`source_repo` fallback (#355)~~ ✅ · `existingConfigMap` (#397) · seed job (#391) · ClickHouse floor (#392) · perf E + I (#344) · CVE id/aliases (#412) · CSV export (#266)
+- [x] **v0.8.0:** ~~MCP server + `mcp.*` (#399)~~ · ~~Aggregated SBOM View (#58)~~ · ~~`source_repo` fallback (#355)~~ · ~~`existingConfigMap` (#397)~~ · ~~seed job (#391)~~ · ~~ClickHouse floor (#392)~~ · ~~perf E + I (#344)~~ · ~~CVE id/aliases (#412)~~ · ~~CSV export (#266)~~ · ~~license provenance (#439)~~
 - [ ] **v0.9.0:** CVSS (#408) · CWE (#409) · KEV (#410) · EPSS (#64) · remediation record (#413) · SLA due dates (#411) · register docs (#414)
 - [ ] **v1.0.0:** CRA dashboard (#141) · MTTR (#7, stretch) · report bundle (#62) · crypto-library inventory (#419) · versioned docs (#145) · migration guide + values review
 
@@ -141,7 +141,7 @@ Every open issue carries a milestone — "no milestone" is not a valid state.
 
 | Milestone | Due | Theme | Open issues |
 |-----------|-----|-------|-------------|
-| [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | 2026-10-31 | Contract | ~~#399~~, #58, ~~#355~~, #397, #391, #392, #344, #412, #266, #439 |
+| [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | 2026-10-31 | Contract | ~~#399~~, ~~#58~~, ~~#355~~, ~~#397~~, ~~#391~~, ~~#392~~, ~~#344~~ (E+I), ~~#412~~, ~~#266~~, ~~#439~~ |
 | [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) | 2026-11-30 | Vulnerability register | #408, #409, #410, #64, #413, #411, #414 |
 | [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) | 2027-01-31 | Freeze + CRA dashboard | #141, #7, #62, #419, #145 |
 | [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) | 2027-04-30 | Automation, fleet & cryptography | #338, #336, #333, #337, #334 (UI), #138 (API/UI), #267, #176, #140, #57, #136, #60, #143, #420, #415, #416, #417, #418 |
@@ -232,10 +232,10 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | — (DTO only) ✅ | #177 | `cluster` in `SBOMListItem` | ✅ | contract |
 | — (query + DTO) ✅ | #398 | De-duplicated project counts; `projectKeyExpr` is contract | ✅ | contract |
 | — (Helm values) ✅ | #399 | New `mcp.*` block | **pre** (v0.8.0) | contract (values) |
-| — (Helm values) | #397, #391, #392, #344-I | `existingConfigMap`, `seedJob.enabled`, image pin, ClickHouse limits | **pre** (v0.8.0) | contract (values) |
+| — (Helm values) ✅ | #397, #391, #392, #344-I | `existingConfigMap`, `seedJob` removed, image pin, `apiGateway.queryLimits.*` | **pre** (v0.8.0) | contract (values) |
 | — (parser only) ✅ | #355 | `documentNamespace` fallback in `extractSourceRepo` | **pre** (v0.8.0) | makes #332 true |
-| — (DTO + query) | #412 | `cve_id`, `aliases` on finding DTOs; lookups by alias | **pre** (v0.8.0) | market (additive) |
-| — (endpoint) | #266 | CSV export | **pre** (v0.8.0) | market (additive) |
+| — (DTO + query) ✅ | #412 | `cve_id`, `aliases` on finding DTOs; lookups by alias | **pre** (v0.8.0) | market (additive) |
+| — (endpoint) ✅ | #266 | CSV export | **pre** (v0.8.0) | market (additive) |
 | `025_add_vulnerability_cvss_cwe` | #408, #409 | `ADD COLUMN cvss_score Float32, cvss_vector String, cvss_version LowCardinality(String), cwe_ids Array(String)` on `vulnerabilities` | **pre** (v0.9.0) | market (additive; backfill from `osv_json`) |
 | `026_create_kev_catalog` | #410 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
 | `027_create_epss_scores` | #64 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
@@ -258,16 +258,16 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 
 ```
 PRE-1.0 contract:
-#398 ✅ ──┬── #58 (Aggregated SBOM View)                        v0.8.0
+#398 ✅ ──┬── #58 ✅ (Aggregated SBOM View)                      v0.8.0
           └── #399 ✅ (MCP: get_project) ── post-1.0: write tools
 
 REGISTER (#414):
-#412 (cve_id/aliases) ── #410 (KEV, matched by alias) ──┐
+#412 ✅ (cve_id/aliases) ── #410 (KEV, matched by alias) ──┐
 #408 (CVSS) ─────────────────────────────────────────────┼── #411 (SLA due date; KEV due date overrides) ──┐
 #409 (CWE) ──────────────────────────────────────────────┤                                                  ├── #141 (CRA score)  v1.0.0
 #64  (EPSS) ─────────────────────────────────────────────┤                                                  ├── #62  (report bundle)
 #413 (VEX action statement) ─────────────────────────────┘                                                  └── #7   (MTTR)
-#266 (CSV) ── grows with every row above ── #62
+#266 ✅ (CSV) ── grows with every row above ── #62
 
 CRYPTO (#420):
 #419 (library inventory, SBOM-only)                         v1.0.0

@@ -43,15 +43,29 @@ jobs:
   # #332/#347, scoped-VEX join #350/#351, cluster listing "FINAL AS s"), each
   # caught only by running the stack by hand. This job applies the migrations
   # to a real ClickHouse and executes every query once.
+  #
+  # Both versions run (#392): the floor is the LTS image the Helm chart ships,
+  # the dev version is what docker-compose uses. A query that only works on the
+  # newer one would otherwise pass CI and fail in production.
+  # deploy/helm/tests/test_clickhouse_version.py keeps this matrix, the chart
+  # and docker-compose.yml on the same pins.
   query-smoke:
-    name: Query smoke test (ClickHouse)
+    name: Query smoke test (ClickHouse ${{ matrix.clickhouse.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        clickhouse:
+          - name: floor
+            image: docker.io/clickhouse/clickhouse-server:24.8.14.39@sha256:1ffa82edee000a42c09313bd9f1293d94c570aee74babc1b3ca9983a35fa597b
+          - name: dev
+            image: clickhouse/clickhouse-server:24.12@sha256:a65ca89ddbe8e04a05036dd7d7110a203256293b407b9359130ed5e4333f45ff
     defaults:
       run:
         working-directory: backend
     services:
       clickhouse:
-        image: clickhouse/clickhouse-server:24.12@sha256:a65ca89ddbe8e04a05036dd7d7110a203256293b407b9359130ed5e4333f45ff
+        image: ${{ matrix.clickhouse.image }}
         ports:
           - 9000:9000
           - 8123:8123
@@ -73,12 +87,14 @@ jobs:
 
       - name: Apply migrations
         working-directory: .
+        env:
+          CLICKHOUSE_IMAGE: ${{ matrix.clickhouse.image }}
         run: |
           for f in db/migrations/*.up.sql; do
             echo "── $f"
             docker run --rm --network host \
               -v "$PWD/$f:/m.sql:ro" \
-              clickhouse/clickhouse-server:24.12 \
+              "$CLICKHOUSE_IMAGE" \
               clickhouse-client --host 127.0.0.1 --database bomhort \
                 --multiquery --queries-file /m.sql
           done

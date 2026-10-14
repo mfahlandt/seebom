@@ -1,4 +1,9 @@
-{{- if .Values.licensePolicy.enabled }}
+{{- $lp := .Values.licensePolicy }}
+{{- if $lp.enabled }}
+{{- if and $lp.existingConfigMap $lp.custom }}
+{{- fail "licensePolicy.existingConfigMap and licensePolicy.custom are mutually exclusive: set one of them, not both" }}
+{{- end }}
+{{- if not $lp.existingConfigMap }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -31,4 +36,4 @@ data:
     }
     {{- end }}
 {{- end }}
-
+{{- end }}

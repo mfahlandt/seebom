@@ -32,7 +32,7 @@ s3:
   buckets: '[{"name":"my-org-sboms","region":"us-east-1"}]'
 ```
 
-Or keep the default seed job (PVC-based) if you don't have S3 access.
+Without S3, the chart creates an empty PVC; copy SBOMs into it or enable `gitSync` for a small repo.
 
 ### 3. Deploy
 
@@ -45,7 +45,7 @@ This will:
 2. Install the [Altinity ClickHouse Operator](https://github.com/Altinity/clickhouse-operator)
 3. Deploy BOMHort via Helm with [`values-kind.yaml`](values-kind.yaml)
 4. If S3 is configured: Ingestion Watcher streams SBOMs from your buckets
-5. If S3 is not configured: Seed job clones the repo configured in `seedJob.sbomRepo` into a PVC
+5. If S3 is not configured: the Ingestion Watcher scans the (initially empty) PVC
 
 #### Testing a published release candidate
 
@@ -100,7 +100,7 @@ make kind-down
 | File | Description |
 |------|-------------|
 | `kind-config.yaml` | Kind cluster config (ports, labels) |
-| `values-kind.yaml` | Helm values for Kind (smaller resources, NodePort, seed job) |
+| `values-kind.yaml` | Helm values for Kind (smaller resources, NodePort, PVC fallback) |
 | `secrets.env.example` | Template for `local/secrets.env` (NEVER commit the real file) |
 
 ## Architecture (Kind)

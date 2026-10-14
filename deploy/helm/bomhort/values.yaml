@@ -93,7 +93,7 @@ ownership:
 
 # S3 bucket ingestion (default, recommended)
 # Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS).
-# No PVC, git-sync, or seed job required. Streams object listings with pagination.
+# No PVC or git-sync required. Streams object listings with pagination.
 # The Parsing Workers fetch objects on-demand via s3:// URIs.
 # Set s3.buckets to a JSON array of bucket configs. Leave empty to use volume-based alternatives.
 s3:
@@ -153,7 +153,15 @@ clickhouse:
     replicasCount: 1
   installation:
     podTemplate:
-      containerImage: docker.io/clickhouse/clickhouse-server:24.8
+      # 24.8 is a ClickHouse LTS line, and that is why the chart ships it
+      # rather than the newer 24.12 used for local development: production
+      # gets the release that keeps receiving fixes. It is the supported
+      # floor. CI runs the query smoke test against this exact image and
+      # against the development version (ci.yml, `query-smoke` matrix), and
+      # deploy/helm/tests/test_clickhouse_version.py fails if they drift
+      # apart (#392). Pinned by digest so a re-pushed tag cannot change what
+      # gets installed.
+      containerImage: docker.io/clickhouse/clickhouse-server:24.8.14.39@sha256:1ffa82edee000a42c09313bd9f1293d94c570aee74babc1b3ca9983a35fa597b
       resources:
         limits:
           cpu: 1000m
@@ -166,6 +174,8 @@ clickhouse:
       logStorage: 100Mi
 
 # SBOM source via PVC (alternative to S3, for environments without S3 access)
+# With gitSync.enabled=false the chart creates this PVC empty; filling it
+# (a CI job, kubectl cp, push uploads with sbomSource.writable) is up to you.
 sbomSource:
   pvcName: bomhort-sbom-data
   mountPath: /data/sboms
@@ -247,6 +257,16 @@ licenseExceptions:
   # See examples/license-exceptions/ for an inactive example to adapt and review.
   # Changes trigger API/worker rollouts; re-process SBOMs to update stored results.
   custom: ""
+  # Name of a ConfigMap you manage yourself (e.g. a second Argo CD source
+  # tracking a reviewed exceptions file). When set, the chart renders no
+  # exceptions ConfigMap and mounts this one instead. Mutually exclusive with
+  # custom. The chart cannot hash a ConfigMap it does not render, so editing
+  # its content does NOT roll the API gateway and workers: restart them
+  # (kubectl rollout restart) and re-process SBOMs. A missing ConfigMap keeps
+  # the pods from starting rather than running without the reviewed rules.
+  existingConfigMap: ""
+  # Key inside existingConfigMap that holds the exceptions JSON.
+  existingConfigMapKey: license-exceptions.json
 
 # License policy – defines permissive/copyleft classification (ConfigMap, read-only)
 licensePolicy:
@@ -267,6 +287,13 @@ licensePolicy:
   # Changing this only affects newly processed SBOMs; re-process to update
   # stored compliance results.
   expressionMode: ""
+  # Name of a ConfigMap you manage yourself holding the policy JSON. When
+  # set, the chart renders no policy ConfigMap and mounts this one instead.
+  # Mutually exclusive with custom. Same rollout caveat as
+  # licenseExceptions.existingConfigMap: content changes need a restart.
+  existingConfigMap: ""
+  # Key inside existingConfigMap that holds the policy JSON.
+  existingConfigMapKey: license-policy.json
 
 # Project groups – which parent (product) a project belongs to.
 #
@@ -509,13 +536,6 @@ cveRefresher:
     limits:
       cpu: 500m
       memory: 512Mi
-
-# Seed Job (only used when gitSync.enabled=false)
-# Clones an SBOM git repo into the PVC on first install.
-seedJob:
-  sbomRepo: "https://github.com/my-org/sboms.git"
-  sbomBranch: main
-  # License exceptions are configured via licenseExceptions.custom, not downloaded.
 
 # Data Migration (one-time, from old seebom deployment to new bomhort deployment)
 # Runs as a Helm post-upgrade hook. Uses ClickHouse remote() to copy all tables

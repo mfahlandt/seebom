@@ -16,7 +16,13 @@ spec:
     metadata:
       {{- if .Values.licenseExceptions.enabled }}
       annotations:
+        {{- with .Values.licenseExceptions.existingConfigMap }}
+        # The chart cannot hash a ConfigMap it does not render: switching to
+        # another one rolls the pods, editing its content does not (#397).
+        bomhort.io/license-exceptions-configmap: {{ . | quote }}
+        {{- else }}
         checksum/license-exceptions: {{ include (print $.Template.BasePath "/configmap-license-exceptions.yaml") . | sha256sum }}
+        {{- end }}
       {{- end }}
       labels:
         app.kubernetes.io/name: bomhort
@@ -118,14 +124,32 @@ spec:
           persistentVolumeClaim:
             claimName: {{ .Values.originalStore.fs.pvcName }}
         {{- end }}
-        {{- if .Values.licenseExceptions.enabled }}
+        {{- with .Values.licenseExceptions }}
+        {{- if .enabled }}
         - name: license-exceptions
           configMap:
-            name: {{ .Release.Name }}-license-exceptions
+            {{- if .existingConfigMap }}
+            name: {{ .existingConfigMap }}
+            items:
+              - key: {{ .existingConfigMapKey | default "license-exceptions.json" }}
+                path: license-exceptions.json
+            {{- else }}
+            name: {{ $.Release.Name }}-license-exceptions
+            {{- end }}
         {{- end }}
-        {{- if .Values.licensePolicy.enabled }}
+        {{- end }}
+        {{- with .Values.licensePolicy }}
+        {{- if .enabled }}
         - name: license-policy
           configMap:
-            name: {{ .Release.Name }}-license-policy
+            {{- if .existingConfigMap }}
+            name: {{ .existingConfigMap }}
+            items:
+              - key: {{ .existingConfigMapKey | default "license-policy.json" }}
+                path: license-policy.json
+            {{- else }}
+            name: {{ $.Release.Name }}-license-policy
+            {{- end }}
+        {{- end }}
         {{- end }}
 

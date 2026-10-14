@@ -6,7 +6,7 @@
 
 ## TL;DR
 
-Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (CronJob Ingestion-Watcher, scalable Parsing-Workers, stateless API-Gateway, background CVE-Refresher). ClickHouse as the analytical database with MergeTree tables and array-based dependency storage. Angular frontend with virtual scrolling, OnPush change detection, full-text search, dark-mode toggle, and custom CSS theming. The SPDX files already exist as 1000+ files in the repository — no external scanner needed. Job coordination via a ClickHouse queue table (no NATS/Redis). **VEX support (OpenVEX)** enables vendor-side vulnerability assessment. **Cross-project search** for CVE impact, license violations, and dependency statistics. **License policy + exceptions** fully externalized as config files (no rebuild needed). **CVE Refresher** incrementally checks all known PURLs against OSV for newly disclosed CVEs — without re-scanning all SBOMs.
+Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (CronJob Ingestion-Watcher, scalable Parsing-Workers, stateless API-Gateway, background CVE-Refresher). ClickHouse (supported floor: 24.8 LTS, pinned by digest in the chart; CI also tests 24.12, #392) as the analytical database with MergeTree tables and array-based dependency storage. Angular frontend with virtual scrolling, OnPush change detection, full-text search, dark-mode toggle, and custom CSS theming. The SPDX files already exist as 1000+ files in the repository — no external scanner needed. Job coordination via a ClickHouse queue table (no NATS/Redis). **VEX support (OpenVEX)** enables vendor-side vulnerability assessment. **Cross-project search** for CVE impact, license violations, and dependency statistics. **License policy + exceptions** fully externalized as config files (no rebuild needed). **CVE Refresher** incrementally checks all known PURLs against OSV for newly disclosed CVEs — without re-scanning all SBOMs.
 
 ---
 
@@ -117,7 +117,7 @@ bomhort/
         ├── cronjob-ingestion-watcher.yaml  # git-sync initContainer
         ├── cronjob-cve-refresher.yaml      # Daily CVE refresh (configurable)
         ├── job-migrate.yaml                # DB migration job (runs at install/upgrade)
-        ├── job-seed-sboms.yaml             # Git-clone seed job for large SBOM repos
+        ├── validate-removed-values.yaml    # Fails the render on removed values (seedJob, #391)
         ├── pvc-sbom-data.yaml              # PVC for SBOM storage
         ├── service-api-gateway.yaml
         ├── service-mcp-server.yaml         # Only rendered for mcp.transport=http
@@ -523,7 +523,7 @@ The HTTP transport is remote tool execution, so both guards are mandatory rather
 
 **License Exceptions** (`license-exceptions.json`): Operator-managed blanket and package/license/project rules, empty by default. No automatic CNCF download or project-to-blanket promotion. An inactive structure example lives in `examples/license-exceptions/`. Blanket exceptions retain SPDX modifier-prefix matching (e.g. `MPL-2.0` matches `MPL-2.0-no-copyleft-exception`). Package rules match case-sensitive exact names or complete slash-delimited suffixes; optional project restrictions use the exact SBOM document name in both worker and API filtering. Multiple project rules are preserved and matching order is deterministic. Scope descriptions and dates remain audit metadata, not executable conditions.
 
-The first existing exception file is authoritative, even when empty. Fallback to the SBOM directory occurs only when the primary is missing. Unknown JSON fields, malformed structure, and read errors are surfaced (worker startup failure / exception-related API HTTP 500), not silently replaced by another list. Helm `licenseExceptions.custom` accepts a YAML object or JSON string and validates the two required arrays. ConfigMap checksums roll out API and worker pods together to refresh their `subPath` mounts; no live ConfigMap watch is assumed.
+The first existing exception file is authoritative, even when empty. Fallback to the SBOM directory occurs only when the primary is missing. Unknown JSON fields, malformed structure, and read errors are surfaced (worker startup failure / exception-related API HTTP 500), not silently replaced by another list. Helm `licenseExceptions.custom` accepts a YAML object or JSON string and validates the two required arrays. ConfigMap checksums roll out API and worker pods together to refresh their `subPath` mounts; no live ConfigMap watch is assumed. Alternatively `licenseExceptions.existingConfigMap` / `licensePolicy.existingConfigMap` (#397) mount a ConfigMap the operator manages (Argo CD multi-source, kustomize `configMapGenerator`); the chart then renders no ConfigMap of its own, `custom` alongside it fails the render, and the pod annotation carries the ConfigMap name instead of a checksum — a content change needs a new name (generator hash suffix) or a manual rollout.
 
 Exemptions are written at ingest time into `exempted_packages` + `exemption_reason` columns and considered at query time. Existing SBOMs must be re-processed after changes: filtering stored violations cannot restore previously exempted packages after revocation. A watcher run alone does not bypass hash deduplication. Read-only — no write API (frontend is public), no schema changes or automatic data resets.
 

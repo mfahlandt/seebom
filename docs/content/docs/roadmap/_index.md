@@ -4,22 +4,33 @@ linkTitle: "Roadmap"
 type: docs
 weight: 6
 description: >
-  Product roadmap for BOMHort — the v1.0 freeze, the automated-VEX epic, and what comes after.
+  Product roadmap for BOMHort — v0.8.0 contract, the v0.9.0 vulnerability register, the v1.0 freeze with the CRA dashboard, and what comes after.
 ---
 
 {{% alert title="Last Updated" color="info" %}}
-2026-09-16 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1) · [v1.0.0 Milestone →](https://github.com/seebom-labs/BOMHort/milestone/1)
+2026-10-14 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1) · Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) · [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) · [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) · [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) · [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3)
+
+This page summarises [`ROADMAP.md`](https://github.com/seebom-labs/BOMHort/blob/main/ROADMAP.md), which is authoritative and carries the full reasoning. Both are updated when a release is cut, not in feature pull requests.
 {{% /alert %}}
 
 ## Vision
 
-BOMHort is transitioning from a single-instance SBOM visualization tool into an **enterprise-grade, multi-cluster Software Supply Chain Security platform**. Phase 1 (foundation, auth, multi-cluster model, push ingestion) shipped in v0.4–v0.6. The roadmap is now organised around one hard deadline — the **v1.0.0 schema and API freeze**:
+BOMHort is transitioning from a single-instance SBOM visualization tool into an **enterprise-grade, multi-cluster Software Supply Chain Security platform**. Phase 1 (foundation, auth, multi-cluster model, push ingestion) shipped in v0.4–v0.7.
 
-1. **v1.0 Freeze Preparation** — one coordinated migration wave for everything that cannot be back-filled later
-2. **Automation & Fleet Operations** — automated VEX generation ([VEXViper](https://github.com/seebom-labs/VEXViper)), namespace/workload views, auditor exports
-3. **Analytics & Compliance** — CRA readiness scoring, EPSS, dependency health, SBOM diff
+The roadmap is organised around one hard deadline — the **v1.0.0 schema and API freeze** — and one regulatory fact: the **EU Cyber Resilience Act's vulnerability-reporting obligations are in force since 2026-09-11**, and customers already ask for a CRA-grade vulnerability register. The CRA scope therefore moved **into 1.0** (re-plan 2026-09-25), and 1.0 is reached in three steps:
 
-The guiding rule: **if it can't be back-filled, it lands before 1.0; if it's additive, it lands after.**
+| Release | Due | Theme |
+|---------|-----|-------|
+| **v0.8.0** ✅ | 2026-10-31 | **Contract** — MCP server, project aggregation, `source_repo` fix, `values.yaml` shape, CVE ids, CSV export, license provenance |
+| **v0.9.0** | 2026-11-30 | **Vulnerability register** — CVSS, CWE, KEV, EPSS, remediation record, SLA due dates ([#414](https://github.com/seebom-labs/BOMHort/issues/414)) |
+| **v1.0.0** | 2027-01-31 | **Freeze + CRA dashboard** — readiness score, MTTR, auditor report bundle, crypto-library inventory, versioned docs |
+| v1.1.0 | 2027-04-30 | Automation, fleet & cryptography — VEXViper, fleet views, OSV mirror, attestations, CBOM |
+| v1.2.0 | 2027-07-31 | Analytics — Scorecard, Lottery Factor, SBOM diff, tree view, blast radius, enriched export |
+
+Two rules drive sequencing:
+
+- **If it can't be back-filled, it lands before 1.0; if it's additive, it lands after.** The register work is additive and lands before 1.0 for *market* reasons, not contract reasons — the [Schema Change Register](#schema) says which is which.
+- **Issues raised by the consumer side ship first.** [#398](https://github.com/seebom-labs/BOMHort/issues/398) and [#399](https://github.com/seebom-labs/BOMHort/issues/399) came from someone building *on* BOMHort; they opened v0.8.0.
 
 ---
 
@@ -29,232 +40,227 @@ The guiding rule: **if it can't be back-filled, it lands before 1.0; if it's add
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| ✅ | [~~#131 — Cluster-aware data model~~](https://github.com/seebom-labs/BOMHort/issues/131) | `cluster` column on all core tables (migration `012`). |
-| ✅ | [~~#134 — API Authentication~~](https://github.com/seebom-labs/BOMHort/issues/134) | Service token + API key modes. Gate for all write operations. |
-| ✅ | [~~#137 — Enhanced health checks~~](https://github.com/seebom-labs/BOMHort/issues/137) | `/readyz`, `/livez` for K8s probes. |
-| ✅ | [~~#139 — Headless mode~~](https://github.com/seebom-labs/BOMHort/issues/139) | API-only deployment without Angular UI. |
-| ✅ | [~~#59 — Expose API externally~~](https://github.com/seebom-labs/BOMHort/issues/59) | Helm Ingress template + TLS. |
-| ✅ | [~~#8 — Project List View~~](https://github.com/seebom-labs/BOMHort/issues/8) | Group SBOMs by project. |
-| ✅ | [~~#144 — SBOM Download~~](https://github.com/seebom-labs/BOMHort/issues/144) | Download SBOM JSON from the platform. |
-| ✅ | [~~#55 — CycloneDX Support~~](https://github.com/seebom-labs/BOMHort/issues/55) | Parse CycloneDX 1.4+ SBOMs. |
-| ✅ | [~~#37 — Version Skew Detection~~](https://github.com/seebom-labs/BOMHort/issues/37) | Cross-org dependency consistency. |
-| ✅ | [~~#132~~](https://github.com/seebom-labs/BOMHort/issues/132) / [~~#133 — Cluster endpoints~~](https://github.com/seebom-labs/BOMHort/issues/133) | `GET /api/v1/clusters`, per-cluster stats and SBOM lists. |
-| ✅ | [~~#135 — SBOM Upload (Push Model)~~](https://github.com/seebom-labs/BOMHort/issues/135) | `POST /api/v1/sboms/upload` from CI/CD pipelines. |
-| 🟡 | [#136 — Enhanced CORS](https://github.com/seebom-labs/BOMHort/issues/136) | Functionally done (POST on upload, `X-API-Key`). Remaining bits (`CORS_ALLOW_CREDENTIALS`, configurable methods) are additive → 1.x. |
+| ✅ | ~~[#131](https://github.com/seebom-labs/BOMHort/issues/131)~~ Cluster-aware data model | `cluster` column on all core tables (migration `012`). |
+| ✅ | ~~[#134](https://github.com/seebom-labs/BOMHort/issues/134)~~ API Authentication | Service token + API key modes. Gate for all write operations. |
+| ✅ | ~~[#137](https://github.com/seebom-labs/BOMHort/issues/137)~~ Enhanced health checks | `/readyz`, `/livez` for K8s probes. |
+| ✅ | ~~[#139](https://github.com/seebom-labs/BOMHort/issues/139)~~ Headless mode | API-only deployment without Angular UI. |
+| ✅ | ~~[#59](https://github.com/seebom-labs/BOMHort/issues/59)~~ Expose API externally | Helm Ingress template + TLS. |
+| ✅ | ~~[#8](https://github.com/seebom-labs/BOMHort/issues/8)~~ Project List View | Group SBOMs by project. |
+| ✅ | ~~[#144](https://github.com/seebom-labs/BOMHort/issues/144)~~ SBOM Download | Download SBOM JSON from the platform. |
+| ✅ | ~~[#55](https://github.com/seebom-labs/BOMHort/issues/55)~~ CycloneDX Support | Parse CycloneDX 1.4+ SBOMs. |
+| ✅ | ~~[#37](https://github.com/seebom-labs/BOMHort/issues/37)~~ Version Skew Detection | Cross-org dependency consistency. |
+| ✅ | ~~[#132](https://github.com/seebom-labs/BOMHort/issues/132)~~ / ~~[#133](https://github.com/seebom-labs/BOMHort/issues/133)~~ Cluster endpoints | `GET /api/v1/clusters`, per-cluster stats and SBOM lists. |
+| ✅ | ~~[#135](https://github.com/seebom-labs/BOMHort/issues/135)~~ SBOM Upload (Push Model) | `POST /api/v1/sboms/upload` from CI/CD pipelines. |
+| ✅ | ~~[#398](https://github.com/seebom-labs/BOMHort/issues/398)~~ Project-centric read model | `GET /api/v1/projects/{name}` + sub-resources, de-duplicated counts; the project identity rule is contract. Shipped in v0.8.0. |
+| 🟡 | [#136](https://github.com/seebom-labs/BOMHort/issues/136) Enhanced CORS | Functionally done (POST on upload, `X-API-Key`). Remaining bits (`CORS_ALLOW_CREDENTIALS`, configurable methods) are additive → v1.1.0. |
 
-**Delivered beyond the roadmap:** Global Search, Package Search, in-toto attestation unwrapping, protobom parsing backend, license resolution via GitHub + npm + NuGet with license-text classification, dark mode, white-label theming.
+**Schema wave `014`–`022` — complete:** `document_store` ([#256](https://github.com/seebom-labs/BOMHort/issues/256)), `namespace`/`project` ([#138](https://github.com/seebom-labs/BOMHort/issues/138), [#57](https://github.com/seebom-labs/BOMHort/issues/57)), `source_repo`/`source_ref` ([#332](https://github.com/seebom-labs/BOMHort/issues/332)), VEX provenance ([#334](https://github.com/seebom-labs/BOMHort/issues/334)), VEX SBOM scope ([#350](https://github.com/seebom-labs/BOMHort/issues/350)), OSV aliases, VEX `product_ref`, `document_version`, `tags` ([#357](https://github.com/seebom-labs/BOMHort/issues/357)). `023`–`026` followed in v0.8.0; the v0.9.0 register work starts at `027`.
+
+**Delivered beyond the roadmap:** Global Search, Package Search, in-toto attestation unwrapping, protobom parsing backend, license resolution via GitHub + npm + NuGet with license-text classification, SPDX license *expression* evaluation ([#402](https://github.com/seebom-labs/BOMHort/issues/402)), dark mode, white-label theming, Prow chat-ops ([#405](https://github.com/seebom-labs/BOMHort/issues/405)).
 
 ---
 
-## Phase 2: v1.0 Freeze Preparation {#phase-2}
+## Phase 2: The road to 1.0 {#phase-2}
 
-**Sep–Oct 2026 · Theme:** Land every forward-only data capture and every API-contract change in **one coordinated migration wave**, then freeze.
+**Oct 2026 – Jan 2027 · Theme:** Freeze a contract that an external consumer has already exercised ([#399](https://github.com/seebom-labs/BOMHort/issues/399)), and ship a CRA-grade vulnerability register *inside* the frozen surface rather than bolting it on after.
 
-### Schema wave `014`–`017`
+### v0.8.0 — Contract ✅ {#v0-8}
 
-{{% alert title="Migration numbering" color="warning" %}}
-Migration `013` is taken by `013_create_registry_license_cache` (v0.6.x). Issues #256 and #138 previously claimed `013`; the authoritative numbering is below.
-{{% /alert %}}
-
-| Status | Migration | Issue | Change | Why pre-1.0 |
-|:------:|-----------|-------|--------|-------------|
-| ✅ | `014_create_document_store` | [#256 — Tier-2 fidelity capture](https://github.com/seebom-labs/BOMHort/issues/256) | New table (reference + `sha256`); original bytes in a configurable blob store (S3/MinIO prefix or PVC), **not** ClickHouse | **The real 1.0 driver.** Forward-only — SBOMs ingested before this permanently lose round-trip fidelity. Needs a follow-up hook in the upload handler (#135). Enables #255. |
-| ✅ | `015_add_namespace_project_columns` | [#138 — Namespace filtering](https://github.com/seebom-labs/BOMHort/issues/138) + [#57 (column)](https://github.com/seebom-labs/BOMHort/issues/57) | `ADD COLUMN namespace`, `ADD COLUMN project` (`LowCardinality(String) DEFAULT ''`) on core tables and `document_store`; no `ORDER BY` change | Ingestion contract frozen: opt-in `INGEST_PATH_LAYOUT` (e.g. `cluster/namespace/project`), per-bucket `namespace`/`project`/`pathLayout`, and `?namespace=`/`?project=` on upload. |
-| ✅ | `016_add_source_columns` | [#332 — source_repo / source_ref](https://github.com/seebom-labs/BOMHort/issues/332) | `ADD COLUMN source_repo, source_ref` on `sboms` + `ingestion_queue`; populated from SPDX/CycloneDX VCS refs; `X-Source-Repo`/`X-Source-Ref` upload headers; `PATCH /api/v1/sboms/{id}` | Correctness blocker for automated VEX (#338). |
-| ✅ | `017_add_vex_provenance` | [#334 — VEX provenance (columns)](https://github.com/seebom-labs/BOMHort/issues/334) | `ADD COLUMN author, role, tooling, status_notes` on `vex_statements` | OpenVEX already carries these; automated producers won't re-send. UI → Phase 3. |
-
-### API-contract changes (no migration)
-
-| Status | Issue | Why pre-1.0 |
+| Status | Issue | Description |
 |:------:|-------|-------------|
-| 🔲 | [#335 — One row per (vuln_id, purl), latest VEX wins](https://github.com/seebom-labs/BOMHort/issues/335) | Changes row semantics of `/sboms/{id}/vulnerabilities`; adds `vex_timestamp`. Must be in the frozen contract. |
-| 🔲 | [#177 — `cluster` in `SBOMListItem`](https://github.com/seebom-labs/BOMHort/issues/177) | Additive DTO field + badge. Good first issue. |
+| ✅ | ~~[#399](https://github.com/seebom-labs/BOMHort/issues/399)~~ BOMHort MCP server | Five read-only tools over the REST API (`cmd/mcp-server`), no ClickHouse credentials. stdio by default; Streamable HTTP refuses to start without a bearer token and a non-wildcard Origin allow-list. See [MCP Server](/docs/mcp/). |
+| ✅ | ~~[#58](https://github.com/seebom-labs/BOMHort/issues/58)~~ Aggregated SBOM View | The SBOM Explorer reads by project, not by document — same de-duplication as [#398](https://github.com/seebom-labs/BOMHort/issues/398). |
+| ✅ | ~~[#355](https://github.com/seebom-labs/BOMHort/issues/355)~~ `source_repo` on real SBOMs | `documentNamespace` fallback, release/tag/commit URL handling, CycloneDX `distribution`. Existing rows need a re-parse. |
+| ✅ | ~~[#397](https://github.com/seebom-labs/BOMHort/issues/397)~~ `existingConfigMap` | License policy and exceptions mount from an externally managed ConfigMap. |
+| ✅ | ~~[#391](https://github.com/seebom-labs/BOMHort/issues/391)~~ Seed job removed | A leftover `seedJob` block fails `helm template` with a message naming the alternatives. |
+| ✅ | ~~[#392](https://github.com/seebom-labs/BOMHort/issues/392)~~ ClickHouse floor | 24.8 LTS, pinned by digest; CI runs every query against 24.8 **and** 24.12. |
+| ✅ | ~~[#344](https://github.com/seebom-labs/BOMHort/issues/344)~~ E + I | Project stats read only the selected projects' SBOMs; `apiGateway.queryLimits.*` bounds gateway queries (on by default). A–D, F–H stay post-1.0. |
+| ✅ | ~~[#412](https://github.com/seebom-labs/BOMHort/issues/412)~~ CVE id + aliases | `cve_id` and `aliases` on findings, VEX statements and search; lookups by any alias. |
+| ✅ | ~~[#266](https://github.com/seebom-labs/BOMHort/issues/266)~~ CSV export | `GET /api/v1/reports/vulnerabilities?format=csv`, streamed, formula-injection safe. |
+| ✅ | ~~[#439](https://github.com/seebom-labs/BOMHort/issues/439)~~ License provenance | deps.dev/Packagist/PyPI resolvers, `unapproved` category, per-package license source (migration `024`). See [License Resolution](/docs/license-resolution/). |
 
-### Release engineering
+### v0.9.0 — Vulnerability register {#v0-9}
 
-| Status | Issue | Notes |
-|:------:|-------|-------|
-| 🔲 | [#145 — Versioned documentation](https://github.com/seebom-labs/BOMHort/issues/145) | Docsy `params.versions`, `release/vX.Y` branches. Ships **with** the 1.0 tag. |
-| ✅ | Data-migration Job covers `registry_license_cache` | [#341](https://github.com/seebom-labs/BOMHort/pull/341); `document_store` covered with #256. |
-| ✅ | Helm chart ships every migration | Fixed while landing `015`: `013` and `014` had never been copied into `deploy/helm/bomhort/migrations/`, so Helm deployments never applied them. `make check-migrations` now guards the whole directory. |
-| 🔲 | Migration guide + `values.yaml` stability review | Required by the major-version policy. |
+**Due 2026-11-30.** The [#414](https://github.com/seebom-labs/BOMHort/issues/414) umbrella: CRA Annex I Part II made queryable — per finding and per deployed version: CVE, CWE, CVSS, EPSS, KEV status, remediation status, due date, and a timestamp proving it is current.
 
----
+| Status | Issue | Migration | Description |
+|:------:|-------|-----------|-------------|
+| 🔲 | [#408](https://github.com/seebom-labs/BOMHort/issues/408) CVSS score, vector, version (incl. v4) | `027` | Score is computed in `osvutil` today and discarded. Backfill from `osv_json`. |
+| 🔲 | [#409](https://github.com/seebom-labs/BOMHort/issues/409) CWE ids | `027` | From OSV `database_specific.cwe_ids`. Enables crypto CWE filters. |
+| 🔲 | [#410](https://github.com/seebom-labs/BOMHort/issues/410) CISA KEV status | `028_create_kev_catalog` | Daily feed; the public signal for "actively exploited" (CRA Art. 14, 24 h). Brings a due date. |
+| 🔲 | [#64](https://github.com/seebom-labs/BOMHort/issues/64) EPSS scores | `029_create_epss_scores` | Pulled forward from v1.2.0; shares the refresher plumbing with KEV. |
+| 🔲 | [#413](https://github.com/seebom-labs/BOMHort/issues/413) VEX action statement as remediation record | `030` | `action_statement_timestamp` on `vex_statements`. |
+| 🔲 | [#411](https://github.com/seebom-labs/BOMHort/issues/411) Remediation SLA policy | none | `remediation-policy.json` → derived `due_date`, `overdue`, `remediation_status`. No write API. |
+| 🔲 | [#414](https://github.com/seebom-labs/BOMHort/issues/414) Register umbrella | — | Docs page, `last_refreshed_at` on export and dashboard, final CSV column list. |
 
-## 🎯 v1.0.0 Milestone {#v1}
+### v1.0.0 — Freeze + CRA dashboard {#v1}
 
-**Target: end of October 2026** · [GitHub Milestone →](https://github.com/seebom-labs/BOMHort/milestone/1)
+**Due 2027-01-31**, after a four-week soak of v0.9.0 on the CNCF instance.
 
-From this point forward, the [Support Policy](/docs/release/#support-policy) (current − 2) takes effect and breaking changes require a major version bump.
-
-### v1.0 Criteria
-
-| Requirement | Status | Issue |
-|-------------|:------:|-------|
-| API Authentication | ✅ | [#134](https://github.com/seebom-labs/BOMHort/issues/134) |
-| Cluster-aware data model | ✅ | [#131](https://github.com/seebom-labs/BOMHort/issues/131) |
-| Cluster listing + detail endpoints | ✅ | [#132](https://github.com/seebom-labs/BOMHort/issues/132), [#133](https://github.com/seebom-labs/BOMHort/issues/133) |
-| SBOM Upload endpoint | ✅ | [#135](https://github.com/seebom-labs/BOMHort/issues/135) |
-| CycloneDX parsing | ✅ | [#55](https://github.com/seebom-labs/BOMHort/issues/55) |
-| Enhanced health probes | ✅ | [#137](https://github.com/seebom-labs/BOMHort/issues/137) |
-| Version Skew Detection | ✅ | [#37](https://github.com/seebom-labs/BOMHort/issues/37) |
-| Tier-2 fidelity capture (`document_store` + blob store) | ✅ | [#256](https://github.com/seebom-labs/BOMHort/issues/256) |
-| Namespace + project columns, ingestion convention | ✅ | [#138](https://github.com/seebom-labs/BOMHort/issues/138), [#57](https://github.com/seebom-labs/BOMHort/issues/57) |
-| `source_repo` / `source_ref` columns | 🔲 | [#332](https://github.com/seebom-labs/BOMHort/issues/332) |
-| VEX provenance columns | 🔲 | [#334](https://github.com/seebom-labs/BOMHort/issues/334) |
-| One row per `(vuln_id, purl)` | 🔲 | [#335](https://github.com/seebom-labs/BOMHort/issues/335) |
-| `cluster` in `SBOMListItem` | 🔲 | [#177](https://github.com/seebom-labs/BOMHort/issues/177) |
-| Versioned documentation | 🔲 | [#145](https://github.com/seebom-labs/BOMHort/issues/145) |
+| Status | Issue | Description |
+|:------:|-------|-------------|
+| 🔲 | [#141](https://github.com/seebom-labs/BOMHort/issues/141) CRA compliance dashboard | Readiness score per project/cluster, computed from what v0.9.0 stores. [#140](https://github.com/seebom-labs/BOMHort/issues/140)/#143 become additional inputs in v1.1.0, not prerequisites. |
+| 🔲 | [#7](https://github.com/seebom-labs/BOMHort/issues/7) CVE fix time (MTTR) | `031_create_vulnerability_resolutions`. Stretch — drops to v1.1.0 if the soak needs the time. |
+| 🔲 | [#62](https://github.com/seebom-labs/BOMHort/issues/62) Auditor report bundle | CSV + JSON bundle with a manifest. PDF only after the library decision; not a blocker. |
+| 🔲 | [#419](https://github.com/seebom-labs/BOMHort/issues/419) Crypto-library inventory | From existing SBOMs by PURL match (`032`); no CBOM needed. |
+| 🔲 | [#145](https://github.com/seebom-labs/BOMHort/issues/145) Versioned documentation | Ships **with** the tag. |
+| 🔲 | Migration guide + `values.yaml` review | Every key added since v0.7: `mcp.*`, `existingConfigMap`, `seedJob` removal, `apiGateway.queryLimits.*`, image pin, `kev.*`, `epss.*`, `remediationPolicy.*`, `cryptoLibraries.*`. |
 
 ### What v1.0 means
 
 - **API contract frozen** — no endpoint removals or response shape changes without v2.0
 - **ClickHouse schema stable** — no `ORDER BY` or column-type changes; `ADD COLUMN … DEFAULT` and new tables remain allowed
 - **Helm values stable** — existing `values.yaml` keys won't be renamed
-- **Support policy active** — current release + 2 previous minors receive security patches
-- **SemVer enforced** — features in minor bumps, fixes in patches, breaking = major
+- **Supported ClickHouse floor** — 24.8 LTS, covered by CI ([#392](https://github.com/seebom-labs/BOMHort/issues/392)) ✅
+- **Support policy active** — current release + 2 previous minors receive security patches (see [Support Policy](/docs/release/#support-policy))
+- **A CRA-grade vulnerability register** is exportable per deployed version, and a readiness score is computed from it
 
-### Pre-1.0 releases
-
-All v0.x releases are development milestones. They may contain breaking changes between any minor version.
+All v0.x releases are development milestones and may contain breaking changes between minor versions — read the release notes before upgrading.
 
 ---
 
-## Phase 3: Automation & Fleet Operations {#phase-3}
+## Phase 3: Automation, Fleet & Cryptography {#phase-3}
 
-**v1.x · Q4 2026 · Theme:** Make BOMHort a first-class platform for *automated* supply-chain workflows, and finish the fleet-scale views.
+**v1.1.0 · due 2027-04-30.**
 
-### Epic #338 — Automated VEX generation (VEXViper)
+### Epic [#338](https://github.com/seebom-labs/BOMHort/issues/338) — Automated VEX generation (VEXViper)
 
-[VEXViper](https://github.com/seebom-labs/VEXViper) is an out-of-tree Go sidecar: it reads findings via the REST API, gathers evidence (govulncheck, version compare), asks a configurable LLM or rule engine, and uploads go-vex-validated OpenVEX back through `/api/v1/sboms/upload`. BOMHort-side gaps, in the order the sidecar needs them:
+[VEXViper](https://github.com/seebom-labs/VEXViper) is an out-of-tree Go sidecar: it reads findings via the REST API, gathers evidence, asks a configurable LLM or rule engine, and uploads validated OpenVEX back. The correctness blockers ([#332](https://github.com/seebom-labs/BOMHort/issues/332), [#335](https://github.com/seebom-labs/BOMHort/issues/335), [#355](https://github.com/seebom-labs/BOMHort/issues/355)) have all landed.
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| ⏫ | [#332](https://github.com/seebom-labs/BOMHort/issues/332), [#335](https://github.com/seebom-labs/BOMHort/issues/335) | Correctness blockers — pulled into Phase 2. |
-| 🔲 | [#336 — Idempotent VEX upload + job status](https://github.com/seebom-labs/BOMHort/issues/336) | Content-hash dedupe; `GET /api/v1/uploads/{job_id}` → applied / matched / unmatched. New table `03x_create_upload_jobs`. |
-| 🔲 | [#333 — Incremental listing + `vex_status=missing`](https://github.com/seebom-labs/BOMHort/issues/333) | `?since=&cursor=` on `/sboms`; server-side "no VEX yet" filter. Query-only. |
-| 🔲 | [#334 — Provenance UI](https://github.com/seebom-labs/BOMHort/issues/334) | Automated vs. human badge, `status_notes`, `?vex_source=` filter. |
-| 🔲 | [#337 — Outbound webhooks](https://github.com/seebom-labs/BOMHort/issues/337) | `sbom.ingested`, `findings.updated`, `vex.applied`, `upload.rejected`; HMAC-signed; Helm values. |
-| 🔲 | `docs/integrations/vexviper` | Integration guide once the above stabilises. |
+| 🔲 | [#336](https://github.com/seebom-labs/BOMHort/issues/336) Idempotent VEX upload + job status | Content-hash dedupe; `GET /api/v1/uploads/{job_id}`. New table `03x_create_upload_jobs`. |
+| 🔲 | [#333](https://github.com/seebom-labs/BOMHort/issues/333) Incremental listing + `vex_status=missing` | `?since=&cursor=` on `/sboms`. Query-only. |
+| 🔲 | [#334](https://github.com/seebom-labs/BOMHort/issues/334) Provenance UI | Automated vs. human badge, `status_notes`, `?vex_source=`. |
+| 🔲 | [#337](https://github.com/seebom-labs/BOMHort/issues/337) Outbound webhooks | HMAC-signed `sbom.ingested`, `findings.updated`, `vex.applied`, `upload.rejected`. |
 
 ### Fleet operations
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| 🔲 | [#138 — Namespace filtering (API + UI)](https://github.com/seebom-labs/BOMHort/issues/138) | `?namespace=` on list endpoints, namespace chips. Column and ingestion contract shipped in `015`; this is the additive read side. |
-| 🔲 | [#267](https://github.com/seebom-labs/BOMHort/issues/267) → [#176 — Cluster Picker](https://github.com/seebom-labs/BOMHort/issues/176) | Query-param filter first (help wanted), then `/clusters` route + navbar dropdown. |
-| 🔲 | [#140 — Workload vulnerability summary](https://github.com/seebom-labs/BOMHort/issues/140) | Image → posture cross-reference. Powers #141. |
-| 🔲 | [#57 — Per-project policies](https://github.com/seebom-labs/BOMHort/issues/57) | License policies, severity thresholds, exception scopes per project. |
-| 🔲 | [#58 — Aggregated SBOM View](https://github.com/seebom-labs/BOMHort/issues/58) | Group version history under project names. Depends on #57. |
-| 🔲 | [#136 — CORS (remaining)](https://github.com/seebom-labs/BOMHort/issues/136) | `CORS_ALLOW_CREDENTIALS`, configurable methods/headers. |
+| 🔲 | [#138](https://github.com/seebom-labs/BOMHort/issues/138) Namespace filtering (API + UI) | `?namespace=` on list endpoints, namespace chips. |
+| 🔲 | [#267](https://github.com/seebom-labs/BOMHort/issues/267) → [#176](https://github.com/seebom-labs/BOMHort/issues/176) Cluster Picker | Query-param filter first (help wanted), then navbar dropdown. |
+| 🔲 | [#140](https://github.com/seebom-labs/BOMHort/issues/140) Workload vulnerability summary | Image → posture; additional [#141](https://github.com/seebom-labs/BOMHort/issues/141) input. |
+| 🔲 | [#57](https://github.com/seebom-labs/BOMHort/issues/57) Per-project policies | License policies, severity thresholds, exception scopes per project. |
+| 🔲 | [#136](https://github.com/seebom-labs/BOMHort/issues/136) CORS (remaining) | `CORS_ALLOW_CREDENTIALS`, configurable methods/headers. |
+| 🔲 | [#60](https://github.com/seebom-labs/BOMHort/issues/60) Local OSV mirror | Offline / air-gapped; KEV and EPSS feeds get the same treatment. |
+| 🔲 | [#143](https://github.com/seebom-labs/BOMHort/issues/143) In-toto Witness integration | `03x_create_attestations`, signature verification; additional [#141](https://github.com/seebom-labs/BOMHort/issues/141) input. |
 
-### Compliance foundations
+### Cryptography — [#420](https://github.com/seebom-labs/BOMHort/issues/420) (CBOM)
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| 🔲 | [#266](https://github.com/seebom-labs/BOMHort/issues/266) → [#62 — Auditor reports](https://github.com/seebom-labs/BOMHort/issues/62) | CSV export first (stdlib, good first issue), then PDF after the dependency decision. |
-| 🔲 | [#60 — Local OSV Mirror](https://github.com/seebom-labs/BOMHort/issues/60) | Clone osv.dev into ClickHouse — offline, no rate limits. |
-| 🔲 | [#143 — In-toto Witness integration](https://github.com/seebom-labs/BOMHort/issues/143) | `03x_create_attestations`, signature verification, provenance display. Prerequisite for #141. |
-
-**Exit criteria:** External tooling discovers new findings without polling and pushes VEX idempotently; cluster + namespace filters in the UI; CSV export; OSV works offline.
+| 🔲 | [#415](https://github.com/seebom-labs/BOMHort/issues/415) CycloneDX 1.6 crypto assets | `03x_create_crypto_assets`. |
+| 🔲 | [#416](https://github.com/seebom-labs/BOMHort/issues/416) Cryptographic inventory | Algorithms, protocols, certificates, keys per project/fleet. |
+| 🔲 | [#417](https://github.com/seebom-labs/BOMHort/issues/417) Crypto policy + exceptions | `crypto-policy.json`, BSI TR-02102 / NIST SP 800-131A example profiles. |
+| 🔲 | [#418](https://github.com/seebom-labs/BOMHort/issues/418) PQC readiness | `quantum_vulnerable` / `hybrid` / `pqc` classification, readiness % per project. |
 
 ---
 
-## Phase 4: Analytics & Compliance {#phase-4}
+## Phase 4: Analytics {#phase-4}
 
-**2027 H1 · Theme:** Regulatory readiness scoring and supply-chain intelligence.
+**v1.2.0 · due 2027-07-31.** CRA scoring left this phase for 1.0; what remains is prioritisation and dependency-health depth.
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
-| 🔲 | [#141 — CRA Compliance Dashboard](https://github.com/seebom-labs/BOMHort/issues/141) | EU Cyber Resilience Act readiness scoring. Needs #140, #143, #62. |
-| 🔲 | [#255 — Enriched SBOMs + enriched download](https://github.com/seebom-labs/BOMHort/issues/255) | Overlay on #256 originals; companion VEX; in-toto re-sign. |
-| 🔲 | [#254 — protobom/storage schema evaluation](https://github.com/seebom-labs/BOMHort/issues/254) | Research; informs #255's overlay. Not a rewrite of `sbom_packages`. |
-| 🔲 | [#38 — SBOM Diff](https://github.com/seebom-labs/BOMHort/issues/38) | Dependency tree divergence between versions. |
-| 🔲 | [#56 — Dependency Tree View](https://github.com/seebom-labs/BOMHort/issues/56) | Hierarchical visualization of transitive chains. |
-| 🔲 | [#63 — Blast Radius Search](https://github.com/seebom-labs/BOMHort/issues/63) | Version-constrained impact analysis. |
-| 🔲 | [#64 — EPSS Scores](https://github.com/seebom-labs/BOMHort/issues/64) | Exploit probability for prioritization. |
-| 🔲 | [#61 — OpenSSF Scorecard](https://github.com/seebom-labs/BOMHort/issues/61) | Upstream project health per dependency. |
-| 🔲 | [#82 — Lottery Factor](https://github.com/seebom-labs/BOMHort/issues/82) | Single-maintainer risk detection. |
-| 🔲 | [#7 — CVE Fix Time (MTTR)](https://github.com/seebom-labs/BOMHort/issues/7) | Mean-time-to-remediate per project. |
-| 🔲 | [#268 — Official ClickHouse operator](https://github.com/seebom-labs/BOMHort/issues/268) | Breaking `values.yaml` change → v2.0 candidate with migration guide. |
-
-**Exit criteria:** CRA readiness score, EPSS-based prioritization, dependency health metrics, SBOM diff, enriched export.
+| 🔲 | [#255](https://github.com/seebom-labs/BOMHort/issues/255) Enriched SBOMs + enriched download | Overlay on the [#256](https://github.com/seebom-labs/BOMHort/issues/256) originals; companion VEX; in-toto re-sign. |
+| 🔲 | [#254](https://github.com/seebom-labs/BOMHort/issues/254) protobom/storage schema evaluation | Research; informs [#255](https://github.com/seebom-labs/BOMHort/issues/255). Not a rewrite of `sbom_packages`. |
+| 🔲 | [#38](https://github.com/seebom-labs/BOMHort/issues/38) SBOM Diff | Dependency tree divergence between versions. |
+| 🔲 | [#56](https://github.com/seebom-labs/BOMHort/issues/56) Dependency Tree View | Hierarchical visualization of transitive chains. |
+| 🔲 | [#63](https://github.com/seebom-labs/BOMHort/issues/63) Blast Radius Search | Version-constrained impact analysis. |
+| 🔲 | [#61](https://github.com/seebom-labs/BOMHort/issues/61) OpenSSF Scorecard | Upstream project health per dependency. |
+| 🔲 | [#82](https://github.com/seebom-labs/BOMHort/issues/82) Lottery Factor | Single-maintainer risk detection. |
+| 🔲 | [#268](https://github.com/seebom-labs/BOMHort/issues/268) Official ClickHouse operator | Breaking `values.yaml` change → v2.0 candidate. |
 
 ---
 
 ## Schema Change Register {#schema}
 
-Everything that touches `db/migrations/` or a frozen response shape. The authoritative register — including Helm-values and DTO changes — is the one in [`ROADMAP.md`](https://github.com/seebom-labs/BOMHort/blob/main/ROADMAP.md#schema-change-register); check it, upstream `main` and open pull requests before claiming a number. After 1.0, `ORDER BY` and column-type changes are **never** allowed; `ADD COLUMN … DEFAULT` and new tables are fine at any time.
+Everything that touches `db/migrations/` or a frozen response shape. The authoritative register — including the "needs pre-1.0?" reasoning per row — is the one in [`ROADMAP.md`](https://github.com/seebom-labs/BOMHort/blob/main/ROADMAP.md#schema-change-register); check it, upstream `main` and open pull requests before claiming a number. After 1.0, `ORDER BY` and column-type changes are **never** allowed; `ADD COLUMN … DEFAULT` and new tables are fine at any time.
 
 | Migration | Issue | Change | Pre/Post 1.0 |
 |-----------|-------|--------|:------------:|
-| `012_add_cluster_column` | #131 | `ADD COLUMN cluster` | ✅ shipped |
-| `013_create_registry_license_cache` | #330 | New table | ✅ shipped |
-| `014_create_document_store` | #256 | New table | ✅ shipped (**pre**) |
-| `015_add_namespace_project_columns` | #138, #57 | `ADD COLUMN namespace, project` (core tables + `document_store`) | ✅ shipped (**pre**) |
-| `016_add_source_columns` | #332 | `ADD COLUMN source_repo, source_ref` (`sboms` + `ingestion_queue`) | ✅ shipped (**pre**) |
-| `017_add_vex_provenance` | #334 | `ADD COLUMN author, role, tooling, status_notes` | ✅ shipped (**pre**) |
-| `018_add_vex_sbom_scope` | #350 | `ADD COLUMN sbom_id` on `vex_statements` + `target_sbom_id` on `ingestion_queue` — VEX scoped to its SBOM | ✅ shipped (**pre**) |
+| `012_add_cluster_column` | [#131](https://github.com/seebom-labs/BOMHort/issues/131) | `ADD COLUMN cluster` | ✅ shipped |
+| `013_create_registry_license_cache` | [#330](https://github.com/seebom-labs/BOMHort/issues/330) | New table | ✅ shipped |
+| `014_create_document_store` | [#256](https://github.com/seebom-labs/BOMHort/issues/256) | New table | ✅ shipped (**pre**) |
+| `015_add_namespace_project_columns` | [#138](https://github.com/seebom-labs/BOMHort/issues/138), [#57](https://github.com/seebom-labs/BOMHort/issues/57) | `ADD COLUMN namespace, project` (core tables + `document_store`) | ✅ shipped (**pre**) |
+| `016_add_source_columns` | [#332](https://github.com/seebom-labs/BOMHort/issues/332) | `ADD COLUMN source_repo, source_ref` (`sboms` + `ingestion_queue`) | ✅ shipped (**pre**) |
+| `017_add_vex_provenance` | [#334](https://github.com/seebom-labs/BOMHort/issues/334) | `ADD COLUMN author, role, tooling, status_notes` | ✅ shipped (**pre**) |
+| `018_add_vex_sbom_scope` | [#350](https://github.com/seebom-labs/BOMHort/issues/350) | `ADD COLUMN sbom_id` on `vex_statements` + `target_sbom_id` on `ingestion_queue` — VEX scoped to its SBOM | ✅ shipped (**pre**) |
 | `019_add_vulnerability_aliases` | — | `ADD COLUMN aliases` on `vulnerabilities` (GHSA ↔ CVE); VEX matches by alias | ✅ shipped (**pre**) |
 | `020_add_vex_product_ref` | — | `ADD COLUMN product_ref` on `vex_statements` (VEX rescue pass) | ✅ shipped (**pre**) |
 | `021_add_document_version` | — | `ADD COLUMN document_version` on `sboms` | ✅ shipped (**pre**) |
-| `022_add_sbom_tags` | #357 | `ADD COLUMN tags` on `sboms` + `ingestion_queue` | ✅ shipped (**pre**) |
+| `022_add_sbom_tags` | [#357](https://github.com/seebom-labs/BOMHort/issues/357) | `ADD COLUMN tags` on `sboms` + `ingestion_queue` | ✅ shipped (**pre**) |
 | `023_add_project_parent` | — | `ADD COLUMN parent` on `sboms`/`ingestion_queue`, `root_purl`, `supplier` on `sboms` (project groups) | ✅ shipped (**pre**) |
 | `024_add_package_license_sources` | [#439](https://github.com/seebom-labs/BOMHort/issues/439) | `ADD COLUMN package_license_sources` on `sbom_packages` — where each license came from or why it is missing ([License Resolution](/docs/license-resolution/)) | ✅ shipped (**pre**) |
 | `025_add_dependency_depth` | — | `ADD COLUMN package_depths` on `sbom_packages`, `dependency_depth` on `vulnerabilities` (direct vs. transitive) | ✅ shipped (**pre**) |
 | `026_add_queue_retry_after` | — | `ADD COLUMN retry_after` on `ingestion_queue` (defer jobs on a GitHub rate limit) | ✅ shipped (**pre**) |
-| — | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | ✅ shipped (**pre**, API) |
-| — | #177 | `cluster` in `SBOMListItem` | ✅ shipped (**pre**, API) |
-| `027_add_vulnerability_cvss_cwe` | #408, #409 | CVSS score/vector/version and CWE IDs on `vulnerabilities` | **pre** (v0.9.0) |
-| `028_create_kev_catalog` | #410 | New table | **pre** (v0.9.0) |
-| `029_create_epss_scores` | #64 | New table | **pre** (v0.9.0) |
-| `030_add_vex_action_statement_timestamp` | #413 | `ADD COLUMN action_statement_timestamp` on `vex_statements` | **pre** (v0.9.0) |
-| `031_create_vulnerability_resolutions` | #7 | New table | **pre** (v1.0.0, stretch) |
-| `032_create_crypto_libraries` | #419 | New table (or MV over `sbom_packages`) | **pre** (v1.0.0) |
-| `03x_create_upload_jobs` | #336 | New table | post |
-| `03x_create_attestations` | #143 | New table | post |
-| `03x_*` | #61, #82, #255, #60 | New tables | post |
-| — | #268 | Operator swap | **v2.0** |
+| — | [#335](https://github.com/seebom-labs/BOMHort/issues/335) | Row semantics of `/sboms/{id}/vulnerabilities` | ✅ shipped (**pre**, API) |
+| — | [#177](https://github.com/seebom-labs/BOMHort/issues/177) | `cluster` in `SBOMListItem` | ✅ shipped (**pre**, API) |
+| — | [#398](https://github.com/seebom-labs/BOMHort/issues/398) | De-duplicated project counts; project identity rule is contract | ✅ shipped (**pre**, API) |
+| — | [#399](https://github.com/seebom-labs/BOMHort/issues/399), [#397](https://github.com/seebom-labs/BOMHort/issues/397), [#391](https://github.com/seebom-labs/BOMHort/issues/391), [#392](https://github.com/seebom-labs/BOMHort/issues/392), [#344](https://github.com/seebom-labs/BOMHort/issues/344)-I | `mcp.*`, `existingConfigMap`, `seedJob` removed, ClickHouse image pin, `apiGateway.queryLimits.*` | ✅ shipped (**pre**, Helm values) |
+| — | [#412](https://github.com/seebom-labs/BOMHort/issues/412), [#266](https://github.com/seebom-labs/BOMHort/issues/266) | `cve_id` + `aliases` on findings; CSV export endpoint | ✅ shipped (**pre**, API) |
+| — | [#411](https://github.com/seebom-labs/BOMHort/issues/411) | `remediation-policy.json`; derived `due_date`/`overdue`, no storage | **pre** (v0.9.0, values) |
+| — | [#141](https://github.com/seebom-labs/BOMHort/issues/141), [#62](https://github.com/seebom-labs/BOMHort/issues/62) | CRA readiness score; report bundle | **pre** (v1.0.0, API) |
+| `027_add_vulnerability_cvss_cwe` | [#408](https://github.com/seebom-labs/BOMHort/issues/408), [#409](https://github.com/seebom-labs/BOMHort/issues/409) | CVSS score/vector/version and CWE IDs on `vulnerabilities` | **pre** (v0.9.0) |
+| `028_create_kev_catalog` | [#410](https://github.com/seebom-labs/BOMHort/issues/410) | New table | **pre** (v0.9.0) |
+| `029_create_epss_scores` | [#64](https://github.com/seebom-labs/BOMHort/issues/64) | New table | **pre** (v0.9.0) |
+| `030_add_vex_action_statement_timestamp` | [#413](https://github.com/seebom-labs/BOMHort/issues/413) | `ADD COLUMN action_statement_timestamp` on `vex_statements` | **pre** (v0.9.0) |
+| `031_create_vulnerability_resolutions` | [#7](https://github.com/seebom-labs/BOMHort/issues/7) | New table | **pre** (v1.0.0, stretch) |
+| `032_create_crypto_libraries` | [#419](https://github.com/seebom-labs/BOMHort/issues/419) | New table (or MV over `sbom_packages`) | **pre** (v1.0.0) |
+| `03x_create_package_index_mv` | [#344](https://github.com/seebom-labs/BOMHort/issues/344)-C/D/E | MV + skip indexes | post |
+| `03x_create_upload_jobs` | [#336](https://github.com/seebom-labs/BOMHort/issues/336) | New table | post |
+| `03x_create_attestations` | [#143](https://github.com/seebom-labs/BOMHort/issues/143) | New table | post |
+| `03x_create_crypto_assets`, `03x_create_crypto_compliance` | [#415](https://github.com/seebom-labs/BOMHort/issues/415), [#417](https://github.com/seebom-labs/BOMHort/issues/417) | New tables | post (v1.1.0) |
+| `03x_*` | [#61](https://github.com/seebom-labs/BOMHort/issues/61), [#82](https://github.com/seebom-labs/BOMHort/issues/82), [#255](https://github.com/seebom-labs/BOMHort/issues/255), [#60](https://github.com/seebom-labs/BOMHort/issues/60) | New tables | post |
+| — | [#268](https://github.com/seebom-labs/BOMHort/issues/268) | Operator swap | **v2.0** |
 
 ---
 
 ## Dependency Graph
 
 ```text
-#256 (Fidelity capture) ──┬── #255 (Enriched export + re-sign)
-                          ├── makes #138/#332/#334 back-fillable
-                          └── follow-up hook in #135 (Upload)
+PRE-1.0 contract:
+#398 ✅ ──┬── #58 ✅ (Aggregated SBOM View)                      v0.8.0
+          └── #399 ✅ (MCP: get_project) ── post-1.0: write tools
 
-#332 (source_repo) ──┐
-#335 (latest VEX)  ──┼── #338 Epic ── #336 (idempotent upload) ── #333 (since/cursor) ── #337 (webhooks)
-#334 (provenance)  ──┘                                            └── #334 UI badge
+REGISTER (#414):
+#412 ✅ (cve_id/aliases) ── #410 (KEV, matched by alias) ──┐
+#408 (CVSS) ─────────────────────────────────────────────┼── #411 (SLA due date; KEV due date overrides) ──┐
+#409 (CWE) ──────────────────────────────────────────────┤                                                  ├── #141 (CRA score)  v1.0.0
+#64  (EPSS) ─────────────────────────────────────────────┤                                                  ├── #62  (report bundle)
+#413 (VEX action statement) ─────────────────────────────┘                                                  └── #7   (MTTR)
+#266 ✅ (CSV) ── grows with every row above ── #62
 
-#131 (Cluster) ── #132/#133 ── #177 (badge) ── #267 (filter) ── #176 (Cluster Picker)
-              └── #138 (Namespace) ── #140 (Workload Summary) ── #141 (CRA Dashboard)
-                                                                     ↑
-#57 (Project column) ── #57 (policies) ── #58 (Aggregated View)     #143 (Witness) ──┘
-                                                                     #62 (Reports) ─┘
-                                                                        ↑
-                                                                     #266 (CSV)
+CRYPTO (#420):
+#419 (library inventory, SBOM-only)                         v1.0.0
+#415 (CBOM ingest) ── #416 (inventory) ── #417 (policy) ── #418 (PQC)   v1.1.0
+                                                 └── #409 (CWE-327 filter on the register)
 
-#60 (OSV Mirror) ── standalone
-#64 (EPSS) ── extends cve-refresher
-#61 (Scorecard), #82 (Lottery) ── extend internal/github
-#254 ── informs #255 · #268 ── v2.0 candidate
+VEXVIPER (#338):
+#355 ── #336 (idempotent upload) ── #333 (since/cursor) ── #337 (webhooks) ── #334 UI
+
+FLEET:
+#131 ── #132/#133 ── #177 ── #267 ── #176
+     └── #138 ── #140 ──┐
+#143 (Witness) ─────────┴── additional #141 inputs (v1.1.0)
+
+#60 (OSV/KEV/EPSS mirror) ── standalone
+#61, #82 ── extend internal/github        #254 ── informs #255        #268 ── v2.0
 ```
 
 ---
 
-## Prioritization Philosophy
+## Prioritization
 
-### One migration wave before 1.0
-After the freeze we can still add columns and tables — but we can never recover data we didn't capture. #256 is the only truly irrecoverable item; the other columns are cheap but their *ingestion* contract should be fixed so producers can rely on it. One wave means operators run migrations once.
+### Why the CRA moved into 1.0
+The reporting obligation is **in force**, and its 24-hour clock for actively exploited vulnerabilities is exactly what KEV status (#410) makes visible. Customers ask for a register *now*, column by column. Every register item is additive, so this does not break the back-fill rule — it is pre-1.0 because 1.0 is the release adopters evaluate against the CRA.
 
-### VEXViper before analytics
-Automated VEX turns a wall of CVEs into a triaged queue. Every analytics feature is more useful once `not_affected` noise is gone. The sidecar exists today; BOMHort-side gaps are the bottleneck.
+### Why three releases instead of one
+One milestone with 21 issues and a tag at the end slips. v0.8.0 kept its October date, v0.9.0 is the self-contained register, and v1.0.0 adds the score on top with a December soak.
 
-### CRA in 2027 H1
-#141 needs #140, #143 and #62 first. Shipping in H1 2027 still gives adopters ~9 months before the CRA's full conformity obligations (December 2027).
+### Why VEXViper after the register
+The register is what VEX statements are written *against*: #413 fixes what a statement records, #411 defines what "open" means, #410/#64 define what to triage first.
 
 ### Cluster vs. namespace vs. project
 
@@ -264,15 +270,19 @@ Automated VEX turns a wall of CVEs into a triaged queue. Every analytics feature
 | `namespace` | Which team boundary inside the cluster? | `payments` | 10–500 |
 | `project` | What is it / who owns it? | `payment-service` | 50–5000 |
 
-All three are `LowCardinality(String) DEFAULT ''` columns, none in `ORDER BY`.
+All three are `LowCardinality(String) DEFAULT ''` columns, none in `ORDER BY`. `tags` label projects across these dimensions; they do not replace them.
 
 ---
 
 ## Non-Goals
 
 - ❌ Custom Kubernetes Operator (Helm + ClickHouse Operator)
-- ❌ In-tree VEX generation / LLM calls (stays in the VEXViper sidecar)
-- ❌ Write APIs for license exceptions (frontend is public)
+- ❌ In-tree VEX generation / LLM calls (stays in the VEXViper sidecar; the MCP server is a transport)
+- ❌ MCP write tools in 1.0 (read-only by design)
+- ❌ Write APIs for policies or exceptions — license, remediation, crypto (frontend is public)
+- ❌ Per-finding manual status or due dates (status from VEX, due dates from policy)
+- ❌ CBOM generation or crypto scanning (BOMHort consumes CBOMs)
+- ❌ CRA reporting to ENISA/CSIRTs (BOMHort tells you *what* and *when*; filing is your process)
 - ❌ Multi-repo split (monorepo is a hard constraint)
 - ❌ Real-time streaming (batch + webhooks is sufficient)
 - ❌ RBAC/multi-tenancy (auth is binary for now)
@@ -283,7 +293,6 @@ All three are `LowCardinality(String) DEFAULT ''` columns, none in `ORDER BY`.
 
 ## Contributing
 
-Want to pick up an issue from the roadmap? Check the [Project Board](https://github.com/orgs/seebom-labs/projects/1) for items in the **Todo** column. Issues labeled `help wanted` or `good first issue` — currently [#177](https://github.com/seebom-labs/BOMHort/issues/177), [#266](https://github.com/seebom-labs/BOMHort/issues/266), [#267](https://github.com/seebom-labs/BOMHort/issues/267) — are especially good for new contributors.
+Want to pick up an issue from the roadmap? Check the [Project Board](https://github.com/orgs/seebom-labs/projects/1) for items in the **Todo** column. Issues labeled `help wanted` or `good first issue` — for example #267 — are especially good for new contributors.
 
 See [Development Guide](/docs/development/) for setup instructions.
-

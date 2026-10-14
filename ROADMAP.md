@@ -18,7 +18,7 @@ The roadmap is organised around one hard deadline — the **v1.0.0 schema and AP
 4. **v1.1.0 — Automation, Fleet & Cryptography (Apr 2027):** VEXViper epic #338, fleet views, OSV mirror, attestations #143, and the CBOM block #420 (#415–#418).
 5. **v1.2.0 — Analytics (Jul 2027):** Scorecard, Lottery Factor, SBOM diff, tree view, blast radius, enriched export.
 
-Two rules drive sequencing. The old one still holds: **if it can't be back-filled, it lands before 1.0; if it's additive, it lands after** — the register work is additive, it lands before 1.0 for *market* reasons, not contract reasons, and the schema register below says so per row. The new one: **issues raised by the consumer side ship first** — @jeefy's #398 (✅ v0.7.x) and #399 open every release they appear in, because they are the questions an external consumer of the contract actually asked.
+Two rules drive sequencing. The old one still holds: **if it can't be back-filled, it lands before 1.0; if it's additive, it lands after** — the register work is additive, it lands before 1.0 for *market* reasons, not contract reasons, and the schema register below says so per row. The new one: **issues raised by the consumer side ship first** — @jeefy's #398 (✅ v0.8.0) and #399 open every release they appear in, because they are the questions an external consumer of the contract actually asked.
 
 > **Re-plan 2026-09-25.** Triggered by two customer security questionnaires
 > (vulnerability register incl. CVE/CWE/CVSS/EPSS/KEV/remediation/due date → **#414**;
@@ -53,12 +53,12 @@ Two rules drive sequencing. The old one still holds: **if it can't be back-fille
 | ~~#37~~ | ~~Version Skew Detection~~ | ✅ PRs #103, #126. |
 | ~~#132~~ / ~~#133~~ | ~~Cluster listing + detail endpoints~~ | ✅ `GET /api/v1/clusters`, `/clusters/{name}/{stats,sboms}`. |
 | ~~#135~~ | ~~SBOM Upload (Push Model)~~ | ✅ `POST /api/v1/sboms/upload` (auth-gated, S3 or `pushed/` dir). |
-| ~~#398~~ | ~~Project-centric read model~~ | ✅ v0.7.x (#401): `GET /api/v1/projects/{name}` + sub-resources, de-duplicated counts, project identity rule (`projectKeyExpr`) is contract. |
+| ~~#398~~ | ~~Project-centric read model~~ | ✅ v0.8.0 (#401, after v0.7.1): `GET /api/v1/projects/{name}` + sub-resources, de-duplicated counts, project identity rule (`projectKeyExpr`) is contract. |
 | #136 | Enhanced CORS | 🟡 **Functionally done** — `POST` on the upload route, `X-API-Key`/`X-Service-Token`/`X-Filename` headers, configurable origins. Remaining scope (`CORS_ALLOW_CREDENTIALS`, configurable methods/headers) is additive → v1.1.0. |
 
 **Delivered beyond the roadmap:** Global Search (`GET /api/v1/search`), Package Search + detail page, in-toto attestation unwrapping, protobom parsing backend, license resolution via GitHub + npm + NuGet registries with license-text classification (`internal/licensetext`), SPDX license *expression* evaluation (#402), SPDX file-level filtering, dark mode, white-label theming, Prow chat-ops (#405).
 
-**Schema wave `014`–`022` — complete** (`023` project parent and `024` license sources followed; the v0.9.0 register work starts at `025`). `document_store` (#256), `namespace`/`project` columns (#138, #57), `source_repo`/`source_ref` (#332), VEX provenance (#334), VEX SBOM scope (#350), OSV aliases (`019`), VEX `product_ref` (`020`), `document_version` (`021`), `tags` (#357). Every column the post-1.0 features were known to need exists; the register work below adds columns and tables of its own and is listed in the Schema Change Register.
+**Schema wave `014`–`022` — complete** (`023` project parent, `024` license sources, `025` dependency depth and `026` job retry-after followed in v0.8.0; the v0.9.0 register work starts at `027`). `document_store` (#256), `namespace`/`project` columns (#138, #57), `source_repo`/`source_ref` (#332), VEX provenance (#334), VEX SBOM scope (#350), OSV aliases (`019`), VEX `product_ref` (`020`), `document_version` (`021`), `tags` (#357). Every column the post-1.0 features were known to need exists; the register work below adds columns and tables of its own and is listed in the Schema Change Register.
 
 ---
 
@@ -91,11 +91,11 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 
 | # | Issue | Migration | Notes |
 |---|-------|-----------|-------|
-| **#408** | CVSS score, vector, version (not only the bucket); v4 support | `025` `ADD COLUMN cvss_score, cvss_vector, cvss_version` on `vulnerabilities` | Score is already computed in `osvutil` and discarded. Backfill from `osv_json`. |
-| **#409** | CWE ids from OSV `database_specific.cwe_ids` | `025` `ADD COLUMN cwe_ids Array(String)` (same migration) | Backfill from `osv_json`. Enables CRA/crypto CWE filters (CWE-327/-326/-328/-295/-916). |
-| **#410** | CISA **KEV** catalogue status | `026_create_kev_catalog` (new table, keyed by CVE) | Daily feed in `cve-refresher`; matched via `aliases`. **CRA Art. 14: actively exploited vulnerabilities must be reported within 24 h** — KEV is the public signal for "actively exploited". Brings an externally set `dueDate`. |
-| **#64** | **EPSS** scores | `027_create_epss_scores` (new table, keyed by CVE) | **Pulled forward from v1.2.0.** Same shape as #410 (daily bulk → side table); the two share refresher plumbing and the triage rule *KEV ∨ EPSS ≥ x ∨ CVSS ≥ 9*. |
-| **#413** | VEX action statement as remediation record; `action_statement_timestamp` | `028` `ADD COLUMN action_statement_timestamp` on `vex_statements` | Surfaces what is stored; the remediation *status* column of the register. |
+| **#408** | CVSS score, vector, version (not only the bucket); v4 support | `027` `ADD COLUMN cvss_score, cvss_vector, cvss_version` on `vulnerabilities` | Score is already computed in `osvutil` and discarded. Backfill from `osv_json`. |
+| **#409** | CWE ids from OSV `database_specific.cwe_ids` | `027` `ADD COLUMN cwe_ids Array(String)` (same migration) | Backfill from `osv_json`. Enables CRA/crypto CWE filters (CWE-327/-326/-328/-295/-916). |
+| **#410** | CISA **KEV** catalogue status | `028_create_kev_catalog` (new table, keyed by CVE) | Daily feed in `cve-refresher`; matched via `aliases`. **CRA Art. 14: actively exploited vulnerabilities must be reported within 24 h** — KEV is the public signal for "actively exploited". Brings an externally set `dueDate`. |
+| **#64** | **EPSS** scores | `029_create_epss_scores` (new table, keyed by CVE) | **Pulled forward from v1.2.0.** Same shape as #410 (daily bulk → side table); the two share refresher plumbing and the triage rule *KEV ∨ EPSS ≥ x ∨ CVSS ≥ 9*. |
+| **#413** | VEX action statement as remediation record; `action_statement_timestamp` | `030` `ADD COLUMN action_statement_timestamp` on `vex_statements` | Surfaces what is stored; the remediation *status* column of the register. |
 | **#411** | Remediation SLA policy → policy-derived `due_date`, `overdue`, `remediation_status` | none (computed at query time from `remediation-policy.json`) | The *estimated resolution date* column. Config-driven like `license-policy.json`; KEV due date overrides. No write API — public frontend. |
 | **#414** | Umbrella: docs page "Using BOMHort as a vulnerability register", `last_refreshed_at` on export and dashboard, #266 column list finalised | — | Closes when the row above is complete. |
 
@@ -106,9 +106,9 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 | # | Issue | Type | Notes |
 |---|-------|------|-------|
 | **#141** | **CRA compliance dashboard** — readiness score per project/cluster | New endpoint + UI, no migration | **Moved from v1.2.0 and re-scoped.** The 2026-09-24 plan made it wait for #140 (workloads), #143 (attestations) and #62. It no longer does: the score is computed from what v0.9.0 stores — SBOM coverage per project, register completeness (CVSS/CWE present), open KEV findings, overdue findings (#411), VEX coverage, refresh age. #140/#143 become *additional inputs* in v1.1.0, not prerequisites. |
-| **#7** | CVE fix time (MTTR) per project | `029_create_vulnerability_resolutions` (new table) | **Moved from v1.2.0.** CRA "remediate without delay" needs the backwards-looking number next to #411's forward-looking one. Detection in `parsing-worker` (finding disappears between versions) and on VEX `fixed`/`not_affected`. *Stretch: if the December soak needs the time, #7 drops to v1.1.0 — the table is additive.* |
+| **#7** | CVE fix time (MTTR) per project | `031_create_vulnerability_resolutions` (new table) | **Moved from v1.2.0.** CRA "remediate without delay" needs the backwards-looking number next to #411's forward-looking one. Detection in `parsing-worker` (finding disappears between versions) and on VEX `fixed`/`not_affected`. *Stretch: if the December soak needs the time, #7 drops to v1.1.0 — the table is additive.* |
 | **#62** | Auditor report bundle | Endpoint | **Moved from v1.1.0.** 1.0 scope: CSV + JSON bundle per project/fleet with a manifest (`sha256`, `generated_at`, `last_refreshed_at`, policy versions). **PDF only after the `gofpdf` vs `pdfcpu` decision** — not a 1.0 blocker. |
-| **#419** | Cryptographic **library** inventory from existing SBOMs (`crypto-libraries.json`, PURL match) | `030_create_crypto_libraries` (new table) | New. Works on every SBOM already ingested, no CBOM needed; first defensible answer to "cryptographic inventory" (#420) and the CRA "state-of-the-art encryption" evidence. Small. The CBOM block stays in v1.1.0. |
+| **#419** | Cryptographic **library** inventory from existing SBOMs (`crypto-libraries.json`, PURL match) | `032_create_crypto_libraries` (new table) | New. Works on every SBOM already ingested, no CBOM needed; first defensible answer to "cryptographic inventory" (#420) and the CRA "state-of-the-art encryption" evidence. Small. The CBOM block stays in v1.1.0. |
 | **#145** | Versioned documentation | Docs infra | Must ship **with** the tag. |
 | — | Migration guide + `values.yaml` stability review | Process | Covers every new key since v0.7: `mcp.*` (#399), `existingConfigMap` (#397), `seedJob` **removed** (#391), `apiGateway.queryLimits.*` (#344-I), image pin (#392), `kev.*`/`epss.*` feed URLs and skips (#410, #64), `remediationPolicy.*` (#411), `cryptoLibraries.*` (#419). |
 | — | `AGENTS.md` dependency list | Docs | 5 → 6 direct dependencies (`modelcontextprotocol/go-sdk >= v1.4.1`). No further dependency for the register: KEV/EPSS are HTTP + JSON/CSV, stdlib. |
@@ -227,7 +227,9 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 |-----------|-------|--------|:------------:|---|
 | `012`–`022` | #131 … #357 | see Phase 1 | ✅ shipped | contract |
 | `023_add_project_parent` ✅ | project groups | `ADD COLUMN parent` on `sboms`/`ingestion_queue`, `root_purl`, `supplier` on `sboms` | ✅ shipped | market (additive) |
-| `024_add_package_license_sources` | #439 | `ADD COLUMN package_license_sources Array(LowCardinality(String)) DEFAULT []` on `sbom_packages` | **pre** (v0.8.0) | market (additive; existing rows read as `unrecorded` until re-scan) |
+| `024_add_package_license_sources` ✅ | #439 | `ADD COLUMN package_license_sources Array(LowCardinality(String)) DEFAULT []` on `sbom_packages` | ✅ shipped (v0.8.0) | market (additive; existing rows read as `unrecorded` until re-scan) |
+| `025_add_dependency_depth` ✅ | dependency scope | `ADD COLUMN package_depths` on `sbom_packages`, `dependency_depth` on `vulnerabilities` (scope is derived from it) — direct vs. transitive on CVE and license views | ✅ shipped (v0.8.0) | market (additive; old rows read as `unknown` until re-scan) |
+| `026_add_queue_retry_after` ✅ | GitHub rate limit | `ADD COLUMN retry_after` on `ingestion_queue` — a job hitting the GitHub rate limit is parked, not resolved with a guess | ✅ shipped (v0.8.0) | correctness (additive) |
 | — (query only) ✅ | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | ✅ | contract |
 | — (DTO only) ✅ | #177 | `cluster` in `SBOMListItem` | ✅ | contract |
 | — (query + DTO) ✅ | #398 | De-duplicated project counts; `projectKeyExpr` is contract | ✅ | contract |
@@ -236,15 +238,15 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | — (parser only) ✅ | #355 | `documentNamespace` fallback in `extractSourceRepo` | **pre** (v0.8.0) | makes #332 true |
 | — (DTO + query) ✅ | #412 | `cve_id`, `aliases` on finding DTOs; lookups by alias | **pre** (v0.8.0) | market (additive) |
 | — (endpoint) ✅ | #266 | CSV export | **pre** (v0.8.0) | market (additive) |
-| `025_add_vulnerability_cvss_cwe` | #408, #409 | `ADD COLUMN cvss_score Float32, cvss_vector String, cvss_version LowCardinality(String), cwe_ids Array(String)` on `vulnerabilities` | **pre** (v0.9.0) | market (additive; backfill from `osv_json`) |
-| `026_create_kev_catalog` | #410 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
-| `027_create_epss_scores` | #64 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
-| `028_add_vex_action_statement_timestamp` | #413 | `ADD COLUMN action_statement_timestamp` on `vex_statements` | **pre** (v0.9.0) | market — *but* automated VEX producers won't re-send, so capture early |
+| `027_add_vulnerability_cvss_cwe` | #408, #409 | `ADD COLUMN cvss_score Float32, cvss_vector String, cvss_version LowCardinality(String), cwe_ids Array(String)` on `vulnerabilities` | **pre** (v0.9.0) | market (additive; backfill from `osv_json`) |
+| `028_create_kev_catalog` | #410 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
+| `029_create_epss_scores` | #64 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
+| `030_add_vex_action_statement_timestamp` | #413 | `ADD COLUMN action_statement_timestamp` on `vex_statements` | **pre** (v0.9.0) | market — *but* automated VEX producers won't re-send, so capture early |
 | — (query + config) | #411 | `remediation-policy.json`; derived fields, no storage | **pre** (v0.9.0) | market (values: `remediationPolicy.*`) |
 | — (endpoint + UI) | #141 | CRA readiness score | **pre** (v1.0.0) | market |
-| `029_create_vulnerability_resolutions` | #7 | New table | **pre** (v1.0.0, stretch) | market (additive) |
+| `031_create_vulnerability_resolutions` | #7 | New table | **pre** (v1.0.0, stretch) | market (additive) |
 | — (endpoint) | #62 | Report bundle (CSV + JSON + manifest) | **pre** (v1.0.0) | market |
-| `030_create_crypto_libraries` | #419 | New table (or MV over `sbom_packages`) | **pre** (v1.0.0) | market (additive; values: `cryptoLibraries.*`) |
+| `032_create_crypto_libraries` | #419 | New table (or MV over `sbom_packages`) | **pre** (v1.0.0) | market (additive; values: `cryptoLibraries.*`) |
 | `03x_create_package_index_mv` | #344-C/D/E | MV + skip indexes | post | additive |
 | `03x_create_upload_jobs` | #336 | New table | post | additive |
 | `03x_create_attestations` | #143 | New table | post | additive |

@@ -6,7 +6,7 @@
 
 ## TL;DR
 
-Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (CronJob Ingestion-Watcher, scalable Parsing-Workers, stateless API-Gateway, background CVE-Refresher). ClickHouse as the analytical database with MergeTree tables and array-based dependency storage. Angular frontend with virtual scrolling, OnPush change detection, full-text search, dark-mode toggle, and custom CSS theming. The SPDX files already exist as 1000+ files in the repository — no external scanner needed. Job coordination via a ClickHouse queue table (no NATS/Redis). **VEX support (OpenVEX)** enables vendor-side vulnerability assessment. **Cross-project search** for CVE impact, license violations, and dependency statistics. **License policy + exceptions** fully externalized as config files (no rebuild needed). **CVE Refresher** incrementally checks all known PURLs against OSV for newly disclosed CVEs — without re-scanning all SBOMs.
+Kubernetes-native SBOM platform as a monorepo. Go backend with four binaries (CronJob Ingestion-Watcher, scalable Parsing-Workers, stateless API-Gateway, background CVE-Refresher). ClickHouse (supported floor: 24.8 LTS, pinned by digest in the chart; CI also tests 24.12, #392) as the analytical database with MergeTree tables and array-based dependency storage. Angular frontend with virtual scrolling, OnPush change detection, full-text search, dark-mode toggle, and custom CSS theming. The SPDX files already exist as 1000+ files in the repository — no external scanner needed. Job coordination via a ClickHouse queue table (no NATS/Redis). **VEX support (OpenVEX)** enables vendor-side vulnerability assessment. **Cross-project search** for CVE impact, license violations, and dependency statistics. **License policy + exceptions** fully externalized as config files (no rebuild needed). **CVE Refresher** incrementally checks all known PURLs against OSV for newly disclosed CVEs — without re-scanning all SBOMs.
 
 ---
 
@@ -117,7 +117,7 @@ bomhort/
         ├── cronjob-ingestion-watcher.yaml  # git-sync initContainer
         ├── cronjob-cve-refresher.yaml      # Daily CVE refresh (configurable)
         ├── job-migrate.yaml                # DB migration job (runs at install/upgrade)
-        ├── job-seed-sboms.yaml             # Git-clone seed job for large SBOM repos
+        ├── validate-removed-values.yaml    # Fails the render on removed values (seedJob, #391)
         ├── pvc-sbom-data.yaml              # PVC for SBOM storage
         ├── service-api-gateway.yaml
         ├── service-mcp-server.yaml         # Only rendered for mcp.transport=http

@@ -39,7 +39,7 @@ helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort \
 
 | File | SBOM Source | Best For |
 |------|-------------|----------|
-| `values-production.yaml` | **S3 buckets** (default) or seed job (PVC fallback) | Production, large-scale ingestion |
+| `values-production.yaml` | **S3 buckets** (default) or a pre-populated PVC (fallback) | Production, large-scale ingestion |
 | `values-minimal.yaml` | **S3 buckets** (default) or git-sync (PVC fallback) | Small repos (< 1 GB), CI/staging |
 | `values-headless.yaml` | S3 buckets | API-only deployments without the UI |
 | `values-cncf.yaml` | S3 bucket (CNCF project SBOMs) | The public CNCF catalogue instance: no auth, CNCF branding, `licensePolicy.expressionMode: permissive-wins`, foundation exceptions via `--set-file` |
@@ -91,42 +91,7 @@ Supported file patterns: `*.spdx.json`, `*_spdx.json`, `*.openvex.json`, `*.vex.
 
 Nested keys like `k3s-io/helm-controller/0.16.14/k3s-io_helm-controller_0_16_14_spdx.json` are fully supported.
 
-### Method 2: Seed Job (alternative, for environments without S3)
-
-Used by `values-production.yaml` when `s3.buckets` is empty.
-
-A Kubernetes Job runs once at install time and:
-1. Does a **shallow `git clone`** of your SBOM repo into a temp directory
-2. **Flat-copies** all `.spdx.json` and `.openvex.json` files into the PVC (flattening nested directory paths into filenames to avoid collisions)
-
-License exceptions are configured separately through `licenseExceptions.custom`.
-No approvals are downloaded or enabled by default. See the
-[inactive structure example and migration guide](../license-exceptions/README.md).
-
-```yaml
-s3:
-  buckets: ""              # disable S3
-
-gitSync:
-  enabled: false           # disable git-sync
-
-seedJob:
-  sbomRepo: "https://github.com/my-org/sboms.git"
-  sbomBranch: main
-
-sbomSource:
-  storageSize: 20Gi        # must be large enough for the full repo
-```
-
-**Refreshing:** Delete the seed job and re-run Helm upgrade:
-```bash
-kubectl delete job -n bomhort -l app.kubernetes.io/component=seed-sboms
-helm upgrade bomhort deploy/helm/bomhort/ -n bomhort -f my-values.yaml
-```
-
-> **Note:** Requires a `ReadWriteOnce` PVC. All pods are automatically co-scheduled on the same node via pod affinity.
-
-### Method 3: git-sync (alternative, for small repos)
+### Method 2: git-sync (alternative, for small repos)
 
 Used by `values-minimal.yaml` when `s3.buckets` is empty.
 
@@ -145,11 +110,16 @@ gitSync:
   timeout: 120             # seconds for git operations
 ```
 
-**⚠️  Limitation:** git-sync struggles with very large repos (multi-GB). Use S3 or the seed job for repos in the multi-GB range.
+**⚠️  Limitation:** git-sync struggles with very large repos (multi-GB). Use S3 or a pre-populated PVC for repos in the multi-GB range.
 
-### Method 4: Pre-populated PVC (manual / CI pipeline)
+### Method 3: Pre-populated PVC (manual / CI pipeline)
 
-If your SBOMs are not in S3 or a Git repo, you can populate the PVC yourself:
+Used by `values-production.yaml` when `s3.buckets` is empty. With git-sync
+disabled the chart creates the PVC empty; populating it is up to you (a CI job,
+`kubectl cp`, or push uploads with `sbomSource.writable`). Earlier charts
+shipped a `seedJob` for this, but its clone had been disabled since March 2026
+and it only ever waited; it was removed in 0.8.0 (#391), and values that still
+set `seedJob` now fail the render.
 
 ```yaml
 s3:

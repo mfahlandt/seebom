@@ -1,0 +1,12 @@
+{{- /*
+Values that were removed from the chart. Rendering refuses them instead of
+silently ignoring them, so an upgrade surfaces the change rather than leaving
+an installation that quietly behaves differently than its values say.
+*/ -}}
+{{- $seedJob := .Values.seedJob | default dict }}
+{{- if $seedJob.cncfExceptionsURL }}
+{{- fail "seedJob.cncfExceptionsURL is no longer supported: remove it and provide reviewed rules via licenseExceptions.custom or --set-file licenseExceptions.custom=./my-exceptions.json" }}
+{{- end }}
+{{- if $seedJob }}
+{{- fail "seedJob was removed in chart 0.8.0 (#391): the job never cloned anything — its git clone had been commented out since March 2026 and it waited forever for a file nothing created. Remove seedJob from your values and ingest via s3.buckets (recommended), gitSync.enabled=true, or by populating the sbomSource PVC yourself." }}
+{{- end }}

@@ -407,6 +407,13 @@ Deploy a chart revision and API/worker images that include the fixes, and remove
 does **not** re-process existing SBOMs; plan that separately to refresh stored
 compliance results after changing or revoking approvals.
 
+To keep a large reviewed file out of the Application, set
+`licenseExceptions.existingConfigMap` (and/or `licensePolicy.existingConfigMap`)
+to a ConfigMap managed by a second source; the chart then mounts it instead of
+rendering its own. It is mutually exclusive with `custom`, and content changes
+need a manual rollout because the chart cannot hash a ConfigMap it does not
+render. See the [multi-source example](content/docs/deployment/_index.md#reviewed-rules-from-their-own-source-existingconfigmap).
+
 ---
 
 ## 4. License Policy – Defining Permissive vs. Copyleft

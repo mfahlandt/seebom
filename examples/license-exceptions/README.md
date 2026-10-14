@@ -61,6 +61,12 @@ unchanged values do not trigger extra rollouts. Manage approvals in Git, not by
 editing the live ConfigMap. An Argo sync does not re-process existing SBOMs;
 the migration and re-scan requirements below still apply.
 
+For a large reviewed file (such as the CNCF foundation exceptions), keep it out
+of the Application: manage it as its own ConfigMap from a second source and set
+`licenseExceptions.existingConfigMap` instead of `custom`. Content changes then
+need a manual restart of both Deployments; see the
+[multi-source example](../../docs/content/docs/deployment/_index.md#reviewed-rules-from-their-own-source-existingconfigmap).
+
 ## Matching contract
 
 - Both `blanketExceptions` and `exceptions` must be JSON arrays, including when

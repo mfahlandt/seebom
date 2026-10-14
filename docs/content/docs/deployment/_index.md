@@ -649,6 +649,55 @@ Do not edit the managed ConfigMap with `kubectl edit` as a normal configuration
 workflow: the next Argo sync or self-heal can overwrite the change. Git is the
 source of truth for the exceptions and their review history.
 
+#### Reviewed rules from their own source: `existingConfigMap`
+
+Inlining a large reviewed file — the CNCF foundation exceptions are ~180 KB —
+into an Application turns every upstream refresh into a huge diff in an
+unrelated manifest. Instead, let a second source manage the ConfigMap and point
+the chart at it:
+
+```yaml
+spec:
+  sources:
+    - repoURL: ghcr.io/seebom-labs/bomhort/charts
+      chart: bomhort
+      targetRevision: 0.8.0
+      helm:
+        valuesObject:
+          licenseExceptions:
+            existingConfigMap: license-exceptions   # mutually exclusive with custom
+            # existingConfigMapKey: license-exceptions.json   # default
+          # licensePolicy:
+          #   existingConfigMap: license-policy             # same mechanism
+    - repoURL: https://github.com/your-org/compliance.git
+      targetRevision: main
+      path: bomhort/license-exceptions      # contains the kustomization below
+```
+
+```yaml
+# bomhort/license-exceptions/kustomization.yaml
+configMapGenerator:
+  - name: license-exceptions
+    files:
+      - license-exceptions.json=exceptions.json   # the reviewed file, verbatim
+    options:
+      disableNameSuffixHash: true
+```
+
+The chart then renders no exceptions ConfigMap and mounts the named one, mapping
+`existingConfigMapKey` to `license-exceptions.json`. Setting both `custom` and
+`existingConfigMap` fails the render. If the referenced ConfigMap does not
+exist, the pods do not start: running without the reviewed rules would be worse.
+
+**Rollouts are your responsibility in this mode.** The chart cannot hash a
+ConfigMap it does not render, so the `checksum/license-exceptions` annotation is
+replaced by `bomhort.io/license-exceptions-configmap: <name>` — switching to a
+different ConfigMap rolls both Deployments, editing the content of the same one
+does not. After the ConfigMap changes, restart both Deployments
+(`kubectl rollout restart deployment/<release>-api-gateway deployment/<release>-parsing-worker`)
+and re-process SBOMs as above. If that is too easy to forget, keep using
+`custom`, where Argo rolls the pods for you.
+
 ---
 
 ## 4. License Policy
@@ -668,6 +717,12 @@ Approve an `unapproved` license by adding it to the policy, or per package via `
 kubectl edit configmap bomhort-license-policy
 kubectl rollout restart deployment bomhort-api-gateway bomhort-parsing-worker
 ```
+
+To manage the policy outside the chart, set `licensePolicy.existingConfigMap`
+(key `licensePolicy.existingConfigMapKey`, default `license-policy.json`). It
+works exactly like
+[`licenseExceptions.existingConfigMap`](#reviewed-rules-from-their-own-source-existingconfigmap),
+including the restart after a content change.
 
 ### Compound SPDX expressions
 

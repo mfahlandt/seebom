@@ -128,14 +128,19 @@ has a `/remove-<command> <value>` form.
 | `/assign [@user]`, `/unassign`, `/cc [@user]`, `/uncc` | anyone | Assignees / review requests |
 | `/priority <critical\|high\|medium\|low>` | org members | Exclusive `priority/*` label |
 | `/triage <accepted\|needs-information\|duplicate\|not-planned>` | org members | Exclusive `triage/*` label; clears `needs-triage` |
+| `/kind <feature\|bug\|performance\|docs\|test\|cleanup\|security>` | org members | `kind/*` label — the release-notes category. Normally set automatically from the title; use this to correct it |
 | `/label <name>` | org members | Plain labels: `bug`, `enhancement`, `feature`, `fix`, `docs`, `chore`, `security`, `test`, `skip-changelog`, ... |
 | `/good-first-issue`, `/help` | org members | `good first issue` / `help wanted` |
 | `/close`, `/reopen`, `/retitle <title>`, `/milestone <name>`, `/lock` | org members | Issue / PR housekeeping |
 | `/retest`, `/test <job>`, `/ok-to-test` | org members | Re-run CI |
 
-Release-notes categories in [`.github/release.yml`](.github/release.yml) rely on the plain labels
-(`enhancement`, `feature`, `bug`, `fix`, `docs`, `test`, `chore`, `dependencies`, `ci`,
-`security`), so apply one of them with `/label` before a PR merges.
+Release-notes categories in [`.github/release.yml`](.github/release.yml) are the `kind/*`
+labels. `.github/workflows/kind-label.yml` derives one from the conventional-commit prefix of
+the PR title (`feat:` → `kind/feature`, `fix:` → `kind/bug`, `perf:` → `kind/performance`,
+`docs:` → `kind/docs`, `test:` → `kind/test`, `chore:`/`ci:`/`build:`/`refactor:` →
+`kind/cleanup`), so a well-formed title is all a PR needs. A PR without one carries `needs-kind`
+until `/kind` sets it. The component labels (`documentation`, `backend`, `helm`, …) say *where*
+a change is, not *what* it is, and do not sort release notes.
 
 ### Path-based labels (`OWNERS` instead of `labeler.yml`)
 

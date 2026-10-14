@@ -143,13 +143,19 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) triggers on any `v
    - SPDX SBOM of the repository, signed, with provenance
    - **Pre-release** flag for `-rc`, `-alpha`, `-beta` versions
 
-Release notes are grouped by PR labels (see `.github/release.yml`):
-- 🚀 Features (`enhancement`, `feature`)
-- 🐛 Bug Fixes (`bug`, `fix`)
-- 📖 Documentation (`docs`)
-- 🧪 Tests (`test`)
-- 🔧 Maintenance (`chore`, `dependencies`, `ci`)
-- 🔒 Security (`security`)
+Release notes are grouped by the PR's `kind/*` label (see `.github/release.yml`), which
+`.github/workflows/kind-label.yml` derives from the conventional-commit prefix of the title:
+- 🔒 Security (`kind/security` — set by hand, listed first)
+- 🚀 Features (`kind/feature` ← `feat:`)
+- 🐛 Bug Fixes (`kind/bug` ← `fix:`, `revert:`)
+- ⚡ Performance (`kind/performance` ← `perf:`)
+- 📖 Documentation (`kind/docs` ← `docs:`)
+- 🧪 Tests (`kind/test` ← `test:`)
+- 🔧 Maintenance (`kind/cleanup` ← `chore:`, `ci:`, `build:`, `refactor:`; plus `dependencies`)
+
+Dependabot PRs are excluded. Before cutting a release, check that every PR in the range has a
+`kind/*` label (`gh pr list --state merged --search 'merged:>YYYY-MM-DD -label:kind/feature …'`)
+— a PR without one lands under "Other Changes".
 
 ### 6. Verify the release
 

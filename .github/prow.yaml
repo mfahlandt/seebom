@@ -44,6 +44,33 @@ labels:
         description: Out of scope, or not planned to be worked on
     exclusive: true
 
+  # What a change is, for release notes (.github/release.yml). Derived from the
+  # conventional-commit title by .github/workflows/kind-label.yml; /kind overrides.
+  kind:
+    values:
+      - name: feature
+        color: 'a2eeef'
+        description: New feature or improvement (feat:)
+      - name: bug
+        color: 'd73a4a'
+        description: Bug fix (fix:)
+      - name: performance
+        color: 'fbca04'
+        description: Performance improvement (perf:)
+      - name: docs
+        color: '0075ca'
+        description: Documentation only (docs:)
+      - name: test
+        color: 'bfd4f2'
+        description: Tests only (test:)
+      - name: cleanup
+        color: 'fef2c0'
+        description: Maintenance, CI, refactoring, dependencies (chore:, ci:, build:, refactor:)
+      - name: security
+        color: 'ee0701'
+        description: Security fix or hardening — set by hand, it outranks every other category in release notes
+    exclusive: false
+
   do-not-merge:
     - name: hold
       color: 'e11d21'
@@ -56,7 +83,9 @@ labels:
   # Also the catalogue for labels set by other tooling (dependabot, release.yml, issue
   # templates) so that label-sync keeps their colors and descriptions.
   labels:
-    # ─── Release notes categories (.github/release.yml) ────────────────────
+    # ─── Legacy flat type labels ────────────────────────────────────────────
+    # Release notes sort by kind/* since v0.8.0; these stay for old issues and
+    # for the issue templates. Prefer kind/* on pull requests.
     - name: enhancement
       color: 'a2eeef'
       description: New feature or improvement
@@ -126,6 +155,9 @@ labels:
     - name: needs-triage
       color: 'ededed'
       description: Indicates an issue that has not been triaged yet (no triage/* label)
+    - name: needs-kind
+      color: 'ededed'
+      description: Pull request without a kind/* label — release notes cannot sort it
 
 # Issues without a triage/* label carry needs-triage until a maintainer runs /triage <value>.
 require_matching_label:
@@ -133,6 +165,16 @@ require_matching_label:
     missing_label: needs-triage
     issues: true
     prs: false
+  # Release notes sort by kind/*. The title-derived label normally arrives within a
+  # minute of opening; this catches titles without a conventional prefix.
+  - regexp: ^kind/
+    missing_label: needs-kind
+    issues: false
+    prs: true
+    missing_comment: >-
+      This pull request has no `kind/*` label, so release notes cannot sort it.
+      Give the title a conventional prefix (`feat:`, `fix:`, `perf:`, `docs:`, `test:`, `chore:`)
+      or add one with `/kind feature|bug|performance|docs|test|cleanup|security`.
 
 # Merge gate. OWNERS files exist, so both lgtm and approved are required.
 # The ruleset "Release and Main" (main + release/**) still applies — required status checks,

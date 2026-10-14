@@ -1,0 +1,48 @@
+# Derives the kind/* label from the pull request title so that release notes
+# (.github/release.yml) sort every change by what it is, not by which
+# directories it touched. The OWNERS-derived labels (documentation, ci, helm,
+# backend, ...) describe components; they are not release-note categories.
+#
+# Only the title is read and only a label is written: no checkout, no code
+# from the pull request runs here, which is what makes pull_request_target
+# safe to use. A kind/* label set by hand (or /kind) is never overridden.
+name: Kind label
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened]
+
+permissions: {}
+
+jobs:
+  kind:
+    if: github.repository == 'seebom-labs/BOMHort'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Derive kind/* from the conventional-commit prefix
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ' ') }}
+        run: |
+          set -euo pipefail
+          for l in $LABELS; do
+            case "$l" in kind/*) echo "already has $l — leaving it"; exit 0;; esac
+          done
+          # "feat(api)!: ..." -> "feat"; anything before the first ( ! or :
+          prefix=$(printf '%s' "$TITLE" | sed -E 's/^([A-Za-z]+).*/\1/' | tr '[:upper:]' '[:lower:]')
+          case "$prefix" in
+            feat)                                   kind=feature ;;
+            fix|revert)                             kind=bug ;;
+            perf)                                   kind=performance ;;
+            docs)                                   kind=docs ;;
+            test)                                   kind=test ;;
+            chore|ci|build|refactor|style|deps)     kind=cleanup ;;
+            *) echo "no conventional prefix in '$TITLE' — set it with /kind"; exit 0 ;;
+          esac
+          echo "$TITLE -> kind/$kind"
+          gh pr edit "$NUMBER" --repo "$REPO" --add-label "kind/$kind"

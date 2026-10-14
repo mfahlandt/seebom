@@ -65,7 +65,7 @@ jobs:
         /approve /lgtm /hold /close /reopen /lock /retitle /milestone /remove
         /label /help /good-first-issue /check-required-labels
         /retest /test /ok-to-test
-        /priority /triage
+        /priority /triage /kind
       jobs: lgtm
 
   label-sync:

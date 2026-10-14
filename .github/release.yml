@@ -1,33 +1,40 @@
+# Categories for GitHub's generated release notes (release.yml → generate-notes).
+#
+# Only kind/* labels sort a pull request; a change goes into the first category
+# whose label it carries. kind/* is derived from the conventional-commit title by
+# .github/workflows/kind-label.yml and can be overridden with /kind. The
+# OWNERS-derived component labels (documentation, ci, helm, backend, ...) must
+# not appear here: every feature touches docs/, and listing `documentation` as a
+# category filed the whole v0.8.0-rc.1 feature set under "Documentation".
 changelog:
   categories:
-    - title: "🚀 Features"
-      labels:
-        - enhancement
-        - feature
-    - title: "🐛 Bug Fixes"
-      labels:
-        - bug
-        - fix
-    - title: "📖 Documentation"
-      labels:
-        - documentation
-        - docs
-    - title: "🧪 Tests"
-      labels:
-        - test
-        - testing
-    - title: "🔧 Maintenance"
-      labels:
-        - chore
-        - dependencies
-        - ci
     - title: "🔒 Security"
       labels:
-        - security
+        - kind/security
+    - title: "🚀 Features"
+      labels:
+        - kind/feature
+    - title: "🐛 Bug Fixes"
+      labels:
+        - kind/bug
+    - title: "⚡ Performance"
+      labels:
+        - kind/performance
+    - title: "📖 Documentation"
+      labels:
+        - kind/docs
+    - title: "🧪 Tests"
+      labels:
+        - kind/test
+    - title: "🔧 Maintenance"
+      labels:
+        - kind/cleanup
+        - dependencies
     - title: "Other Changes"
       labels:
         - "*"
   exclude:
     labels:
       - skip-changelog
-
+    authors:
+      - dependabot

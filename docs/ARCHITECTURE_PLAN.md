@@ -181,6 +181,7 @@ ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_state
        ▼
 API Gateway (REST) → 29 Endpoints
        │ HTTP/JSON + CORS + security headers + rate limit + optional auth (Bearer/X-Service-Token, X-API-Key)
+       │ per-query ClickHouse limits (max_execution_time / max_memory_usage / max_threads), gateway only (#344-I)
        ▼
 Angular UI (14 lazy-loaded routes, virtual scrolling, OnPush, dark mode)
        │ Custom CSS theme mountable without Angular rebuild

@@ -105,6 +105,9 @@ cp .env.example .env
 | `SKIP_DEPSDEV_RESOLVE` | `false` | Skip deps.dev fallback license resolution |
 | `SKIP_PACKAGIST_RESOLVE` | `false` | Skip Packagist (Composer) license resolution |
 | `SKIP_PYPI_RESOLVE` | `false` | Skip PyPI license resolution |
+| `CLICKHOUSE_MAX_EXECUTION_TIME` | `30` | API gateway only: seconds one ClickHouse query may run (`0` = unset). See [Deployment → Query limits](/docs/deployment/#query-limits) |
+| `CLICKHOUSE_MAX_MEMORY_USAGE` | `0` | API gateway only: bytes one ClickHouse query may allocate (`0` = unset; Helm default 512 MiB) |
+| `CLICKHOUSE_MAX_THREADS` | `0` | API gateway only: threads per ClickHouse query (`0` = server default) |
 | `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | Classification of compound SPDX expressions: `strict`, `permissive-wins` or `off`. See [Deployment → License Policy](/docs/deployment/#4-license-policy) |
 
 {{% alert title="Recommended: Set GITHUB_TOKEN" color="warning" %}}

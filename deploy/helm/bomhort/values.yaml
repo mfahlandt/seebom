@@ -153,7 +153,15 @@ clickhouse:
     replicasCount: 1
   installation:
     podTemplate:
-      containerImage: docker.io/clickhouse/clickhouse-server:24.8
+      # 24.8 is a ClickHouse LTS line, and that is why the chart ships it
+      # rather than the newer 24.12 used for local development: production
+      # gets the release that keeps receiving fixes. It is the supported
+      # floor. CI runs the query smoke test against this exact image and
+      # against the development version (ci.yml, `query-smoke` matrix), and
+      # deploy/helm/tests/test_clickhouse_version.py fails if they drift
+      # apart (#392). Pinned by digest so a re-pushed tag cannot change what
+      # gets installed.
+      containerImage: docker.io/clickhouse/clickhouse-server:24.8.14.39@sha256:1ffa82edee000a42c09313bd9f1293d94c570aee74babc1b3ca9983a35fa597b
       resources:
         limits:
           cpu: 1000m

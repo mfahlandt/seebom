@@ -200,15 +200,17 @@ Everything that touches `db/migrations/` or a frozen response shape. The authori
 | `021_add_document_version` | — | `ADD COLUMN document_version` on `sboms` | ✅ shipped (**pre**) |
 | `022_add_sbom_tags` | #357 | `ADD COLUMN tags` on `sboms` + `ingestion_queue` | ✅ shipped (**pre**) |
 | `023_add_project_parent` | — | `ADD COLUMN parent` on `sboms`/`ingestion_queue`, `root_purl`, `supplier` on `sboms` (project groups) | ✅ shipped (**pre**) |
-| `024_add_package_license_sources` | [#439](https://github.com/seebom-labs/BOMHort/issues/439) | `ADD COLUMN package_license_sources` on `sbom_packages` — where each license came from or why it is missing ([License Resolution](/docs/license-resolution/)) | **pre** (v0.8.0) |
+| `024_add_package_license_sources` | [#439](https://github.com/seebom-labs/BOMHort/issues/439) | `ADD COLUMN package_license_sources` on `sbom_packages` — where each license came from or why it is missing ([License Resolution](/docs/license-resolution/)) | ✅ shipped (**pre**) |
+| `025_add_dependency_depth` | — | `ADD COLUMN package_depths` on `sbom_packages`, `dependency_depth` on `vulnerabilities` (direct vs. transitive) | ✅ shipped (**pre**) |
+| `026_add_queue_retry_after` | — | `ADD COLUMN retry_after` on `ingestion_queue` (defer jobs on a GitHub rate limit) | ✅ shipped (**pre**) |
 | — | #335 | Row semantics of `/sboms/{id}/vulnerabilities` | ✅ shipped (**pre**, API) |
 | — | #177 | `cluster` in `SBOMListItem` | ✅ shipped (**pre**, API) |
-| `025_add_vulnerability_cvss_cwe` | #408, #409 | CVSS score/vector/version and CWE IDs on `vulnerabilities` | **pre** (v0.9.0) |
-| `026_create_kev_catalog` | #410 | New table | **pre** (v0.9.0) |
-| `027_create_epss_scores` | #64 | New table | **pre** (v0.9.0) |
-| `028_add_vex_action_statement_timestamp` | #413 | `ADD COLUMN action_statement_timestamp` on `vex_statements` | **pre** (v0.9.0) |
-| `029_create_vulnerability_resolutions` | #7 | New table | **pre** (v1.0.0, stretch) |
-| `030_create_crypto_libraries` | #419 | New table (or MV over `sbom_packages`) | **pre** (v1.0.0) |
+| `027_add_vulnerability_cvss_cwe` | #408, #409 | CVSS score/vector/version and CWE IDs on `vulnerabilities` | **pre** (v0.9.0) |
+| `028_create_kev_catalog` | #410 | New table | **pre** (v0.9.0) |
+| `029_create_epss_scores` | #64 | New table | **pre** (v0.9.0) |
+| `030_add_vex_action_statement_timestamp` | #413 | `ADD COLUMN action_statement_timestamp` on `vex_statements` | **pre** (v0.9.0) |
+| `031_create_vulnerability_resolutions` | #7 | New table | **pre** (v1.0.0, stretch) |
+| `032_create_crypto_libraries` | #419 | New table (or MV over `sbom_packages`) | **pre** (v1.0.0) |
 | `03x_create_upload_jobs` | #336 | New table | post |
 | `03x_create_attestations` | #143 | New table | post |
 | `03x_*` | #61, #82, #255, #60 | New tables | post |

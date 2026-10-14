@@ -969,6 +969,13 @@ apiGateway:
     maxThreads: 0               # threads per query (max_threads); 0 = server default
 ```
 
+{{% alert title="New in v0.8.0 — on by default" color="warning" %}}
+Before v0.8.0 the gateway ran every query unbounded. An upgrade turns the limits
+on with the defaults above, so a page that used to take 45 seconds now fails
+with `500` after 30. If you know of slow pages on a large instance, raise the
+limits in your values before upgrading rather than after the first complaint.
+{{% /alert %}}
+
 `0` leaves a setting unset, so the ClickHouse server or user-profile default applies. `maxMemoryUsage` is a plain byte count — `512Mi` fails the render — and the default is half of the chart's 1Gi ClickHouse memory limit: raise it together with `clickhouse.installation.podTemplate.resources.limits.memory`. A query that hits a limit returns `500` to that one caller; everything else keeps working.
 
 Only the gateway is limited. The parsing workers, the CVE refresher and the migration job read the same ClickHouse but get none of these variables: their long inserts and full-table refreshes are the job, not an accident, and a limit sized for interactive pages would make them fail on large instances. If legitimate pages start hitting the limit, scale ClickHouse and raise the limit rather than removing it — and `apiGateway.replicas` adds request capacity, not per-query headroom.

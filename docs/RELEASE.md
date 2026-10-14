@@ -1,6 +1,6 @@
 # BOMHort – Release & Publishing Guide
 
-> **Updated:** 2026-10-01
+> **Updated:** 2026-10-14
 
 ---
 
@@ -13,7 +13,7 @@ All container images are published to **GitHub Container Registry (ghcr.io)**:
 |-------|-------------|
 | `ghcr.io/seebom-labs/bomhort/ingestion-watcher` | CronJob: scans SBOM/VEX files, enqueues jobs |
 | `ghcr.io/seebom-labs/bomhort/parsing-worker` | Stateless worker: parses SBOMs, queries OSV, checks licenses |
-| `ghcr.io/seebom-labs/bomhort/api-gateway` | REST API (25 endpoints) |
+| `ghcr.io/seebom-labs/bomhort/api-gateway` | REST API (37 endpoints) |
 | `ghcr.io/seebom-labs/bomhort/cve-refresher` | CronJob: daily incremental CVE checks against OSV |
 | `ghcr.io/seebom-labs/bomhort/mcp-server` | Read-only MCP server over the REST API (`mcp.enabled`) |
 | `ghcr.io/seebom-labs/bomhort/ui` | Angular frontend (Nginx) |

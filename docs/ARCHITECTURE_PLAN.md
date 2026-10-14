@@ -30,7 +30,7 @@ bomhort/
 │   ├── cmd/
 │   │   ├── ingestion-watcher/main.go   # K8s CronJob
 │   │   ├── parsing-worker/main.go      # SBOM + VEX processor
-│   │   ├── api-gateway/main.go         # REST API (29 endpoints)
+│   │   ├── api-gateway/main.go         # REST API (37 endpoints)
 │   │   ├── cve-refresher/main.go       # Background CVE Refresh CronJob
 │   │   └── mcp-server/                 # Read-only MCP tool surface (#399)
 │   │       ├── main.go                 #   transports: stdio (default) | http
@@ -179,7 +179,7 @@ ClickHouse: sboms, sbom_packages, vulnerabilities, license_compliance, vex_state
        ├── Violations:     sumIf(copyleft|unapproved|unknown) − exceptions (from config file)
        └── Dep Stats:      ARRAY JOIN + count(DISTINCT sbom_id) cross-project
        ▼
-API Gateway (REST) → 29 Endpoints
+API Gateway (REST) → 37 Endpoints
        │ HTTP/JSON + CORS + security headers + rate limit + optional auth (Bearer/X-Service-Token, X-API-Key)
        │ per-query ClickHouse limits (max_execution_time / max_memory_usage / max_threads), gateway only (#344-I)
        ▼

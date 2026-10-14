@@ -17,6 +17,8 @@ import { DonutChartComponent, DonutSegment } from '../../shared/charts/donut-cha
 import { HorizontalBarChartComponent, BarItem } from '../../shared/charts/horizontal-bar-chart.component';
 import { parentSourceLabel } from '../../shared/parent-source';
 import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.component';
+import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
+import { primaryVulnId } from '../../shared/vuln-identity';
 
 type Tab = 'overview' | 'versions' | 'vulns' | 'packages' | 'subprojects';
 
@@ -58,7 +60,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent, ScopeBadgeComponent],
+  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent, ScopeBadgeComponent, VulnAliasesComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="project-detail" *ngIf="detail">
@@ -268,7 +270,10 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
           <div *cdkVirtualFor="let vuln of vulnRows; trackBy: trackByVuln" class="vuln-row">
             <span class="severity-badge" [class]="'sev-' + vuln.severity.toLowerCase()">{{ vuln.severity }}</span>
             <div class="vuln-info">
-              <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: vuln.vuln_id}" class="vuln-id">{{ vuln.vuln_id }}</a>
+              <span class="id-line">
+                <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: vulnLabel(vuln)}" class="vuln-id">{{ vulnLabel(vuln) }}</a>
+                <app-vuln-aliases [vuln]="vuln"></app-vuln-aliases>
+              </span>
               <span class="summary">{{ vuln.summary }}</span>
             </div>
             <span class="vex-badge" *ngIf="vuln.vex_status" [class]="'vex-' + vuln.vex_status">{{ vuln.vex_status | titlecase }}</span>
@@ -460,6 +465,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
     .sev-medium { background: var(--severity-high-bg); color: var(--status-warning); }
     .sev-low { background: var(--bg); color: var(--text-secondary); }
     .vuln-info { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .id-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .vuln-id { font-weight: 600; font-size: 0.8rem; color: var(--accent); text-decoration: none; }
     .summary { color: var(--text-secondary); font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .vex-badge { padding: 2px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600; }
@@ -512,6 +518,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
   `],
 })
 export class ProjectDetailComponent implements OnInit, OnDestroy {
+  readonly vulnLabel = primaryVulnId;
   detail: ProjectDetail | null = null;
   notFound = false;
   requestedName = '';

@@ -17,13 +17,15 @@ import { catchError } from 'rxjs/operators';
 import { licenseSourceTooltip } from '../../shared/license-source';
 import { scopeOf } from '../../shared/dependency-scope';
 import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.component';
+import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
+import { primaryVulnId } from '../../shared/vuln-identity';
 
 type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 
 @Component({
   selector: 'app-sbom-detail',
   standalone: true,
-  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent],
+  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sbom-detail" *ngIf="detail">
@@ -75,9 +77,12 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
           <div *cdkVirtualFor="let vuln of vulns; trackBy: trackByVuln" class="vuln-row">
             <span class="severity-badge" [class]="'sev-' + vuln.severity.toLowerCase()">{{ vuln.severity }}</span>
             <div class="vuln-info">
-              <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: vuln.vuln_id}" class="vuln-id">
-                {{ vuln.vuln_id }}
-              </a>
+              <span class="id-line">
+                <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: vulnLabel(vuln)}" class="vuln-id">
+                  {{ vulnLabel(vuln) }}
+                </a>
+                <app-vuln-aliases [vuln]="vuln"></app-vuln-aliases>
+              </span>
               <span class="summary">{{ vuln.summary }}</span>
             </div>
             <span class="vex-badge" *ngIf="vuln.vex_status" [class]="'vex-' + vuln.vex_status">
@@ -220,9 +225,10 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
           <div *ngFor="let stmt of vexStatements; trackBy: trackByVexStmt" class="vex-row">
             <div class="vex-row-head">
               <span class="vex-status-badge" [class]="'vexs-' + stmt.status">{{ stmt.status | titlecase }}</span>
-              <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: stmt.vuln_id}" class="vex-vuln-id">
-                {{ stmt.vuln_id }}
+              <a [routerLink]="['/cve-impact']" [queryParams]="{vuln: vulnLabel(stmt)}" class="vex-vuln-id">
+                {{ vulnLabel(stmt) }}
               </a>
+              <app-vuln-aliases [vuln]="stmt"></app-vuln-aliases>
               <span class="vex-origin-badge" *ngIf="isAutomated(stmt)" title="Produced by tooling">automated</span>
               <span class="vex-ts">{{ stmt.vex_timestamp | date: 'medium' }}</span>
             </div>
@@ -303,6 +309,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .sev-medium { background: var(--severity-high-bg); color: var(--status-warning); }
     .sev-low { background: var(--bg); color: var(--text-secondary); }
     .vuln-info { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .id-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
     .vuln-id { font-weight: 600; font-size: 0.8rem; color: var(--accent); text-decoration: none; }
     .summary { color: var(--text-secondary); font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .vex-badge { padding: 2px 6px; border-radius: 2px; font-size: 0.6rem; font-weight: 600; }
@@ -479,6 +486,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
   `],
 })
 export class SbomDetailComponent implements OnInit {
+  readonly vulnLabel = primaryVulnId;
   detail: SBOMDetail | null = null;
   vulns: VulnerabilityListItem[] = [];
   vexStatements: VEXStatementItem[] = [];

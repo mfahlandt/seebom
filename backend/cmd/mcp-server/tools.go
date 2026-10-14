@@ -66,7 +66,7 @@ func registerTools(s *mcp.Server, c *apiclient.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_vulnerabilities",
 		Title:       "List vulnerabilities",
-		Description: "List vulnerability findings, instance-wide or scoped to one project. Each finding carries its VEX status, so a finding suppressed as not_affected is visible and labelled rather than hidden, and its dependency_scope (root, direct, transitive, unknown) so a CVE in a library the project pulls in itself reads differently from one buried deep in the tree.",
+		Description: "List vulnerability findings, instance-wide or scoped to one project. Each finding carries its VEX status, so a finding suppressed as not_affected is visible and labelled rather than hidden, and its dependency_scope (root, direct, transitive, unknown) so a CVE in a library the project pulls in itself reads differently from one buried deep in the tree. vuln_id is OSV's id (often GHSA-, GO- or PYSEC-); cve_id is the CVE of the same flaw when one exists, and aliases lists every other name.",
 		Annotations: readOnly("List vulnerabilities"),
 	}, toolListVulnerabilities(c))
 

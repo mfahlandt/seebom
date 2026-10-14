@@ -44,7 +44,7 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
-			v.dependency_depth,
+			v.dependency_depth, v.aliases,
 			ifNull(vx.vex_status, '') AS vex_status,
 			ifNull(vx.vex_justification, '') AS vex_justification,
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
@@ -85,15 +85,17 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		var item dto.VulnerabilityListItem
 		var discoveredAt, vexTimestamp time.Time
 		var depth uint16
+		var aliases []string
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
-			&discoveredAt, &depth, &item.VEXStatus,
+			&discoveredAt, &depth, &aliases, &item.VEXStatus,
 			&item.VEXJustification, &vexTimestamp, &item.VEXStatementID,
 			&item.VEXAuthor, &item.VEXTooling,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vuln row: %w", err)
 		}
+		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
 		if item.VEXStatus != "" {
@@ -461,26 +463,36 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 // This checks both direct and transitive dependencies by looking up the PURL in
 // the sbom_packages arrays.
 func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) ([]dto.AffectedProject, error) {
-	// The requested id plus every alias OSV lists for it (GHSA <-> CVE <->
-	// GO-...). VEX documents routinely use a different identifier for the
-	// same flaw than the one the finding is stored under; matching on the
-	// exact string alone made those statements silently miss.
-	matchIDs := []string{vulnID}
-	if err := c.Conn.QueryRow(ctx, `
-		SELECT groupUniqArray(alias)
-		FROM (
-			SELECT arrayJoin(aliases) AS alias
-			FROM vulnerabilities FINAL
-			WHERE vuln_id = ?
-		)
-	`, vulnID).Scan(&matchIDs); err != nil && !isNoRows(err) {
-		log.Printf("WARNING: alias lookup for %s: %v", vulnID, err)
+	// Any name of the flaw works (#412): the findings may be stored as
+	// GO-2024-3333 while the caller asks for CVE-2024-45338.
+	storedIDs, err := c.resolveVulnIDs(ctx, vulnID)
+	if err != nil {
+		return nil, err
 	}
-	matchIDs = append(matchIDs, vulnID)
+	if len(storedIDs) == 0 {
+		return []dto.AffectedProject{}, nil
+	}
+
+	// The requested id, the stored ids and every alias of them (GHSA <-> CVE
+	// <-> GO-...). VEX documents routinely use a different identifier for
+	// the same flaw than the one the finding is stored under; matching on
+	// the exact string alone made those statements silently miss.
+	matchIDs := append([]string{vulnID}, storedIDs...)
+	if groups, err := c.lookupAliases(ctx, storedIDs); err != nil {
+		log.Printf("WARNING: alias lookup for %s: %v", vulnID, err)
+	} else {
+		for _, id := range storedIDs {
+			matchIDs = append(matchIDs, groups[id]...)
+		}
+	}
 
 	// First find all PURLs affected by this CVE.
 	purlRows, err := c.Conn.Query(ctx,
-		"SELECT DISTINCT purl, severity FROM vulnerabilities FINAL WHERE vuln_id = ?", vulnID)
+		`SELECT purl,
+			argMax(severity, multiIf(severity = 'CRITICAL', 4, severity = 'HIGH', 3, severity = 'MEDIUM', 2, severity = 'LOW', 1, 0))
+		FROM vulnerabilities FINAL
+		WHERE vuln_id IN (?)
+		GROUP BY purl`, storedIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query purls for %s: %w", vulnID, err)
 	}

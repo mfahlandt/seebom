@@ -6,6 +6,8 @@ import { Subject } from 'rxjs';
 import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
 import { ApiService } from '../../core/api.service';
 import { GlobalSearchResponse } from '../../core/api.models';
+import { VulnAliasesComponent } from '../vuln-aliases/vuln-aliases.component';
+import { primaryVulnId } from '../vuln-identity';
 
 interface SearchResultItem {
   type: 'package' | 'project' | 'vulnerability' | 'license';
@@ -20,7 +22,7 @@ interface SearchResultItem {
 @Component({
   selector: 'app-global-search',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, VulnAliasesComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="search-container">
@@ -92,14 +94,15 @@ interface SearchResultItem {
               <a class="result-item"
                  *ngFor="let vuln of data.vulnerabilities"
                  [routerLink]="['/cve-impact']"
-                 [queryParams]="{ cve: vuln.vuln_id }"
-                 [class.active]="activeItem === vuln.vuln_id"
+                 [queryParams]="{ cve: vulnLabel(vuln) }"
+                 [class.active]="activeItem === vulnLabel(vuln)"
                  (click)="closeDropdown()">
                 <div class="item-label">
                   <span class="severity-badge" [ngClass]="'severity-' + vuln.severity.toLowerCase()">
                     {{ vuln.severity }}
                   </span>
-                  {{ vuln.vuln_id }}
+                  {{ vulnLabel(vuln) }}
+                  <app-vuln-aliases [vuln]="vuln" [max]="1"></app-vuln-aliases>
                 </div>
                 <span class="item-sublabel">{{ vuln.affected_sboms }} sboms affected</span>
               </a>
@@ -277,6 +280,7 @@ interface SearchResultItem {
   `]
 })
 export class GlobalSearchComponent implements OnInit {
+  readonly vulnLabel = primaryVulnId;
   searchQuery = '';
   data: GlobalSearchResponse | null = null;
   loading = false;
@@ -383,7 +387,7 @@ export class GlobalSearchComponent implements OnInit {
       this.flatItems.push({ type: 'project', label: proj.project_name, sublabel: '', link: ['/sboms', proj.latest_sbom_id] });
     }
     for (const vuln of this.data.vulnerabilities) {
-      this.flatItems.push({ type: 'vulnerability', label: vuln.vuln_id, sublabel: '', link: ['/cve-impact'], queryParams: { cve: vuln.vuln_id } });
+      this.flatItems.push({ type: 'vulnerability', label: primaryVulnId(vuln), sublabel: '', link: ['/cve-impact'], queryParams: { cve: primaryVulnId(vuln) } });
     }
     for (const lic of this.data.licenses) {
       this.flatItems.push({ type: 'license', label: lic.license_id, sublabel: '', link: ['/licenses'] });

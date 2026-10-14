@@ -4,11 +4,13 @@ import { FormsModule } from '@angular/forms';
 import { RouterLink, ActivatedRoute, Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { GlobalSearchResponse } from '../../core/api.models';
+import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
+import { primaryVulnId } from '../../shared/vuln-identity';
 
 @Component({
   selector: 'app-global-search-results',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, VulnAliasesComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="search-page">
@@ -68,11 +70,12 @@ import { GlobalSearchResponse } from '../../core/api.models';
         <!-- Vulnerabilities -->
         <div class="facet-section" *ngIf="data.vulnerabilities.length > 0">
           <h2>Vulnerabilities ({{ data.total_vulnerabilities }})</h2>
-          <div class="result-card" *ngFor="let vuln of data.vulnerabilities" [routerLink]="['/cve-impact']" [queryParams]="{ cve: vuln.vuln_id }">
+          <div class="result-card" *ngFor="let vuln of data.vulnerabilities" [routerLink]="['/cve-impact']" [queryParams]="{ cve: vulnLabel(vuln) }">
             <div class="pkg-info">
               <div class="pkg-name flex-center">
                 <span class="severity-badge" [ngClass]="'severity-' + vuln.severity.toLowerCase()">{{ vuln.severity }}</span>
-                {{ vuln.vuln_id }}
+                {{ vulnLabel(vuln) }}
+                <app-vuln-aliases [vuln]="vuln" [max]="3"></app-vuln-aliases>
               </div>
               <span class="pkg-meta">{{ vuln.affected_sboms }} {{ vuln.affected_sboms === 1 ? 'sbom' : 'sboms' }} affected</span>
             </div>
@@ -195,6 +198,7 @@ import { GlobalSearchResponse } from '../../core/api.models';
   `]
 })
 export class GlobalSearchResultsComponent implements OnInit {
+  readonly vulnLabel = primaryVulnId;
   query = '';
   searchInput = '';
   data: GlobalSearchResponse | null = null;

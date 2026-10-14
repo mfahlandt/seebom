@@ -87,5 +87,8 @@ func (c *Client) QuerySBOMVEXStatements(ctx context.Context, sbomID string) ([]d
 	if items == nil {
 		items = []dto.VEXStatementItem{}
 	}
+	if err := c.attachVEXAliases(ctx, items); err != nil {
+		return nil, err
+	}
 	return items, nil
 }

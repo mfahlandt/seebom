@@ -187,7 +187,7 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		WITH scope AS (SELECT sbom_id FROM %s AS s WHERE s.project_name = ?)
 		SELECT
 			f.vuln_id, f.severity, f.purl, f.summary, f.fixed_version,
-			f.source_file, f.discovered_at, f.affected_sboms, f.dependency_depth,
+			f.source_file, f.discovered_at, f.affected_sboms, f.dependency_depth, f.aliases,
 			ifNull(vx.vex_status, '')            AS vex_status,
 			ifNull(vx.vex_justification, '')     AS vex_justification,
 			ifNull(vx.winning_timestamp, toDateTime(0)) AS vex_timestamp,
@@ -203,7 +203,8 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 				argMax(v.source_file, v.discovered_at)   AS source_file,
 				max(v.discovered_at)                     AS discovered_at,
 				uniqExact(v.sbom_id)                     AS affected_sboms,
-				min(v.dependency_depth)                  AS dependency_depth
+				min(v.dependency_depth)                  AS dependency_depth,
+				groupUniqArrayArray(v.aliases)           AS aliases
 			FROM (SELECT * FROM vulnerabilities FINAL) AS v
 			WHERE v.sbom_id IN scope%s
 			GROUP BY v.vuln_id, v.purl
@@ -241,14 +242,16 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		var item dto.VulnerabilityListItem
 		var discoveredAt, vexTimestamp time.Time
 		var depth uint16
+		var aliases []string
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL, &item.Summary, &item.FixedVersion,
-			&item.SourceFile, &discoveredAt, &item.AffectedSBOMs, &depth,
+			&item.SourceFile, &discoveredAt, &item.AffectedSBOMs, &depth, &aliases,
 			&item.VEXStatus, &item.VEXJustification, &vexTimestamp,
 			&item.VEXStatementID, &item.VEXAuthor, &item.VEXTooling,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan project vulnerability row: %w", err)
 		}
+		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
 		if item.VEXStatus != "" {

@@ -117,6 +117,18 @@ as a `DEPENDS_ON` of the root (a star-shaped graph, common for Go module SBOMs)
 yields `direct` for all of them, because that is what the SBOM states. BOMHort
 reports the declared graph and does not second-guess it.
 
+### Vulnerability ids and aliases {#vulnerability-ids}
+
+For Go, npm, PyPI and most other ecosystems OSV's primary id is `GHSA-…`, `GO-…` or `PYSEC-…`; the CVE is only one of its aliases (#412). Every finding therefore carries three id fields:
+
+| Field | Description |
+|-------|-------------|
+| `vuln_id` | The id OSV stores the finding under. Stable; use it to re-query OSV. |
+| `cve_id` | The CVE of the same flaw: `vuln_id` itself when that is a CVE, else the CVE among `aliases` (the smallest one in the rare case of several). Omitted when the flaw has no CVE. |
+| `aliases` | Every other OSV id of the flaw, sorted. Omitted when OSV lists none. |
+
+They appear on `/api/v1/vulnerabilities`, `/api/v1/sboms/{id}/vulnerabilities`, `/api/v1/projects/{name}/vulnerabilities`, the vulnerability facet of `/api/v1/search`, and on VEX statements (where `vuln_id` stays the id the VEX author wrote and `aliases` come from the findings it matches). Lookups accept **any** of the names: `/api/v1/vulnerabilities/CVE-2024-45338/affected-projects` finds the findings stored as `GO-2024-3333`, and search matches aliases. Older API versions returned `vuln_id` only; clients that ignore the new fields are unaffected.
+
 ### Error Responses
 
 All errors return:
@@ -565,6 +577,8 @@ All vulnerabilities found in a specific SBOM, including the effective VEX statem
 [
   {
     "vuln_id": "GHSA-xyz-abc-123",
+    "cve_id": "CVE-2023-44487",
+    "aliases": ["CVE-2023-44487", "GO-2023-2102"],
     "severity": "HIGH",
     "purl": "pkg:golang/golang.org/x/net@v0.17.0",
     "summary": "HTTP/2 rapid reset vulnerability",
@@ -686,7 +700,7 @@ The UI reconstructs the tree by following `children` indices. Root nodes are tho
 
 ### `GET /api/v1/vulnerabilities`
 
-Paginated list of all discovered vulnerabilities across all SBOMs.
+Paginated list of all discovered vulnerabilities across all SBOMs. Each item carries `cve_id` and `aliases` next to `vuln_id` (see [Vulnerability ids and aliases](#vulnerability-ids)).
 
 **Parameters:**
 
@@ -702,7 +716,9 @@ Paginated list of all discovered vulnerabilities across all SBOMs.
 {
   "data": [
     {
-      "vuln_id": "CVE-2024-45338",
+      "vuln_id": "GO-2024-3333",
+      "cve_id": "CVE-2024-45338",
+      "aliases": ["CVE-2024-45338", "GHSA-w32m-9786-jp63"],
       "severity": "CRITICAL",
       "purl": "pkg:golang/golang.org/x/net@v0.21.0",
       "summary": "Denial of service in net/http",
@@ -722,13 +738,13 @@ Paginated list of all discovered vulnerabilities across all SBOMs.
 
 ### `GET /api/v1/vulnerabilities/{id}/affected-projects`
 
-All projects affected by a specific CVE, including transitive dependency information.
+All projects affected by a specific vulnerability, including transitive dependency information. The id may be any name of the flaw (#412): the stored `vuln_id` or any of its OSV aliases, so a CVE finds findings stored under their GHSA or GO id. An id no finding knows returns `[]`.
 
 **Path Parameters:**
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `id` | string | Vulnerability ID (CVE, GHSA, GO-*, PYSEC-*, etc.) |
+| `id` | string | Vulnerability ID or any alias (CVE, GHSA, GO-*, PYSEC-*, etc.) |
 
 **Response:** `200 OK`
 ```json
@@ -1132,6 +1148,8 @@ Paginated list of all ingested VEX statements with affected SBOM cross-reference
       "source_file": "golang-common.openvex.json",
       "product_purl": "pkg:golang/golang.org/x/net",
       "vuln_id": "CVE-2024-45338",
+      "cve_id": "CVE-2024-45338",
+      "aliases": ["GHSA-w32m-9786-jp63", "GO-2024-3333"],
       "status": "not_affected",
       "justification": "vulnerable_code_not_present",
       "impact_statement": "The vulnerable HTTP/2 code path is not used",
@@ -1250,7 +1268,7 @@ Faceted search across packages, projects, vulnerabilities, and licenses in a sin
 | `q` | string | ✅ | Search query, minimum 2 characters (case-insensitive substring match) |
 | `limit` | uint64 | — | Max results per facet (default 5, max 50) |
 
-Vulnerabilities match on both the vulnerability ID and the summary text. Projects match on the derived project key (`org/repo` for S3 sources, document name otherwise).
+Vulnerabilities match on the vulnerability ID, any of its OSV aliases (#412) and the summary text; each result carries `cve_id` and `aliases`. Projects match on the derived project key (`org/repo` for S3 sources, document name otherwise).
 
 **Response:** `200 OK`
 ```json
@@ -1274,7 +1292,9 @@ Vulnerabilities match on both the vulnerability ID and the summary text. Project
   "total_projects": 1,
   "vulnerabilities": [
     {
-      "vuln_id": "CVE-2024-9999",
+      "vuln_id": "GHSA-abcd-efgh-ijkl",
+      "cve_id": "CVE-2024-9999",
+      "aliases": ["CVE-2024-9999"],
       "severity": "HIGH",
       "summary": "gRPC denial of service",
       "affected_sboms": 7

@@ -56,6 +56,10 @@ export interface SBOMListItem {
 
 export interface VulnerabilityListItem {
   vuln_id: string;
+  /** CVE of the finding when one exists (#412): vuln_id itself or a CVE alias. */
+  cve_id?: string;
+  /** Other OSV ids of the same flaw (GHSA <-> CVE <-> GO-…), sorted (#412). */
+  aliases?: string[];
   severity: string;
   purl: string;
   summary: string;
@@ -140,7 +144,12 @@ export interface VEXStatementItem {
   /** SBOM the statement is scoped to (#350); absent = global. */
   sbom_id?: string;
   product_purl: string;
+  /** The id the VEX author used. */
   vuln_id: string;
+  /** CVE of the flaw (#412): vuln_id itself or looked up from matching findings. */
+  cve_id?: string;
+  /** Other names of the flaw according to the findings it matches (#412). */
+  aliases?: string[];
   status: string;
   justification: string;
   impact_statement?: string;
@@ -456,6 +465,10 @@ export interface GlobalSearchProject {
 
 export interface GlobalSearchVulnerability {
   vuln_id: string;
+  /** CVE of the finding when one exists (#412): vuln_id itself or a CVE alias. */
+  cve_id?: string;
+  /** Other OSV ids of the same flaw (GHSA <-> CVE <-> GO-…), sorted (#412). */
+  aliases?: string[];
   severity: string;
   summary: string;
   affected_sboms: number;

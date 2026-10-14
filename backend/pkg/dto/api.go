@@ -52,14 +52,22 @@ type PaginatedResponse[T any] struct {
 
 // VulnerabilityListItem is the response DTO for listing vulnerabilities.
 type VulnerabilityListItem struct {
-	VulnID       string `json:"vuln_id"`
-	Severity     string `json:"severity"`
-	PURL         string `json:"purl"`
-	Summary      string `json:"summary"`
-	FixedVersion string `json:"fixed_version"`
-	SourceFile   string `json:"source_file"`
-	DiscoveredAt string `json:"discovered_at"`
-	VEXStatus    string `json:"vex_status,omitempty"`
+	VulnID string `json:"vuln_id"`
+	// CVEID (#412) is the CVE identifier of the finding: VulnID when that is
+	// a CVE, else the first CVE among Aliases. For Go, npm, PyPI and most
+	// other ecosystems OSV's primary id is GHSA-/GO-/PYSEC-… and the CVE is
+	// only an alias. Omitted when the finding has no CVE.
+	CVEID string `json:"cve_id,omitempty"`
+	// Aliases are the OSV alias ids of VulnID (GHSA <-> CVE <-> GO-…),
+	// sorted. Omitted when OSV lists none.
+	Aliases      []string `json:"aliases,omitempty"`
+	Severity     string   `json:"severity"`
+	PURL         string   `json:"purl"`
+	Summary      string   `json:"summary"`
+	FixedVersion string   `json:"fixed_version"`
+	SourceFile   string   `json:"source_file"`
+	DiscoveredAt string   `json:"discovered_at"`
+	VEXStatus    string   `json:"vex_status,omitempty"`
 	// Effective VEX statement detail (#335): exactly one row per
 	// (vuln_id, purl) is returned; the statement with the newest
 	// vex_timestamp wins (OpenVEX conflict rule). All fields are omitted
@@ -147,15 +155,20 @@ type VEXStatementItem struct {
 	DocumentID string `json:"document_id"`
 	SourceFile string `json:"source_file"`
 	// SBOMID scopes the statement to one SBOM (#350); empty = global.
-	SBOMID          string `json:"sbom_id,omitempty"`
-	ProductPURL     string `json:"product_purl"`
-	VulnID          string `json:"vuln_id"`
-	Status          string `json:"status"`
-	Justification   string `json:"justification"`
-	ImpactStatement string `json:"impact_statement,omitempty"`
-	ActionStatement string `json:"action_statement,omitempty"`
-	VEXTimestamp    string `json:"vex_timestamp"`
-	IngestedAt      string `json:"ingested_at"`
+	SBOMID      string `json:"sbom_id,omitempty"`
+	ProductPURL string `json:"product_purl"`
+	VulnID      string `json:"vuln_id"`
+	// CVEID and Aliases (#412) are looked up from the findings the statement
+	// can match: the statement keeps the id its author used, these give the
+	// other names of the same flaw. Omitted when no finding is known for it.
+	CVEID           string   `json:"cve_id,omitempty"`
+	Aliases         []string `json:"aliases,omitempty"`
+	Status          string   `json:"status"`
+	Justification   string   `json:"justification"`
+	ImpactStatement string   `json:"impact_statement,omitempty"`
+	ActionStatement string   `json:"action_statement,omitempty"`
+	VEXTimestamp    string   `json:"vex_timestamp"`
+	IngestedAt      string   `json:"ingested_at"`
 	// Provenance (#334); omitted when the source document has none.
 	Author        string            `json:"author,omitempty"`
 	Role          string            `json:"role,omitempty"`
@@ -323,10 +336,14 @@ type GlobalSearchProject struct {
 
 // GlobalSearchVulnerability is a vulnerability hit in the global search response.
 type GlobalSearchVulnerability struct {
-	VulnID        string `json:"vuln_id"`
-	Severity      string `json:"severity"`
-	Summary       string `json:"summary"`
-	AffectedSBOMs uint64 `json:"affected_sboms"`
+	VulnID string `json:"vuln_id"`
+	// CVEID and Aliases as on VulnerabilityListItem (#412); the search also
+	// matches on any alias.
+	CVEID         string   `json:"cve_id,omitempty"`
+	Aliases       []string `json:"aliases,omitempty"`
+	Severity      string   `json:"severity"`
+	Summary       string   `json:"summary"`
+	AffectedSBOMs uint64   `json:"affected_sboms"`
 }
 
 // GlobalSearchLicense is a license hit in the global search response.

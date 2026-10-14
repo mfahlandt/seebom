@@ -185,8 +185,8 @@ func (c *Client) searchVulnerabilitiesFacet(ctx context.Context, pattern string,
 	if err := c.Conn.QueryRow(ctx, `
 		SELECT count(DISTINCT vuln_id)
 		FROM (SELECT * FROM vulnerabilities FINAL)
-		WHERE vuln_id ILIKE ? OR summary ILIKE ?
-	`, pattern, pattern).Scan(&resp.TotalVulnerabilities); err != nil {
+		WHERE vuln_id ILIKE ? OR summary ILIKE ? OR arrayExists(a -> a ILIKE ?, aliases)
+	`, pattern, pattern, pattern).Scan(&resp.TotalVulnerabilities); err != nil {
 		return fmt.Errorf("failed to count vulnerability search results: %w", err)
 	}
 
@@ -195,13 +195,14 @@ func (c *Client) searchVulnerabilitiesFacet(ctx context.Context, pattern string,
 			vuln_id,
 			any(severity) AS vuln_severity,
 			any(summary) AS vuln_summary,
-			count(DISTINCT sbom_id) AS affected_sboms
+			count(DISTINCT sbom_id) AS affected_sboms,
+			groupUniqArrayArray(aliases) AS vuln_aliases
 		FROM (SELECT * FROM vulnerabilities FINAL)
-		WHERE vuln_id ILIKE ? OR summary ILIKE ?
+		WHERE vuln_id ILIKE ? OR summary ILIKE ? OR arrayExists(a -> a ILIKE ?, aliases)
 		GROUP BY vuln_id
 		ORDER BY affected_sboms DESC, vuln_id ASC
 		LIMIT ?
-	`, pattern, pattern, limit)
+	`, pattern, pattern, pattern, limit)
 	if err != nil {
 		return fmt.Errorf("failed to search vulnerabilities: %w", err)
 	}
@@ -209,9 +210,11 @@ func (c *Client) searchVulnerabilitiesFacet(ctx context.Context, pattern string,
 
 	for rows.Next() {
 		var item dto.GlobalSearchVulnerability
-		if err := rows.Scan(&item.VulnID, &item.Severity, &item.Summary, &item.AffectedSBOMs); err != nil {
+		var aliases []string
+		if err := rows.Scan(&item.VulnID, &item.Severity, &item.Summary, &item.AffectedSBOMs, &aliases); err != nil {
 			return fmt.Errorf("failed to scan vulnerability search row: %w", err)
 		}
+		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 		resp.Vulnerabilities = append(resp.Vulnerabilities, item)
 	}
 	return rows.Err()

@@ -310,7 +310,7 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 		SELECT
 			v.vuln_id, v.severity, v.purl, v.summary,
 			v.fixed_version, v.source_file, v.discovered_at,
-			v.dependency_depth,
+			v.dependency_depth, v.aliases,
 			ifNull(vx.vex_status, '') AS vex_status
 		FROM (SELECT * FROM vulnerabilities FINAL`+scopeWhere+`) AS v
 		LEFT JOIN (
@@ -345,13 +345,15 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 		var item dto.VulnerabilityListItem
 		var discoveredAt time.Time
 		var depth uint16
+		var aliases []string
 		if err := rows.Scan(
 			&item.VulnID, &item.Severity, &item.PURL,
 			&item.Summary, &item.FixedVersion, &item.SourceFile,
-			&discoveredAt, &depth, &item.VEXStatus,
+			&discoveredAt, &depth, &aliases, &item.VEXStatus,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan vulnerability row: %w", err)
 		}
+		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
 		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
 		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
 		items = append(items, item)
@@ -564,6 +566,9 @@ func (c *Client) QueryVEXStatements(ctx context.Context, page, pageSize uint64) 
 
 	if items == nil {
 		items = []dto.VEXStatementItem{}
+	}
+	if err := c.attachVEXAliases(ctx, items); err != nil {
+		return nil, err
 	}
 
 	// Collect unique PURLs, then batch-lookup which SBOMs contain them.

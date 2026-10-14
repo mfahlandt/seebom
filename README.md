@@ -16,10 +16,11 @@ Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce
 
 <p align="center">
   <a href="https://docs.bomhort.dev/docs/getting-started/">Getting Started</a> ·
+  <a href="https://docs.bomhort.dev/docs/deployment/">Deployment</a> ·
+  <a href="https://docs.bomhort.dev/docs/api-reference/">API Reference</a> ·
   <a href="https://docs.bomhort.dev/docs/architecture/">Architecture</a> ·
   <a href="https://docs.bomhort.dev/docs/roadmap/">Roadmap</a> ·
-  <a href="https://docs.bomhort.dev/docs/development/contributor-ladder/">Contributing</a> ·
-  <a href="https://docs.bomhort.dev/docs/development/ai-policy/">AI Policy</a>
+  <a href="https://docs.bomhort.dev/docs/development/contributor-ladder/">Contributing</a>
 </p>
 
 <p align="center">
@@ -28,595 +29,107 @@ Ingest 1000+ SPDX and CycloneDX SBOMs, scan for vulnerabilities via OSV, enforce
 
 ---
 
+## What it does
+
+- **Ingests at scale** — SPDX 2.x JSON, SPDX 3 JSON-LD, CycloneDX 1.0–1.7 and in-toto attestation envelopes, auto-detected, from S3-compatible buckets, a directory, or `POST /api/v1/sboms/upload`. Deduplicated by SHA-256, retained forever.
+- **Finds vulnerabilities** — OSV batch lookups at ingest, plus a daily refresher that checks every known package URL for newly disclosed CVEs without re-scanning a single SBOM. Findings carry their CVE id and all aliases.
+- **Applies VEX** — OpenVEX statements scoped to the SBOM whose product they describe, with provenance; order of arrival does not matter.
+- **Enforces license policy** — an externalized permissive/copyleft policy, SPDX expression evaluation, and reviewed exceptions that reload live and apply retroactively to every SBOM already ingested. Unknown licenses are resolved from GitHub, npm, NuGet, deps.dev, Packagist and PyPI, and every package records where its license came from — or why it is still unknown.
+- **Shows ownership** — every record is tagged with cluster, namespace and project (from configuration or the ingestion path) and free-form tags, so a fleet reads as a tree, not a list.
+- **Serves agents** — an optional read-only [MCP server](https://docs.bomhort.dev/docs/mcp/) exposes the same REST contract to AI assistants, without database credentials.
+
 ## Quick Start
 
-### Prerequisites
-
-| Tool | Minimum Version |
-|------|----------------|
-| Docker + Docker Compose | v2.20+ |
-| Go | 1.26+ (only for local dev) — `backend/go.mod` pins `go 1.26.9` |
-| Node.js | 22+ (only for local dev) |
-
-### Option A: Full Stack via Docker Compose (Recommended)
-
 ```bash
-# 1. Clone the repo
 git clone https://github.com/seebom-labs/BOMHort.git && cd BOMHort
-
-# 2. Place your SBOM files in the sboms/ directory
-#    Supports SPDX 2.x JSON, SPDX 3 JSON-LD, CycloneDX JSON, and in-toto attestation envelopes (auto-detected)
-#    (examples included: sboms/_example.spdx.json, sboms/_example.cdx.json)
-
-# 3. Start everything
-make dev
-
-# Or without make:
-docker compose up --build -d
+cp .env.example .env            # optional: SBOM source, GitHub token, worker count
+# drop your SBOMs (and *.openvex.json files) into sboms/, then
+make dev                        # ClickHouse + API + workers + UI via Docker Compose
 ```
 
-This starts:
-- **ClickHouse** on `localhost:9000` (TCP) / `localhost:8123` (HTTP)
-- **API Gateway** on `localhost:8080`
-- **Ingestion Watcher** (runs once, scans `sboms/` for new files)
-- **Parsing Worker** (processes queued SBOM/VEX files)
-- **Angular UI** on `localhost:8090`
-
-Open **http://localhost:8090** in your browser.
-
-### Configuration (`.env`)
-
-Copy `.env.example` to `.env` and adjust:
-
-```bash
-cp .env.example .env
-```
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SBOM_SOURCE_DIR` | `./sboms` | Path to your SBOM files (can point to an external repo checkout) |
-| `SBOM_LIMIT` | `0` | Max SBOMs to enqueue per watcher run. `0` = unlimited. Use `50`–`200` for local dev. |
-| `WORKER_REPLICAS` | `1` | Number of parallel parsing worker containers |
-| `WORKER_BATCH_SIZE` | `50` | Jobs claimed per polling cycle per worker |
-| `SKIP_OSV` | `false` | Skip OSV vulnerability API calls. Set `true` for fast initial bulk load (licenses only), then re-run with `false`. |
-| `SKIP_GITHUB_RESOLVE` | `false` | Skip GitHub license resolution for packages with `NOASSERTION`/empty licenses. |
-| `GITHUB_TOKEN` | *(empty)* | GitHub personal access token for license resolution. Increases rate limit from 60 to 5000 req/h. No scopes needed. |
-| `SKIP_NPM_RESOLVE` | `false` | Skip npm registry license resolution for `pkg:npm/*` packages with `NOASSERTION`/empty licenses. |
-| `SKIP_NUGET_RESOLVE` | `false` | Skip NuGet license resolution for `pkg:nuget/*` packages with `NOASSERTION`/empty licenses. Legacy packages without `licenseExpression` fall back to their GitHub repository license. |
-| `SKIP_DEPSDEV_RESOLVE` | `false` | Skip deps.dev fallback license resolution for Maven, PyPI, Cargo, Go, NuGet and npm packages with `NOASSERTION`/empty licenses. Composer is not supported by deps.dev. |
-| `SKIP_PACKAGIST_RESOLVE` | `false` | Skip Packagist license resolution for `pkg:composer/*` packages (development branches use the branch's or the latest release's license). |
-| `SKIP_PYPI_RESOLVE` | `false` | Skip PyPI license resolution for `pkg:pypi/*` packages deps.dev could not resolve (free-text licenses, trove classifiers). |
-| `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | How compound SPDX expressions (`Apache-2.0 AND MIT`, `MIT OR GPL-2.0-only`) are classified: `strict` (SPDX semantics), `permissive-wins` (one permissive operand suffices) or `off` (whole string looked up verbatim). Overrides `expressionMode` in `license-policy.json`. See "License Policy". |
-| `EXCEPTIONS_FILE` | `/data/config/license-exceptions.json` | License exceptions file (falls back to `SBOM_DIR/license-exceptions.json` only if missing). |
-| `EXCEPTIONS_SOURCE` | *(empty)* | Read the exceptions from an `https://` URL or `s3://bucket/key` instead of `EXCEPTIONS_FILE`. A missing remote document is an error; an unreachable one keeps the last rules that loaded. |
-| `EXCEPTIONS_SOURCE_TOKEN` | *(empty)* | Bearer token sent to an `https://` `EXCEPTIONS_SOURCE` (private repositories). |
-| `EXCEPTIONS_REFRESH_INTERVAL` | `60s` | How often the exceptions are re-read (Go duration, `0` = only at startup). Changes are re-applied to the stored results of all ingested SBOMs, no re-scan needed. |
-| `CLUSTER_NAME` | *(empty)* | Cluster identifier for multi-cluster deployments. All ingested data is tagged with this value. Empty = single-instance mode. |
-| `NAMESPACE` | *(empty)* | Default deployment-namespace label (#138) stamped onto all ingested data. Overridable per bucket and per upload (`?namespace=`). |
-| `PROJECT` | *(empty)* | Default project label (#57) stamped onto all ingested data. Overridable per bucket and per upload (`?project=`). |
-| `INGEST_PATH_LAYOUT` | *(empty)* | Opt-in: derive `cluster`/`namespace`/`project` from an SBOM's position in the source, e.g. `cluster/namespace/project` for keys like `prod-eu/payments/payment-service/app.spdx.json`. `_` skips a level. A malformed layout fails at startup. Explicit config always outranks derivation. |
-| `TAGS` | *(empty)* | Comma-separated free-form grouping labels (#357) stamped onto all ingested data, e.g. `sandbox-applications,platform`. Tags group projects — they do not replace them: a project keeps its identity and can carry several tags. Unlike `CLUSTER_NAME`/`NAMESPACE`/`PROJECT`, per-bucket and per-upload (`?tags=`) values are **merged**, not overridden. Normalised to lowercase, trimmed, deduplicated and sorted. Read back via `GET /api/v1/tags`; filter with `GET /api/v1/projects?tag=<tag>`. |
-| `AUTH_ENABLED` | `false` | Enable API authentication middleware. When `false` (default), all API endpoints are unauthenticated. |
-| `SERVICE_TOKEN` | *(empty)* | Shared secret for upstream proxy/gateway integrations. Accepted via `Authorization: Bearer <token>` or `X-Service-Token: <token>`. |
-| `API_KEYS` | *(empty)* | Comma-separated list of API keys for direct API consumers (CI/CD, scripts). Accepted via `X-API-Key: <key>`. |
-| `CLICKHOUSE_MAX_EXECUTION_TIME` | *(unset)* | API gateway only: seconds a single ClickHouse query may run. Helm default `30` (`apiGateway.queryLimits`). `0` = unset. |
-| `CLICKHOUSE_MAX_MEMORY_USAGE` | *(unset)* | API gateway only: bytes a single ClickHouse query may allocate. Helm default 512 MiB. `0` = unset. |
-| `CLICKHOUSE_MAX_THREADS` | *(unset)* | API gateway only: threads per ClickHouse query. `0` = server default. |
-| `MAX_UPLOAD_SIZE_MB` | `50` | Max request body size for `POST /api/v1/sboms/upload`. The endpoint requires `AUTH_ENABLED=true`. |
-| `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI. See "Custom Theme" section. |
-| `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand name, dashboard texts, disclaimer). See "Site Configuration" section. |
-| `S3_BUCKETS` | *(empty)* | JSON array of S3 bucket configs (supports per-bucket `cluster` override and a `skipScan` flag for the push-upload target). See "S3 Ingestion" section. |
-| `S3_BUCKET` | *(empty)* | Single S3 bucket name (simpler alternative to `S3_BUCKETS`). |
-| `S3_ENDPOINT` | `s3.amazonaws.com` | S3 endpoint URL. |
-| `S3_REGION` | `us-east-1` | AWS region. |
-| `S3_ACCESS_KEY` | *(empty)* | Shared S3 access key (applied to all buckets). Leave empty for public buckets. |
-| `S3_SECRET_KEY` | *(empty)* | Shared S3 secret key. |
-
-**After changing `.env`:**
-
-```bash
-# Apply new values (keeps ClickHouse data):
-docker compose up -d --force-recreate
-
-# Or full reset (wipes ClickHouse data):
-make dev-reset
-```
-
-### Configuration Files
-
-Two JSON config files control license governance. Edit them and restart the affected services.
-
-| File | Mounted in | Purpose |
-|------|-----------|---------|
-| `sboms/license-policy.json` | API Gateway, Workers | Defines which SPDX IDs are **permissive** vs. **copyleft**. A declared license not listed = `unapproved` (policy violation); no license information = `unknown`. |
-| `sboms/license-exceptions.json` | API Gateway, Workers | Empty by default. Explicit organization-approved blanket or package/license/project exceptions. [Structure and configuration](examples/license-exceptions/README.md). |
-
-### Custom Theme (CSS)
-
-The entire UI color scheme is defined via CSS Custom Properties and can be overridden **without rebuilding** Angular.
-
-**Local (Docker Compose):** Create a CSS file and set `CUSTOM_THEME` in `.env`:
-
-```bash
-# .env
-CUSTOM_THEME=./my-theme.css
-```
-
-```css
-/* my-theme.css */
-:root {
-  --accent: #e94560;
-  --nav-bg: #1a1a2e;
-  --nav-brand: #e94560;
-  --severity-critical: #ff4444;
-  --license-permissive: #22c55e;
-}
-```
-
-```bash
-docker compose up -d --force-recreate ui
-```
-
-**Kubernetes:** Enable the theme ConfigMap in Helm values:
-
-```yaml
-ui:
-  customTheme:
-    enabled: true
-```
-
-Then edit the ConfigMap:
-
-```bash
-kubectl create configmap bomhort-custom-theme \
-  --from-file=custom-theme.css=./my-theme.css \
-  --dry-run=client -o yaml | kubectl apply -f -
-kubectl rollout restart deployment bomhort-ui
-```
-
-See `ui/src/assets/custom-theme.example.css` for all available variables.
-
-### Site Configuration (Texts & Branding)
-
-All UI text content (brand name, page title, dashboard description, disclaimer, etc.) can be customised **without rebuilding** Angular via a `ui-config.json` file.
-
-**Local (Docker Compose):** Edit the default file directly or point to your own:
-
-```bash
-# Option 1: Edit the built-in default
-vim ui/public/ui-config.json
-
-# Option 2: Use a custom file via .env
-UI_CONFIG=./my-ui-config.json
-docker compose up -d --force-recreate ui
-```
-
-**Example `ui-config.json`:**
-
-```json
-{
-  "brandName": "My SBOM Platform",
-  "pageTitle": "My SBOM Platform",
-  "dashboard": {
-    "title": "Overview",
-    "subtitle": "Software Supply Chain Governance",
-    "description": "<strong>Welcome</strong> to our internal SBOM governance platform.",
-    "disclaimer": "Internal use only. Data sourced from OSV and GitHub."
-  },
-  "footer": {
-    "enabled": true,
-    "text": "© 2026 My Company"
-  }
-}
-```
-
-All fields are optional — any missing key falls back to the built-in BOMHort default. HTML is supported in `description` and `disclaimer`.
-
-**Kubernetes:** Enable the site config in Helm values:
-
-```yaml
-ui:
-  siteConfig:
-    enabled: true
-    content:
-      brandName: "My SBOM Platform"
-      pageTitle: "My SBOM Platform"
-      dashboard:
-        title: "Overview"
-        subtitle: "Software Supply Chain Governance"
-        description: "<strong>Welcome</strong> to our SBOM platform."
-        disclaimer: "Internal use only."
-```
-
-Changes take effect after a pod restart (`kubectl rollout restart deployment bomhort-ui`). No rebuild needed.
-
-### S3 Ingestion (Default)
-
-Ingest SBOMs directly from S3-compatible buckets (AWS S3, MinIO, GCS). This is the default and recommended ingestion method — no volumes, PVCs, or git-sync needed.
-
-**Single bucket:**
-
-```bash
-# .env
-S3_BUCKET=my-org-sboms
-S3_ENDPOINT=s3.amazonaws.com
-S3_REGION=us-east-1
-```
-
-**Multiple buckets (JSON array):**
-
-```bash
-# .env
-S3_BUCKETS='[{"name":"my-org-sboms","endpoint":"s3.amazonaws.com","region":"us-east-1"},{"name":"platform-sboms","region":"us-east-1"}]'
-```
-
-**Private buckets with credentials:**
-
-```bash
-# .env (shared credentials for all buckets)
-S3_ACCESS_KEY=AKIA...
-S3_SECRET_KEY=...
-S3_BUCKETS='[{"name":"my-private-bucket"}]'
-
-# Or per-bucket credentials in JSON:
-S3_BUCKETS='[{"name":"my-bucket","accessKey":"AKIA...","secretKey":"..."}]'
-```
-
-**Multi-cluster: per-bucket cluster assignment:**
-
-```bash
-# .env — each bucket maps to a different cluster
-CLUSTER_NAME=default
-S3_BUCKETS='[
-  {"name":"prod-eu-sboms", "cluster":"prod-eu", "region":"eu-west-1"},
-  {"name":"prod-us-sboms", "cluster":"prod-us", "region":"us-east-1"},
-  {"name":"staging-sboms", "cluster":"staging"}
-]'
-```
-
-Buckets without a `cluster` field inherit the global `CLUSTER_NAME`. If neither is set, data is untagged (single-instance mode).
-
-Cluster is one of three ownership dimensions — `namespace` (#138) and `project` (#57) work the same way (`NAMESPACE`/`PROJECT` defaults, per-bucket fields, `?namespace=`/`?project=` on upload), and `INGEST_PATH_LAYOUT` can derive all three from the ingestion path. See the [deployment guide](docs/DEPLOYMENT_GUIDE.md) for details.
-
-**How it works:**
-- The Ingestion Watcher streams `ListObjects` from each bucket (paginated, no full listing in memory)
-- Files are classified by extension: `*.spdx.json` / `*_spdx.json` → SBOM, `*.openvex.json` / `*.vex.json` → VEX
-- SHA256 hashes are computed by streaming the object (not loaded into memory)
-- Jobs are enqueued in batches of 500 for efficient ClickHouse inserts
-- The Parsing Worker fetches S3 objects on-demand via `s3://bucket/key` URIs
-- Local filesystem ingestion (from `SBOM_SOURCE_DIR`) still works alongside S3
-
-```bash
-# After editing config files:
-docker compose up -d --force-recreate api-gateway parsing-worker
-```
-
-See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for Kubernetes deployment instructions.
-
-### Option B: Local Kubernetes (Kind)
-
-Deploy the full stack to a local [Kind](https://kind.sigs.k8s.io/) cluster, including ClickHouse Operator, SBOM ingestion, and the Angular UI:
-
-```bash
-# 1. Copy secrets template and fill in your values
-cp examples/kind/secrets.env.example local/secrets.env
-vi local/secrets.env
-
-# 2. Deploy
-make kind-up
-
-# UI: http://localhost:8090   API: http://localhost:8080/healthz
-```
-
-See [`examples/`](examples/) for Kind and production Kubernetes deployment configs.
-
-### Option C: Local Development (Hot Reload)
-
-Use this when you want to iterate on code quickly:
-
-```bash
-# 1. Start only ClickHouse
-make ch-only
-
-# 2. Run the migrations (first time only)
-make ch-migrate
-
-# 3. In separate terminals:
-
-# Terminal 1: API Gateway
-make api
-
-# Terminal 2: Run Ingestion Watcher (once)
-make ingest
-
-# Terminal 3: Start Parsing Worker
-make worker
-
-# Terminal 4: Angular dev server (hot reload, proxied to API)
-make ui-dev
-```
-
-Open **http://localhost:4200** — Angular proxies `/api/*` to `localhost:8080`.
-
----
+Open **http://localhost:8090**. The API is on `localhost:8080`, ClickHouse on `localhost:9000`.
+
+| Want to… | Run | Details |
+|---|---|---|
+| Try it on a local Kubernetes cluster | `make kind-up` | [Kind example](examples/kind/) |
+| Iterate on the code with hot reload | `make ch-only && make ch-migrate`, then `make api` / `make worker` / `make ui-dev` | [Development](https://docs.bomhort.dev/docs/development/) |
+| Deploy to Kubernetes | `helm install bomhort oci://ghcr.io/seebom-labs/bomhort/charts/bomhort` | [Deployment guide](https://docs.bomhort.dev/docs/deployment/), [example values](examples/kubernetes/) |
+
+`make help` lists every target.
+
+## Configuration
+
+Everything is configured through environment variables (locally: `.env`; in Kubernetes: Helm values rendered into a ConfigMap) and three JSON files. Nothing is downloaded or approved silently.
+
+| What | Where | Documentation |
+|---|---|---|
+| SBOM sources — S3 buckets, directory, push uploads | `S3_BUCKETS`, `SBOM_SOURCE_DIR` | [Deployment → SBOMs](https://docs.bomhort.dev/docs/deployment/#1-sboms--getting-data-into-the-cluster) |
+| Ownership — cluster, namespace, project, tags | `CLUSTER_NAME`, `NAMESPACE`, `PROJECT`, `INGEST_PATH_LAYOUT`, `TAGS` | [Fleet Views](https://docs.bomhort.dev/docs/ownership/) |
+| License policy — which SPDX IDs are permissive or copyleft, how expressions fold | `license-policy.json`, `LICENSE_EXPRESSION_MODE` | [Deployment → License Policy](https://docs.bomhort.dev/docs/deployment/#4-license-policy) |
+| License exceptions — reviewed approvals from Helm values, your own ConfigMap, or an https / S3 source; reloaded live, applied retroactively | `license-exceptions.json`, `EXCEPTIONS_SOURCE`, `EXCEPTIONS_REFRESH_INTERVAL` | [License Exceptions](https://docs.bomhort.dev/docs/license-exceptions/), [example](examples/license-exceptions/) |
+| License resolution — registry resolvers, normalization, provenance | `GITHUB_TOKEN`, `SKIP_*_RESOLVE` | [License Resolution](https://docs.bomhort.dev/docs/license-resolution/) |
+| UI branding — theme CSS, texts, logo | `CUSTOM_THEME`, `UI_CONFIG`, `ui.siteConfig` | [Deployment → Custom Theme / Site Configuration](https://docs.bomhort.dev/docs/deployment/#5-custom-theme) |
+| API authentication, query limits, upload size | `AUTH_ENABLED`, `SERVICE_TOKEN`, `API_KEYS`, `CLICKHOUSE_MAX_*`, `MAX_UPLOAD_SIZE_MB` | [Deployment → API Authentication](https://docs.bomhort.dev/docs/deployment/#7-api-authentication-optional) |
+
+The complete variable reference with defaults is in [Getting Started → Configuration](https://docs.bomhort.dev/docs/getting-started/#configuration-env); `.env.example` documents the same set inline.
 
 ## Architecture
 
 ```
-sboms/*.spdx.json + *.openvex.json
-       │
-       ▼
-┌─────────────────────────┐
-│   Ingestion Watcher     │  CronJob: scans files, deduplicates by SHA256,
-│   (Go binary)           │  enqueues jobs into ClickHouse queue
-└────────────┬────────────┘
-             │
-             ▼
-┌─────────────────────────┐
-│   Parsing Workers (N)   │  Stateless: claims jobs, parses SPDX/VEX
-│   (Go binary)           │  (supports plain SPDX + in-toto attestation
-│                         │  envelopes), resolves unknown licenses via
-│                         │  GitHub API (50+ well-known Go module mappings),
-│                         │  batch-INSERTs resolved data into ClickHouse,
-│                         │  then queries OSV for vulns and checks license
-│                         │  compliance
-└────────────┬────────────┘
-             │
-             ▼
-┌─────────────────────────┐
-│   CVE Refresher         │  CronJob (daily): checks all PURLs for new CVEs
-│   (Go binary)           │  without re-scanning all SBOMs
-└────────────┬────────────┘
-             │
-             ▼
-┌─────────────────────────┐
-│   ClickHouse            │  11 tables: sboms, sbom_packages, vulnerabilities,
-│                         │  license_compliance, vex_statements, ingestion_queue,
-│                         │  dashboard_stats_mv, cve_refresh_log, github_license_cache,
-│                         │  github_repo_metadata
-└────────────┬────────────┘
-             │
-             ▼
-┌─────────────────────────┐
-│   API Gateway           │  37 REST endpoints, stateless
-│   (Go binary)           │
-└────────────┬────────────┘
-             │
-             ▼
-┌─────────────────────────┐
-│   Angular UI            │  10 lazy-loaded pages, virtual scrolling,
-│                         │  OnPush change detection, dark mode,
-│                         │  CSS custom properties theming
-└─────────────────────────┘
-
-        ┌─────────────────────────┐
-        │   MCP Server (optional) │  5 read-only MCP tools for AI agents.
-        │   (Go binary)           │  Calls the API Gateway like any external
-        │                         │  consumer — no database credentials.
-        │                         │  stdio by default; HTTP opt-in and
-        │                         │  refused without token + origin list.
-        └─────────────────────────┘
-                    │
-                    └──────────────► API Gateway
+  S3 buckets / directory / POST upload
+                │
+                ▼
+   ┌──────────────────────┐   CronJob: lists sources, deduplicates by
+   │  Ingestion Watcher   │   SHA-256, enqueues jobs in ClickHouse
+   └──────────┬───────────┘
+              ▼
+   ┌──────────────────────┐   N stateless replicas: parse, resolve
+   │  Parsing Workers     │   licenses, batch-insert, OSV lookup,
+   └──────────┬───────────┘   license check, VEX, exception re-check
+              ▼
+   ┌──────────────────────┐   ┌──────────────────────┐
+   │  ClickHouse          │◄──│  CVE Refresher       │  daily: new CVEs
+   └──────────┬───────────┘   └──────────────────────┘  for known PURLs
+              ▼
+   ┌──────────────────────┐   stateless REST API
+   │  API Gateway         │◄──────────────┐
+   └──────────┬───────────┘               │
+              ▼                           │
+   ┌──────────────────────┐   ┌───────────┴──────────┐
+   │  Angular UI          │   │  MCP Server (opt.)   │  read-only tools,
+   └──────────────────────┘   └──────────────────────┘  no DB credentials
 ```
 
-### Parsing Pipeline
+Five Go binaries, one Angular UI, one ClickHouse database, one Helm chart, one repository. The parsing pipeline resolves licenses *before* inserting, so the stored packages carry the resolved values from the start. Details: [Architecture](https://docs.bomhort.dev/docs/architecture/), [ARCHITECTURE_PLAN.md](docs/ARCHITECTURE_PLAN.md).
 
-The Parsing Worker processes each SBOM in a carefully ordered pipeline:
+## Documentation
 
-1. **Parse** — Auto-detect format and decode:
-   - **SPDX 2.x JSON** (plain documents with `spdxVersion` field)
-   - **SPDX 3 JSON-LD** (detected via `@context: https://spdx.org/rdf/3.x/...`, parsed via protobom)
-   - **In-toto attestation envelopes** (SPDX wrapped in `predicate` field, common with Syft/BuildKit)
-   - **CycloneDX JSON** (detected via `bomFormat: "CycloneDX"`, versions 1.0–1.7)
-   - Optional: Set `USE_PROTOBOM=true` to delegate all parsing to [protobom](https://github.com/protobom/protobom) for maximum format coverage
-2. **Resolve Licenses** — For packages with `NOASSERTION`/empty licenses, query the GitHub API using three resolution strategies:
-   - Direct `github.com/{owner}/{repo}` extraction from PURLs
-   - **Well-known Go module mappings** (50+ entries: `golang.org/x/*` → `golang/*`, `gopkg.in/*`, `go.uber.org/*`, `k8s.io/*`, `dario.cat/mergo`, etc.)
-   - **Fallback** to the dedicated GitHub `/repos/{owner}/{repo}/license` endpoint
-   - **Static overrides** for repos where GitHub misdetects the license (e.g., `opencontainers/go-digest`, `shopspring/decimal`)
-3. **Insert** — Batch-INSERT SBOM metadata and packages (with resolved licenses) into ClickHouse
-4. **Scan Vulnerabilities** — OSV batch query for all PURLs
-5. **Check License Compliance** — Classify licenses against the policy and apply exceptions
+| Page | Covers |
+|---|---|
+| [Getting Started](https://docs.bomhort.dev/docs/getting-started/) | Docker Compose, Kind, hot reload, every environment variable |
+| [Deployment](https://docs.bomhort.dev/docs/deployment/) | Helm chart: SBOM sources, ownership, license policy, theming, authentication, ingress, upgrades |
+| [License Exceptions](https://docs.bomhort.dev/docs/license-exceptions/) | Exception sources, live reload, retroactive application, Argo CD |
+| [License Resolution](https://docs.bomhort.dev/docs/license-resolution/) | How a package gets its license, and the decision log behind every heuristic |
+| [Fleet Views](https://docs.bomhort.dev/docs/ownership/) | Cluster → namespace → project, tags, a runnable demo |
+| [API Reference](https://docs.bomhort.dev/docs/api-reference/) | All REST endpoints with request and response examples |
+| [MCP Server](https://docs.bomhort.dev/docs/mcp/) | Running the MCP server and what an agent can ask |
+| [Architecture](https://docs.bomhort.dev/docs/architecture/) | Components, data model, parsing pipeline |
+| [Release](https://docs.bomhort.dev/docs/release/) | Support policy, release branches, backports |
+| [Development](https://docs.bomhort.dev/docs/development/) | Code style, tests, parsers, contributor ladder, AI policy |
+| [FAQ](https://docs.bomhort.dev/docs/faq/) | Common questions and troubleshooting |
 
-See [docs/ARCHITECTURE_PLAN.md](docs/ARCHITECTURE_PLAN.md) for the full blueprint.  
-See [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) for Kubernetes deployment.  
-See [docs/RELEASE.md](docs/RELEASE.md) for release branches, release candidates, backports and publishing container images.  
-See [docs/TESTING.md](docs/TESTING.md) for writing and running tests.  
-See the [API Reference](https://docs.bomhort.dev/docs/api-reference/) for complete endpoint documentation.
-
----
-
-## Makefile Commands
-
-| Command | Description |
-|---------|-------------|
-| **Docker Compose** | |
-| `make dev` | Start full stack via Docker Compose |
-| `make dev-down` | Stop all containers |
-| `make dev-restart` | Restart with new `.env` values (keeps data) |
-| `make dev-logs` | Follow all container logs |
-| `make dev-reset` | Destroy data volumes and restart fresh |
-| `make dev-status` | Show container status and ingestion progress |
-| `make re-ingest` | Re-trigger the Ingestion Watcher (scans for new files) |
-| `make re-scan` | Wipe all data and re-process everything (e.g. after enabling OSV) |
-| `make cve-refresh` | Check all known PURLs for new CVEs (without re-scanning SBOMs) |
-| `make migrate` | Run all pending database migrations |
-| **Kind (Local Kubernetes)** | |
-| `make kind-up` | Create Kind cluster and deploy BOMHort via Helm |
-| `make kind-down` | Destroy the Kind cluster (deletes everything) |
-| `make kind-stop` | Stop the Kind cluster without losing data (preserves volumes) |
-| `make kind-start` | Resume a stopped Kind cluster (all pods & data intact) |
-| `make kind-status` | Show Kind cluster and pod status |
-| `make kind-build` | Build all container images and load them into Kind |
-| `make kind-deploy` | Build images, Helm upgrade, and restart pods |
-| `make kind-reingest` | Re-ingest all SBOMs (truncate data, re-queue, no re-download) |
-| `make kind-deploy-release VERSION=0.8.0-rc.1` | Upgrade the Kind install to a published release / RC from GHCR (no local build) |
-| **ClickHouse** | |
-| `make ch-only` | Start only ClickHouse (for local dev) |
-| `make ch-migrate` | Run SQL migrations against ClickHouse |
-| `make ch-shell` | Open ClickHouse CLI |
-| **Local Dev** | |
-| `make api` | Run API Gateway locally |
-| `make ingest` | Run Ingestion Watcher locally |
-| `make worker` | Run Parsing Worker locally |
-| `make ui-dev` | Start Angular dev server with API proxy |
-| `make backend-build` | Build all Go binaries |
-| `make backend-test` | Run all Go tests |
-| `make backend-vet` | Run go vet + go fmt |
-| `make ui-build` | Build Angular for production |
-| **Images** | |
-| `make images` | Build all 6 container images locally (TAG=dev) |
-| `make images-push` | Build and push all images to GHCR |
-| **Releases** (maintainers — see [docs/RELEASE.md](docs/RELEASE.md)) | |
-| `make release-rc VERSION=0.8.0` | Tag the next release candidate `v0.8.0-rc.N`; the first one cuts `release/v0.8` from `main` |
-| `make release VERSION=0.8.0` | Tag the final release (or a patch, `VERSION=0.8.1`) from `release/v0.8` |
-| `make cherry-pick PR=431 BRANCH=0.8` | Backport a PR merged on `main` to `release/v0.8`, as a pull request |
-| `make release-branch VERSION=0.7` | Create a release branch for a minor released before release branches existed |
-
----
-
-## API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/healthz` | Health check |
-| GET | `/api/v1/stats/dashboard` | Dashboard stats (VEX effective/suppressed counts) |
-| GET | `/api/v1/stats/dependencies?limit=N` | Top N dependencies across all projects |
-| GET | `/api/v1/stats/version-skew?page=&page_size=&search=` | Packages with inconsistent versions across projects |
-| GET | `/api/v1/sboms?page=&page_size=&search=` | Paginated SBOM list (searchable) |
-| GET | `/api/v1/sboms/{id}/detail` | SBOM detail with severity breakdown |
-| GET | `/api/v1/sboms/{id}/vulnerabilities` | Vulnerabilities for a specific SBOM |
-| GET | `/api/v1/sboms/{id}/licenses` | License breakdown for a specific SBOM |
-| GET | `/api/v1/sboms/{id}/dependencies` | Dependency tree |
-| GET | `/api/v1/vulnerabilities?page=&page_size=` | Paginated vulnerabilities (every finding, VEX status attached) |
-| GET | `/api/v1/vulnerabilities/{id}/affected-projects` | All projects affected by a CVE |
-| GET | `/api/v1/licenses/compliance` | Global license compliance overview |
-| GET | `/api/v1/licenses/sources` | Where package licenses came from, or why they are missing |
-| GET | `/api/v1/projects/license-compliance` | Projects with license violations (filtered by exceptions) |
-| GET | `/api/v1/license-exceptions` | Active license exceptions (read-only, from config file) |
-| GET | `/api/v1/license-policy` | Active license classification policy (permissive/copyleft lists) |
-| GET | `/api/v1/vex/statements?page=&page_size=` | Paginated VEX statements |
-| GET | `/api/v1/packages/archived` | Packages using archived GitHub repos (no longer maintained) |
-| GET | `/api/v1/packages/search?q=&page=&page_size=` | Package name search across all SBOMs |
-| GET | `/api/v1/search?q=&limit=` | Global faceted search (packages, projects, CVEs, licenses) |
-| GET | `/api/v1/packages/detail?name=&page=&page_size=` | All projects using a specific package (paginated) |
-
-For complete API documentation with request/response examples, see the [API Reference](https://docs.bomhort.dev/docs/api-reference/).
-
----
-
-## Adding Your SBOMs
-
-1. Place `.spdx.json` files in the `sboms/` directory (or set `SBOM_SOURCE_DIR` in `.env`)
-2. Place `.openvex.json` or `.vex.json` files in the same directory
-3. Re-trigger ingestion (see below)
-4. The Parsing Worker will automatically process new files
-
-The Ingestion Watcher deduplicates by SHA256 hash — it will skip files that have already been processed.
-
-### Re-triggering Ingestion
-
-```bash
-# Run the watcher again (scans for new files, exits when done):
-docker compose up ingestion-watcher
-
-# If you changed SBOM_LIMIT or SBOM_SOURCE_DIR, force-recreate:
-docker compose up --force-recreate ingestion-watcher
-
-# To re-ingest everything from scratch (wipes all data):
-make dev-reset
-```
-
----
-
-## License Policy
-
-The bundled default policy is derived from the [CNCF Allowed Third-Party License Policy](https://github.com/cncf/foundation/blob/main/policies-guidance/allowed-third-party-license-policy.md), because it is a well-reviewed public baseline — not because BOMHort targets CNCF projects. Replace it wholesale via `licensePolicy.custom`:
-
-- **Permissive (allowed):** Apache-2.0, MIT, MIT-0, 0BSD, BSD-2-Clause, BSD-3-Clause, ISC, PSF-2.0, Python-2.0, PostgreSQL, UPL-1.0, X11, Zlib, OpenSSL, and a few more (18 total)
-- **Copyleft (flagged):** GPL, LGPL, AGPL, MPL-2.0, EPL, EUPL, CPAL, and others (21 total)
-- **Unknown:** Any license not in either list is flagged for review
-
-### Compound Expressions
-
-SBOM generators frequently declare SPDX *expressions* rather than single IDs —
-`Apache-2.0 AND BSD-3-Clause AND MIT`, `MIT OR GPL-2.0-only`,
-`GPL-2.0-only WITH Classpath-exception-2.0`. BOMHort parses these (precedence
-`WITH` > `AND` > `OR`, parentheses, case-insensitive operators, deprecated `+`,
-free-text spellings such as `MPL 2.0` → `MPL-2.0`)
-and folds the operands into one category. The rule is configurable:
-
-| Mode | `Apache-2.0 AND MIT` | `MIT AND GPL-3.0-only` | `MIT OR GPL-3.0-only` |
-|------|----------------------|------------------------|-----------------------|
-| `strict` (default) | permissive | copyleft | permissive |
-| `permissive-wins` | permissive | permissive | permissive |
-| `off` | unknown | unknown | unknown |
-
-`strict` follows SPDX semantics — `AND` binds you to every operand, `OR` lets you
-choose. `permissive-wins` treats `AND` like `OR`; use it when your generators join
-a package's licenses with `AND` regardless of dual-licensing. `off` restores the
-pre-evaluation behaviour. A policy entry that lists a whole expression verbatim
-always wins, and a malformed expression (`MIT AND`) stays `unknown`.
-
-Set it via `expressionMode` in `license-policy.json`, the `LICENSE_EXPRESSION_MODE`
-environment variable (Compose `.env`), or `licensePolicy.expressionMode` in Helm —
-the environment variable wins. `GET /api/v1/license-policy` reports the active mode.
-Changing it only affects newly processed SBOMs; re-process to update stored results.
-
-### License Exceptions
-
-No exceptions are enabled or downloaded by default. Configure only approvals that
-apply to your organization using `licenseExceptions.custom` (a YAML object or JSON
-string), or `--set-file licenseExceptions.custom=./my-exceptions.json` with Helm.
-Docker Compose uses the initially empty `sboms/license-exceptions.json`.
-
-The [inactive example and migration guide](examples/license-exceptions/README.md)
-describe the structure and matching rules. Package exceptions stay package-scoped;
-`project` restricts them to an exact SBOM document name. There is no CNCF-specific
-blanket promotion. An empty configuration is authoritative and does not fall back
-to old approvals in the SBOM directory.
-
-Instead of a ConfigMap, `licenseExceptions.source` reads the rules from an
-`https://` URL or `s3://bucket/key`. API and workers re-read them every
-`refreshInterval` (default `60s`), and **changes apply retroactively**: a
-`license_recheck` job re-evaluates the stored results of every SBOM already
-ingested, so granting or revoking an exception needs no restart and no re-scan.
-See [License Exceptions](docs/content/docs/license-exceptions/_index.md).
-
-### Customising the Policy
-
-Override the default policy via Helm values:
-
-```yaml
-licensePolicy:
-  custom: |
-    {
-      "permissive": ["Apache-2.0", "MIT"],
-      "copyleft": ["GPL-3.0-only", "AGPL-3.0-only"]
-    }
-```
-
-Or edit the ConfigMap directly:
-
-```bash
-kubectl edit configmap bomhort-license-policy -n bomhort
-```
-
----
+In-repo: [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) · [RELEASE.md](docs/RELEASE.md) · [TESTING.md](docs/TESTING.md) · [examples/](examples/)
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.26, net/http (stdlib) |
-| Database | ClickHouse (MergeTree family) |
-| Frontend | Angular 19, CDK Virtual Scrolling |
-| Vuln Scanning | OSV.dev API |
-| VEX | OpenVEX Spec v0.2.0 |
+| Backend | Go 1.26, `net/http` (stdlib), six direct dependencies |
+| Database | ClickHouse (MergeTree family), managed by the ClickHouse Operator in Kubernetes |
+| Frontend | Angular, standalone components, CDK virtual scrolling |
+| Vulnerabilities | OSV.dev API |
+| VEX | OpenVEX |
 | Deployment | Helm 3, Docker Compose |
-
----
 
 ## Subprojects
 
@@ -627,24 +140,15 @@ The `seebom-labs` organization hosts additional BOMHort subprojects:
 
 See all repositories: <https://github.com/seebom-labs>
 
----
-
 ## Contributing
 
 We welcome contributions! See the [Contributing Guide](CONTRIBUTING.md) for how to get started.
 
-- 📖 [Full Documentation](https://docs.bomhort.dev/)
 - 🗺️ [Roadmap](https://docs.bomhort.dev/docs/roadmap/)
 - 🪜 [Contributor Ladder](https://docs.bomhort.dev/docs/development/contributor-ladder/)
 - 🤖 [AI Usage Policy](https://docs.bomhort.dev/docs/development/ai-policy/)
 - 🛡️ [Security Policy](SECURITY.md)
 
----
-
 ## License
 
 [Apache License 2.0](LICENSE)
-
-## Badges
-
-[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/seebom-labs/BOMHort/badge)](https://scorecard.dev/viewer/?uri=github.com/seebom-labs/BOMHort)

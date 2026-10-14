@@ -693,6 +693,11 @@ a `data:` URI. Locally, `BRAND_ASSETS=./my-brand make dev` mounts a directory
 at `/brand/`; in Kubernetes, mount a ConfigMap/volume with the file into the
 UI container at `/usr/share/nginx/html/brand/`.
 
+Locally with Docker Compose, the same keys live in `ui/public/ui-config.json`;
+point `UI_CONFIG=./my-ui-config.json` in `.env` at your own file and run
+`docker compose up -d --force-recreate ui`. All fields are optional and fall
+back to the built-in BOMHort default.
+
 ---
 
 ## 7. API Authentication (Optional)

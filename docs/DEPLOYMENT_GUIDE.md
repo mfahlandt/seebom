@@ -674,6 +674,10 @@ cp .env.example .env
 | `SKIP_PACKAGIST_RESOLVE` | `false` | Skip Packagist license resolution for Composer packages with unknown licenses. |
 | `SKIP_PYPI_RESOLVE` | `false` | Skip PyPI license resolution for Python packages deps.dev could not resolve. |
 | `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | Classification of compound SPDX expressions (`A AND B`, `A OR B`): `strict`, `permissive-wins` or `off`. Overrides `expressionMode` in `license-policy.json`. Re-scan after changing. |
+| `EXCEPTIONS_FILE` | `/data/config/license-exceptions.json` | License exceptions file (falls back to `SBOM_DIR/license-exceptions.json` only if missing). |
+| `EXCEPTIONS_SOURCE` | *(empty)* | Read the exceptions from an `https://` URL or `s3://bucket/key` instead of `EXCEPTIONS_FILE`. A missing remote document is an error; an unreachable one keeps the last rules that loaded. |
+| `EXCEPTIONS_SOURCE_TOKEN` | *(empty)* | Bearer token sent to an `https://` `EXCEPTIONS_SOURCE` (private repositories). |
+| `EXCEPTIONS_REFRESH_INTERVAL` | `60s` | How often the exceptions are re-read (Go duration, `0` = only at startup). Changes are re-applied to the stored results of all ingested SBOMs, no re-scan needed. |
 | `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI |
 | `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand, titles, disclaimer) |
 

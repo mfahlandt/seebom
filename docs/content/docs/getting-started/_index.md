@@ -109,6 +109,8 @@ cp .env.example .env
 | `CLICKHOUSE_MAX_MEMORY_USAGE` | `0` | API gateway only: bytes one ClickHouse query may allocate (`0` = unset; Helm default 512 MiB) |
 | `CLICKHOUSE_MAX_THREADS` | `0` | API gateway only: threads per ClickHouse query (`0` = server default) |
 | `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | Classification of compound SPDX expressions: `strict`, `permissive-wins` or `off`. See [Deployment → License Policy](/docs/deployment/#4-license-policy) |
+| `EXCEPTIONS_SOURCE` | *(empty)* | License exceptions from an `https://` URL or `s3://bucket/key` instead of `EXCEPTIONS_FILE` (token: `EXCEPTIONS_SOURCE_TOKEN`). See [Deployment → License Exceptions](/docs/deployment/#exceptions-from-outside-the-cluster-source) |
+| `EXCEPTIONS_REFRESH_INTERVAL` | `60s` | How often the exceptions are re-read; changes are re-applied to stored results automatically (`0` = only at startup) |
 
 {{% alert title="Recommended: Set GITHUB_TOKEN" color="warning" %}}
 Without a GitHub token, license resolution is limited to **60 requests per hour** — most container-image SBOMs will have many packages stuck as `NOASSERTION`. Create a [Personal Access Token (classic)](https://github.com/settings/tokens) with **no scopes** and set it in your `.env` file. See [FAQ: Should I use a GitHub token?](/docs/faq/#should-i-use-a-github-token) for details.

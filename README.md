@@ -87,6 +87,10 @@ cp .env.example .env
 | `SKIP_PACKAGIST_RESOLVE` | `false` | Skip Packagist license resolution for `pkg:composer/*` packages (development branches use the branch's or the latest release's license). |
 | `SKIP_PYPI_RESOLVE` | `false` | Skip PyPI license resolution for `pkg:pypi/*` packages deps.dev could not resolve (free-text licenses, trove classifiers). |
 | `LICENSE_EXPRESSION_MODE` | *(empty → `strict`)* | How compound SPDX expressions (`Apache-2.0 AND MIT`, `MIT OR GPL-2.0-only`) are classified: `strict` (SPDX semantics), `permissive-wins` (one permissive operand suffices) or `off` (whole string looked up verbatim). Overrides `expressionMode` in `license-policy.json`. See "License Policy". |
+| `EXCEPTIONS_FILE` | `/data/config/license-exceptions.json` | License exceptions file (falls back to `SBOM_DIR/license-exceptions.json` only if missing). |
+| `EXCEPTIONS_SOURCE` | *(empty)* | Read the exceptions from an `https://` URL or `s3://bucket/key` instead of `EXCEPTIONS_FILE`. A missing remote document is an error; an unreachable one keeps the last rules that loaded. |
+| `EXCEPTIONS_SOURCE_TOKEN` | *(empty)* | Bearer token sent to an `https://` `EXCEPTIONS_SOURCE` (private repositories). |
+| `EXCEPTIONS_REFRESH_INTERVAL` | `60s` | How often the exceptions are re-read (Go duration, `0` = only at startup). Changes are re-applied to the stored results of all ingested SBOMs, no re-scan needed. |
 | `CLUSTER_NAME` | *(empty)* | Cluster identifier for multi-cluster deployments. All ingested data is tagged with this value. Empty = single-instance mode. |
 | `NAMESPACE` | *(empty)* | Default deployment-namespace label (#138) stamped onto all ingested data. Overridable per bucket and per upload (`?namespace=`). |
 | `PROJECT` | *(empty)* | Default project label (#57) stamped onto all ingested data. Overridable per bucket and per upload (`?project=`). |
@@ -573,8 +577,12 @@ describe the structure and matching rules. Package exceptions stay package-scope
 blanket promotion. An empty configuration is authoritative and does not fall back
 to old approvals in the SBOM directory.
 
-Helm changes roll out both API and workers. **Re-process existing SBOMs** to update
-stored results after changing approvals; a watcher run alone skips unchanged files.
+Instead of a ConfigMap, `licenseExceptions.source` reads the rules from an
+`https://` URL or `s3://bucket/key`. API and workers re-read them every
+`refreshInterval` (default `60s`), and **changes apply retroactively**: a
+`license_recheck` job re-evaluates the stored results of every SBOM already
+ingested, so granting or revoking an exception needs no restart and no re-scan.
+See [Deployment → License Exceptions](docs/content/docs/deployment/_index.md#3-license-exceptions).
 
 ### Customising the Policy
 

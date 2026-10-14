@@ -194,6 +194,16 @@ func main() {
 		writeJSON(w, http.StatusOK, resp)
 	})
 
+	// CSV export of the same listing (#266); streamed, see report_csv.go.
+	mux.HandleFunc("GET /api/v1/reports/vulnerabilities", vulnerabilityReportHandler(
+		func(ctx context.Context, scope string) (vulnerabilityRows, error) {
+			cur, err := chClient.StreamVulnerabilities(ctx, scope)
+			if err != nil {
+				return nil, err
+			}
+			return cur, nil
+		}, time.Now))
+
 	// License compliance overview.
 	mux.HandleFunc("GET /api/v1/licenses/compliance", func(w http.ResponseWriter, r *http.Request) {
 		items, err := chClient.QueryLicenseCompliance(r.Context())

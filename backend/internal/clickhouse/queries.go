@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
@@ -274,6 +275,109 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 	}, nil
 }
 
+// vulnerabilityListSQL is the instance-wide finding listing shared by the
+// paginated JSON endpoint and the CSV export (#266), so both return exactly
+// the same rows. The ORDER BY ends in the row's identity: without the
+// tie-breakers, findings with equal severity and discovered_at could swap
+// places between two LIMIT/OFFSET pages and appear twice or not at all.
+func vulnerabilityListSQL(scopeWhere string) string {
+	return `
+		SELECT
+			v.vuln_id, v.severity, v.purl, v.summary,
+			v.fixed_version, v.source_file, v.discovered_at,
+			v.dependency_depth, v.aliases,
+			ifNull(vx.vex_status, '') AS vex_status
+		FROM (SELECT * FROM vulnerabilities FINAL` + scopeWhere + `) AS v
+		LEFT JOIN (
+			SELECT
+				toString(f.sbom_id) AS sbom_id, f.vuln_id AS vuln_id, f.purl AS purl,
+				argMax(s.status, s.vex_timestamp) AS vex_status
+			FROM (
+				SELECT DISTINCT sbom_id, vuln_id, purl,
+					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
+				FROM vulnerabilities FINAL
+			) AS f
+			INNER JOIN (
+				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
+				FROM vex_statements FINAL
+				WHERE sbom_id != ''
+			) AS s ON s.vuln_id = f.match_id AND s.sbom_id = toString(f.sbom_id)
+			WHERE s.product_purl = f.purl OR s.product_purl = '*'
+			GROUP BY f.sbom_id, f.vuln_id, f.purl
+		) AS vx ON vx.vuln_id = v.vuln_id
+			AND vx.purl = v.purl
+			AND vx.sbom_id = toString(v.sbom_id)
+		ORDER BY v.severity ASC, v.discovered_at DESC, v.vuln_id ASC, v.purl ASC, v.sbom_id ASC
+`
+}
+
+// scanVulnerabilityListRow scans one row of vulnerabilityListSQL.
+func scanVulnerabilityListRow(rows driver.Rows) (dto.VulnerabilityListItem, error) {
+	var item dto.VulnerabilityListItem
+	var discoveredAt time.Time
+	var depth uint16
+	var aliases []string
+	if err := rows.Scan(
+		&item.VulnID, &item.Severity, &item.PURL,
+		&item.Summary, &item.FixedVersion, &item.SourceFile,
+		&discoveredAt, &depth, &aliases, &item.VEXStatus,
+	); err != nil {
+		return item, fmt.Errorf("failed to scan vulnerability row: %w", err)
+	}
+	item.Aliases, item.CVEID = identify(item.VulnID, aliases)
+	item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
+	item.DependencyScope, item.DependencyDepth = scopeFields(depth)
+	return item, nil
+}
+
+// VulnerabilityCursor streams the rows of the instance-wide finding listing
+// one at a time (#266). Close it when done.
+type VulnerabilityCursor struct {
+	rows driver.Rows
+	item dto.VulnerabilityListItem
+	err  error
+}
+
+// StreamVulnerabilities runs the same query as QueryVulnerabilities without
+// pagination and returns a cursor over it. The query is sent before this
+// returns, so a failing query is reported here — before a caller has
+// written anything to its client.
+func (c *Client) StreamVulnerabilities(ctx context.Context, scope string) (*VulnerabilityCursor, error) {
+	scopeWhere := ""
+	if pred := depthPredicate(scope, "dependency_depth"); pred != "" {
+		scopeWhere = " WHERE " + pred
+	}
+	rows, err := c.Conn.Query(ctx, vulnerabilityListSQL(scopeWhere))
+	if err != nil {
+		return nil, fmt.Errorf("failed to query vulnerabilities: %w", err)
+	}
+	return &VulnerabilityCursor{rows: rows}, nil
+}
+
+// Next advances to the next finding. It returns false at the end or on an
+// error; check Err afterwards.
+func (cur *VulnerabilityCursor) Next() bool {
+	if cur.err != nil || !cur.rows.Next() {
+		return false
+	}
+	cur.item, cur.err = scanVulnerabilityListRow(cur.rows)
+	return cur.err == nil
+}
+
+// Item returns the current finding.
+func (cur *VulnerabilityCursor) Item() dto.VulnerabilityListItem { return cur.item }
+
+// Err returns the first scan or read error.
+func (cur *VulnerabilityCursor) Err() error {
+	if cur.err != nil {
+		return cur.err
+	}
+	return cur.rows.Err()
+}
+
+// Close releases the connection.
+func (cur *VulnerabilityCursor) Close() error { return cur.rows.Close() }
+
 // QueryVulnerabilities fetches a paginated list of vulnerabilities.
 //
 // Every finding is returned; the VEX status is joined in for display only. There
@@ -306,33 +410,7 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 		return nil, fmt.Errorf("failed to count vulnerabilities: %w", err)
 	}
 
-	rows, err := c.Conn.Query(ctx, `
-		SELECT
-			v.vuln_id, v.severity, v.purl, v.summary,
-			v.fixed_version, v.source_file, v.discovered_at,
-			v.dependency_depth, v.aliases,
-			ifNull(vx.vex_status, '') AS vex_status
-		FROM (SELECT * FROM vulnerabilities FINAL`+scopeWhere+`) AS v
-		LEFT JOIN (
-			SELECT
-				toString(f.sbom_id) AS sbom_id, f.vuln_id AS vuln_id, f.purl AS purl,
-				argMax(s.status, s.vex_timestamp) AS vex_status
-			FROM (
-				SELECT DISTINCT sbom_id, vuln_id, purl,
-					arrayJoin(arrayConcat([vuln_id], aliases)) AS match_id
-				FROM vulnerabilities FINAL
-			) AS f
-			INNER JOIN (
-				SELECT sbom_id, vuln_id, product_purl, status, vex_timestamp
-				FROM vex_statements FINAL
-				WHERE sbom_id != ''
-			) AS s ON s.vuln_id = f.match_id AND s.sbom_id = toString(f.sbom_id)
-			WHERE s.product_purl = f.purl OR s.product_purl = '*'
-			GROUP BY f.sbom_id, f.vuln_id, f.purl
-		) AS vx ON vx.vuln_id = v.vuln_id
-			AND vx.purl = v.purl
-			AND vx.sbom_id = toString(v.sbom_id)
-		ORDER BY v.severity ASC, v.discovered_at DESC
+	rows, err := c.Conn.Query(ctx, vulnerabilityListSQL(scopeWhere)+`
 		LIMIT ? OFFSET ?
 	`, pageSize, offset)
 	if err != nil {
@@ -342,21 +420,14 @@ func (c *Client) QueryVulnerabilities(ctx context.Context, page, pageSize uint64
 
 	var items []dto.VulnerabilityListItem
 	for rows.Next() {
-		var item dto.VulnerabilityListItem
-		var discoveredAt time.Time
-		var depth uint16
-		var aliases []string
-		if err := rows.Scan(
-			&item.VulnID, &item.Severity, &item.PURL,
-			&item.Summary, &item.FixedVersion, &item.SourceFile,
-			&discoveredAt, &depth, &aliases, &item.VEXStatus,
-		); err != nil {
-			return nil, fmt.Errorf("failed to scan vulnerability row: %w", err)
+		item, err := scanVulnerabilityListRow(rows)
+		if err != nil {
+			return nil, err
 		}
-		item.Aliases, item.CVEID = identify(item.VulnID, aliases)
-		item.DiscoveredAt = discoveredAt.Format(time.RFC3339)
-		item.DependencyScope, item.DependencyDepth = scopeFields(depth)
 		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read vulnerability rows: %w", err)
 	}
 
 	if items == nil {

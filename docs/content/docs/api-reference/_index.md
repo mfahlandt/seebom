@@ -772,6 +772,39 @@ All projects affected by a specific vulnerability, including transitive dependen
 
 ---
 
+## Reports
+
+### `GET /api/v1/reports/vulnerabilities`
+
+Every finding of [`GET /api/v1/vulnerabilities`](#get-apiv1vulnerabilities) as a file download for auditors (#266). Same query, same rows, same order — no pagination, every finding with its VEX status (like the JSON listing, there is no "effective only" filter; filter on the `vex_status` column). The rows are streamed from the database straight into the response, so the export works on instances with hundreds of thousands of findings without the gateway holding them in memory. The API gateway's [query limits](/docs/deployment/#query-limits) apply to it like to any other request.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `format` | string | ✅ | `csv`. The only format today; anything else is a `400`. |
+| `scope` | string | — | Only `root`, `direct`, `transitive` or `unknown` findings (see [Dependency scope](#dependency-scope)) |
+
+A legacy `vex_filter` parameter is ignored, as on the JSON listing.
+
+**Response:** `200 OK`, `Content-Type: text/csv; charset=utf-8`, `Content-Disposition: attachment; filename="bomhort-vulnerabilities-<YYYY-MM-DD>.csv"` (UTC date).
+
+```csv
+cve_id,vuln_id,aliases,severity,purl,summary,fixed_version,source_file,discovered_at,dependency_scope,dependency_depth,vex_status
+CVE-2024-45338,GO-2024-3333,CVE-2024-45338;GHSA-w32m-9786-jp63,HIGH,pkg:golang/golang.org/x/net@v0.21.0,Non-linear parsing of case-insensitive content,v0.33.0,etcd-v3.5.12.spdx.json,2026-05-15T00:00:00Z,transitive,3,not_affected
+```
+
+- `cve_id` comes first because that is the id audit questionnaires ask for. It is empty when the flaw has no CVE (see [Vulnerability ids and aliases](#vulnerability-ids)). `aliases` are `;`-joined.
+- `dependency_depth` is empty when unknown.
+- Cells starting with `=`, `+`, `-`, `@`, tab or carriage return get a leading `'`, so a spreadsheet shows them as text instead of running them as formulas (CSV injection). Summaries come from OSV, and PURLs and file names come from uploaded SBOMs, so the export cannot trust them.
+- The status line goes out before the first row. If the database fails mid-export, the file is cut short and the gateway logs `vulnerability report truncated`. A query that fails up front returns `500` with a JSON error and no file.
+
+**Errors:**
+- `400` — Missing or unsupported `format`, or invalid `scope`
+- `500` — The query failed before any row was sent
+
+---
+
 ## Licenses
 
 ### `GET /api/v1/licenses/compliance`

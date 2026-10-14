@@ -90,6 +90,18 @@ export class ApiService {
    * attached for display - there is no "effective only" mode.
    */
   /** scope: '' for all findings, or a DependencyScope to keep only one kind. */
+  /**
+   * URL of the CSV export of the vulnerability listing (#266): the same rows
+   * as getVulnerabilities, streamed by the gateway as a file download.
+   */
+  vulnerabilityReportUrl(scope = ''): string {
+    let params = new HttpParams().set('format', 'csv');
+    if (scope) {
+      params = params.set('scope', scope);
+    }
+    return `${this.baseUrl}/reports/vulnerabilities?${params.toString()}`;
+  }
+
   getVulnerabilities(page = 1, pageSize = 50, scope = ''): Observable<PaginatedResponse<VulnerabilityListItem>> {
     let params = new HttpParams()
       .set('page', page.toString())

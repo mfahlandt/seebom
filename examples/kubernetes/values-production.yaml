@@ -80,6 +80,23 @@ licenseExceptions:
   enabled: true
   mountPath: /data/config/license-exceptions/license-exceptions.json
   custom: "" # No approvals by default; see examples/license-exceptions/.
+  # API and workers re-read the rules at this interval; a change is applied
+  # to every SBOM already ingested (no restart, no re-scan). "0" = read once.
+  refreshInterval: 60s
+  #
+  # Alternative 1 — a ConfigMap managed outside the chart (kustomize, a
+  # second Argo CD source). Mutually exclusive with custom:
+  # existingConfigMap: license-exceptions
+  # existingConfigMapKey: license-exceptions.json
+  #
+  # Alternative 2 — rules that live outside the cluster, e.g. in a governance
+  # repository. Mutually exclusive with custom and existingConfigMap; nothing
+  # is mounted. Only https:// or s3://bucket/key (uses the s3.* credentials).
+  # source: https://raw.githubusercontent.com/your-org/governance/main/license-exceptions.json
+  # sourceTokenSecret:   # private repository: sent as "Authorization: Bearer <token>"
+  #   name: governance-token
+  #   key: token
+  # refreshInterval: 5m
 
 licensePolicy:
   enabled: true

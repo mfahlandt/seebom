@@ -109,6 +109,11 @@ licenseExceptions:
   enabled: true
   mountPath: /data/config/license-exceptions/license-exceptions.json
   custom: ""
+  # Instead of --set-file on every upgrade, publish the converted file in a
+  # repository and let the pods poll it. A merged approval then reaches every
+  # SBOM already ingested within refreshInterval, with no Helm upgrade at all.
+  # source: https://raw.githubusercontent.com/your-org/cncf-governance/main/license-exceptions.json
+  # refreshInterval: 5m
 
 # ─── Ingestion Watcher ──────────────────────────────────────────────────────
 ingestionWatcher:

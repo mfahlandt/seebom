@@ -151,7 +151,11 @@ The Ingestion Watcher scans the SBOM directory **recursively** for:
 | `*.vex.json` | OpenVEX statement | `my-project.vex.json` |
 
 `license-exceptions.json` and `license-policy.json` are configuration files and
-are **not ingested as SBOMs**. Use their ConfigMaps to configure them.
+are **not ingested as SBOMs**. Use their ConfigMaps to configure them — or,
+for the exceptions, an `https://` / `s3://` source (`licenseExceptions.source`,
+shown commented out in `values-production.yaml`). Either way the pods reload the
+exceptions every `refreshInterval` and apply a change to every SBOM already
+ingested; see the [License Exceptions](../../docs/content/docs/license-exceptions/_index.md) page.
 The legacy exception-file fallback in the SBOM directory is used only if the
 primary file is absent; an empty ConfigMap is authoritative.
 

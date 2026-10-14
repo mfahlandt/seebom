@@ -1339,8 +1339,8 @@ kubectl exec -it $(kubectl get pod -l app.kubernetes.io/component=api-gateway -o
 | **SBOMs (volume)** | PVC via seed job or git-sync | Push to Git, seed job clones |
 | **SBOMs (push/CI-CD)** | `skipScan` S3 bucket, or PVC | `POST /api/v1/sboms/upload` — see [Option E](#option-e-push-model-uploads-cicd) |
 | **VEX files** | Same S3 bucket or directory | Place `*.openvex.json` alongside SBOMs |
-| **License Exceptions** | ConfigMap | `licenseExceptions.custom` in Git → Helm upgrade / [Argo sync](#argo-cd-gitops) → API + worker rollout → re-process existing SBOMs |
-| **License Policy** | ConfigMap | `kubectl edit configmap` → restart API + Workers |
+| **License Exceptions** | ConfigMap (chart-rendered, or your own via `existingConfigMap`) | `licenseExceptions.custom` in Git → Helm upgrade / [Argo sync](#argo-cd-gitops) → API + worker rollout → re-process existing SBOMs. With [`existingConfigMap`](#reviewed-rules-from-their-own-source-existingconfigmap): new ConfigMap name or `kubectl rollout restart` |
+| **License Policy** | ConfigMap (chart-rendered, or your own via `existingConfigMap`) | `kubectl edit configmap` (or update your own ConfigMap) → restart API + Workers |
 | **Custom Theme** | ConfigMap | `kubectl create configmap` → restart UI |
 | **Site Config** | ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |
 | **S3 credentials** | Secret | `--set s3.accessKey=...` or `s3.credentialsSecret` (existing K8s Secret) |

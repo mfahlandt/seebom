@@ -789,8 +789,8 @@ ingress:
 | **SBOMs (S3)** | S3-compatible buckets | Configure `s3.buckets` in Helm values, CronJob streams objects |
 | **SBOMs (volume)** | PVC via seed job or git-sync | Push to Git, seed job clones or git-sync re-syncs |
 | **VEX files** | Same S3 bucket or directory as SBOMs | Place `*.openvex.json` or `*.vex.json` alongside SBOMs |
-| **License Exceptions** | `bomhort-license-exceptions` ConfigMap | `licenseExceptions.custom` → Helm rollout of API + workers → re-process existing SBOMs |
-| **License Policy** | `bomhort-license-policy` ConfigMap | `kubectl edit configmap` → restart API + Workers |
+| **License Exceptions** | `bomhort-license-exceptions` ConfigMap, or your own via `licenseExceptions.existingConfigMap` | `licenseExceptions.custom` → Helm rollout of API + workers → re-process existing SBOMs (own ConfigMap: new name or manual rollout) |
+| **License Policy** | `bomhort-license-policy` ConfigMap, or your own via `licensePolicy.existingConfigMap` | `kubectl edit configmap` → restart API + Workers |
 | **Custom Theme** | `bomhort-custom-theme` ConfigMap | `kubectl create configmap` → restart UI |
 | **Site Config** | `bomhort-ui-config` ConfigMap | Helm values `ui.siteConfig.content.*` → restart UI |
 | **Dark Mode** | Built-in toggle (navbar) | User preference, stored in browser localStorage |

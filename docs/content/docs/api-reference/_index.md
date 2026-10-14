@@ -1139,7 +1139,7 @@ file, unreachable or missing remote source); once one has loaded, a later
 outage keeps serving it. Missing optional files return an empty document. An
 existing empty primary file takes precedence over any fallback file. Stored
 compliance results follow configuration changes automatically: the workers
-re-check them in the background ([Retroactive application](/docs/deployment/#retroactive-application)).
+re-check them in the background ([Retroactive application](/docs/license-exceptions/#retroactive-application)).
 
 ### `GET /api/v1/license-policy`
 

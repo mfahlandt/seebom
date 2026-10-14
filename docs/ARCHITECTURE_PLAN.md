@@ -546,7 +546,7 @@ Exemptions are written at ingest time into `exempted_packages` + `exemption_reas
 - Local: JSON files in `sboms/`, mounted via Docker Compose
 - K8s: ConfigMaps (`bomhort-license-policy`, `bomhort-license-exceptions`)
 - Remote: `licenseExceptions.source` (https URL or `s3://bucket/key`), no ConfigMap
-- Argo CD: Git-backed `helm.valueFiles` or `helm.valuesObject` supplies `licenseExceptions.custom`. Rendering changes only the exception ConfigMap; the pods reload it and stored results are re-checked, without a rollout or a Helm upgrade hook. See the [Argo CD deployment checklist](content/docs/deployment/_index.md#argo-cd-gitops).
+- Argo CD: Git-backed `helm.valueFiles` or `helm.valuesObject` supplies `licenseExceptions.custom`. Rendering changes only the exception ConfigMap; the pods reload it and stored results are re-checked, without a rollout or a Helm upgrade hook. See the [Argo CD deployment checklist](content/docs/license-exceptions/_index.md#argo-cd-gitops).
 
 ## 10a. GitHub Dependency Health
 

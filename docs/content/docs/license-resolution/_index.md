@@ -128,7 +128,7 @@ it off, and which test pins it.
   `License :: OSI Approved :: BSD License` and `… :: Apache Software License`.
 - **Why:** Mapping them would approve a license nobody approved.
 - **Resolve it by:** fixing the SBOM, adding the exact ID to the policy, or adding
-  a license exception (see the [deployment guide](/docs/deployment/)).
+  a license exception (see [License Exceptions](/docs/license-exceptions/)).
 
 ### D4. Unrecognised names become a LicenseRef, not NOASSERTION
 

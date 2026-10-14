@@ -55,7 +55,11 @@ describe('LicenseViolationsComponent', () => {
     fixture.detectChanges();
     expect(element.textContent).toContain('No exceptions configured');
     expect(element.textContent).toContain('only approved rules apply');
-    expect(element.textContent).toContain('re-process existing SBOMs');
+    // Exceptions reload live and apply retroactively; the hint must not tell
+    // users to restart or re-scan.
+    expect(element.textContent).toContain('applied to every SBOM already ingested');
+    expect(element.textContent).not.toContain('re-process existing SBOMs');
+    expect(element.textContent).not.toContain('require restarting');
   });
 
   it('should describe pending and revoked entries as configured, not active', () => {

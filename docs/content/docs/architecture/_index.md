@@ -276,8 +276,8 @@ Lightweight daily CronJob that queries all unique PURLs (~20k) against the OSV A
 ## License Governance
 
 - **License Policy** (`license-policy.json`): Defines permissive vs. copyleft classifications
-- **License Exceptions** (`license-exceptions.json`): Empty by default; explicit organization-managed blanket or package/license/project rules. No CNCF download or implicit global approval. Configure through `licenseExceptions.custom`, your own ConfigMap (`existingConfigMap`), or an https / `s3://` URL (`source`). API and workers reload the rules every `refreshInterval`; when they change, a `license_recheck` job re-evaluates the stored compliance results of every SBOM already ingested — no restart, no re-scan. See [Retroactive application](../deployment/#retroactive-application).
-- **Argo CD / GitOps:** Git-backed Helm values update the exception ConfigMap only; the pods pick it up without a rollout. Deploy matching chart and API/worker image revisions. See [Argo CD deployment](../deployment/#argo-cd-gitops).
+- **License Exceptions** (`license-exceptions.json`): Empty by default; explicit organization-managed blanket or package/license/project rules. No CNCF download or implicit global approval. Configure through `licenseExceptions.custom`, your own ConfigMap (`existingConfigMap`), or an https / `s3://` URL (`source`). API and workers reload the rules every `refreshInterval`; when they change, a `license_recheck` job re-evaluates the stored compliance results of every SBOM already ingested — no restart, no re-scan. See [Retroactive application](../license-exceptions/#retroactive-application).
+- **Argo CD / GitOps:** Git-backed Helm values update the exception ConfigMap only; the pods pick it up without a rollout. Deploy matching chart and API/worker image revisions. See [Argo CD deployment](../license-exceptions/#argo-cd-gitops).
 - **Permissive licenses** (MIT, Apache-2.0, BSD) are **never** tracked as non-compliant
 - **Visual:** Green = exempted copyleft, Red = violation, Orange = exempted in dependency tree
 

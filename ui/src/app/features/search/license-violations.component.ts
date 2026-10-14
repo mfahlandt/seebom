@@ -57,10 +57,9 @@ type Tab = 'non-compliant' | 'exceptions';
       <div *ngIf="activeTab === 'exceptions'" class="tab-content">
         <div class="config-hint">
           <span class="hint-icon">ℹ</span>
-          Exceptions are loaded from <code>license-exceptions.json</code> in the config volume.
-          No exceptions are enabled by default; only approved rules apply.
-          Configure <code>licenseExceptions.custom</code> through Helm to roll out API and workers,
-          then re-process existing SBOMs. Direct file edits require restarting both services.
+          Exceptions are loaded from <code>license-exceptions.json</code> (Helm values, your own
+          ConfigMap, or an https / S3 source). No exceptions are enabled by default; only approved rules apply.
+          Changes are picked up without a restart and applied to every SBOM already ingested.
         </div>
 
         <div class="exceptions-section" *ngIf="exceptionsFile.blanketExceptions.length > 0">

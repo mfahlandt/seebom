@@ -337,7 +337,7 @@ ConfigMap (`licenseExceptions.existingConfigMap`), or an https URL / `s3://`
 object (`licenseExceptions.source`). The API Gateway and the workers re-read
 them every `licenseExceptions.refreshInterval` (default `60s`), and stored
 results of SBOMs already ingested are re-checked when they change. See
-[License Exceptions](content/docs/deployment/_index.md#3-license-exceptions).
+[License Exceptions](content/docs/license-exceptions/_index.md).
 
 ### Configure reviewed exceptions through Helm
 
@@ -386,7 +386,7 @@ project-name semantics, not global approval semantics.
 **No re-scan is needed.** When the rules change, a worker enqueues a
 `license_recheck` job that re-evaluates every stored compliance result and
 rewrites the ones whose outcome changed — revoked approvals included. See
-[Retroactive application](content/docs/deployment/_index.md#retroactive-application).
+[Retroactive application](content/docs/license-exceptions/_index.md#retroactive-application).
 License *policy* changes still need a re-scan.
 
 ### Argo CD (GitOps)
@@ -394,7 +394,7 @@ License *policy* changes still need a re-scan.
 Store `licenseExceptions.custom` in Git-backed Helm values referenced by your
 Application's `helm.valueFiles` or `helm.valuesObject`. For multi-source
 Applications, configure the entry that renders the Helm chart.
-See the [Argo CD example and deployment checklist](content/docs/deployment/_index.md#argo-cd-gitops).
+See the [Argo CD example and deployment checklist](content/docs/license-exceptions/_index.md#argo-cd-gitops).
 
 Argo only needs to render and sync the chart: changed exceptions alter the
 ConfigMap only, the pods reload it, and stored results are re-checked. No Helm
@@ -408,7 +408,7 @@ To keep a large reviewed file out of the Application, set
 `licenseExceptions.existingConfigMap` (and/or `licensePolicy.existingConfigMap`)
 to a ConfigMap managed by a second source; the chart then mounts it instead of
 rendering its own. It is mutually exclusive with `custom`; content changes are
-reloaded like the chart's own ConfigMap. See the [multi-source example](content/docs/deployment/_index.md#reviewed-rules-from-their-own-source-existingconfigmap).
+reloaded like the chart's own ConfigMap. See the [multi-source example](content/docs/license-exceptions/_index.md#reviewed-rules-from-their-own-source-existingconfigmap).
 
 ---
 

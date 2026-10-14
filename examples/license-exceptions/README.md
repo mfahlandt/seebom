@@ -56,13 +56,13 @@ optional bearer token).
 Changes apply to SBOMs already ingested: the workers re-check every stored
 compliance result against the new rules (a `license_recheck` job), so granting
 or revoking an exception needs no re-scan. See
-[Retroactive application](../../docs/content/docs/deployment/_index.md#retroactive-application).
+[Retroactive application](../../docs/content/docs/license-exceptions/_index.md#retroactive-application).
 
 ### Argo CD
 
 Use Git-backed `helm.valueFiles` or `helm.valuesObject.licenseExceptions.custom`
 in your Application instead of a local `helm upgrade --set-file` command.
-The [Argo CD example and checklist](../../docs/content/docs/deployment/_index.md#argo-cd-gitops)
+The [Argo CD example and checklist](../../docs/content/docs/license-exceptions/_index.md#argo-cd-gitops)
 show an inactive `valuesObject` example and explain the required chart/image revisions.
 
 An exception change updates only the ConfigMap; the running pods reload it and
@@ -73,7 +73,7 @@ For a large reviewed file (such as the CNCF foundation exceptions), keep it out
 of the Application: manage it as its own ConfigMap from a second source and set
 `licenseExceptions.existingConfigMap` instead of `custom`, or point
 `licenseExceptions.source` at the file's https URL and skip the ConfigMap; see the
-[multi-source example](../../docs/content/docs/deployment/_index.md#reviewed-rules-from-their-own-source-existingconfigmap).
+[multi-source example](../../docs/content/docs/license-exceptions/_index.md#reviewed-rules-from-their-own-source-existingconfigmap).
 
 ## Matching contract
 

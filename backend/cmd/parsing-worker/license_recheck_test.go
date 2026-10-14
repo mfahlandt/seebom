@@ -274,3 +274,13 @@ func TestRunLicenseRecheckJobOnlyWithItsRules(t *testing.T) {
 		}
 	})
 }
+
+func TestRecheckPollInterval(t *testing.T) {
+	// Reloading disabled still re-asserts once a minute so a failed recheck is retried.
+	if got := recheckPollInterval(0); got != time.Minute {
+		t.Fatalf("disabled: %s", got)
+	}
+	if got := recheckPollInterval(5 * time.Minute); got != 5*time.Minute {
+		t.Fatalf("enabled: %s", got)
+	}
+}

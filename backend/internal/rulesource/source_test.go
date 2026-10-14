@@ -339,3 +339,69 @@ func TestWatcherKeepsReportingAnInvalidRemoteDocument(t *testing.T) {
 		t.Fatalf("fixed document: refresh err = %v, snapshot err = %v", err, w.Current().Err)
 	}
 }
+
+// An outage mid-run keeps the last good version current, does not fire
+// onChange, and the first successful poll after it reports the new document.
+func TestWatcherRunSurvivesOutage(t *testing.T) {
+	src := &memFetcher{}
+	src.set("v1", nil)
+	w := NewWatcher(src, func(b []byte) (string, error) { return string(b), nil })
+	if _, err := w.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !w.Remote() || w.Current().Source != "memory" {
+		t.Fatalf("watcher must report the fetcher's Remote/Describe, got remote=%v source=%q", w.Remote(), w.Current().Source)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	changes := make(chan string, 4)
+	go w.Run(ctx, 5*time.Millisecond, func(s Snapshot[string]) { changes <- s.Value })
+
+	src.set("", errors.New("connection refused"))
+	deadline := time.After(2 * time.Second)
+	for w.Current().Err == nil {
+		select {
+		case v := <-changes:
+			t.Fatalf("onChange fired during an outage with %q", v)
+		case <-deadline:
+			t.Fatal("outage never observed")
+		case <-time.After(time.Millisecond):
+		}
+	}
+	if cur := w.Current(); cur.Value != "v1" || !cur.Ready {
+		t.Fatalf("outage must keep the last good version, got %+v", cur)
+	}
+
+	src.set("v2", nil)
+	select {
+	case v := <-changes:
+		if v != "v2" {
+			t.Fatalf("got %q after recovery", v)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no change notification after recovery")
+	}
+	if err := w.Current().Err; err != nil {
+		t.Fatalf("Err must clear after recovery, got %v", err)
+	}
+}
+
+func TestDescribeNamesTheConfiguredSource(t *testing.T) {
+	for _, tc := range []struct {
+		opts Options
+		want string
+	}{
+		{Options{Paths: []string{"/a.json", "", "/b.json"}}, "/a.json, /b.json"},
+		{Options{Source: "https://example.org/rules.json?sig=secret"}, "https://example.org/rules.json"},
+		{Options{Source: "s3://bucket/path/rules.json", S3: fakeS3{}}, "s3://bucket/path/rules.json"},
+	} {
+		f, err := New(tc.opts)
+		if err != nil {
+			t.Fatalf("%+v: %v", tc.opts, err)
+		}
+		if got := f.Describe(); got != tc.want {
+			t.Errorf("Describe(%+v) = %q, want %q", tc.opts, got, tc.want)
+		}
+	}
+}

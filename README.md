@@ -582,7 +582,7 @@ Instead of a ConfigMap, `licenseExceptions.source` reads the rules from an
 `refreshInterval` (default `60s`), and **changes apply retroactively**: a
 `license_recheck` job re-evaluates the stored results of every SBOM already
 ingested, so granting or revoking an exception needs no restart and no re-scan.
-See [Deployment → License Exceptions](docs/content/docs/deployment/_index.md#3-license-exceptions).
+See [License Exceptions](docs/content/docs/license-exceptions/_index.md).
 
 ### Customising the Policy
 

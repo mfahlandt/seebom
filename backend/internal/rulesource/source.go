@@ -112,8 +112,16 @@ func parseS3URI(uri string) (bucket, key string, err error) {
 
 type fileFetcher struct{ paths []string }
 
-func (f *fileFetcher) Describe() string { return strings.Join(f.paths, ", ") }
-func (f *fileFetcher) Remote() bool     { return false }
+func (f *fileFetcher) Describe() string {
+	named := make([]string, 0, len(f.paths))
+	for _, p := range f.paths {
+		if p != "" {
+			named = append(named, p)
+		}
+	}
+	return strings.Join(named, ", ")
+}
+func (f *fileFetcher) Remote() bool { return false }
 
 func (f *fileFetcher) Fetch(context.Context) ([]byte, error) {
 	for _, p := range f.paths {

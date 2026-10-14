@@ -24,6 +24,7 @@ func NewClient(cfg *config.Config) (*Client, error) {
 			Username: cfg.ClickHouseUser,
 			Password: cfg.ClickHousePassword,
 		},
+		Settings: querySettings(cfg),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to ClickHouse: %w", err)
@@ -34,6 +35,26 @@ func NewClient(cfg *config.Config) (*Client, error) {
 	}
 
 	return &Client{Conn: conn}, nil
+}
+
+// querySettings turns the configured per-query limits (#344-I) into session
+// settings sent with every query. Unset (0) limits are omitted rather than
+// sent as 0, so the server or user profile keeps deciding for them.
+func querySettings(cfg *config.Config) clickhouse.Settings {
+	settings := clickhouse.Settings{}
+	if cfg.ClickHouseMaxExecutionTime > 0 {
+		settings["max_execution_time"] = cfg.ClickHouseMaxExecutionTime
+	}
+	if cfg.ClickHouseMaxMemoryUsage > 0 {
+		settings["max_memory_usage"] = cfg.ClickHouseMaxMemoryUsage
+	}
+	if cfg.ClickHouseMaxThreads > 0 {
+		settings["max_threads"] = cfg.ClickHouseMaxThreads
+	}
+	if len(settings) == 0 {
+		return nil
+	}
+	return settings
 }
 
 // Close closes the ClickHouse connection.

@@ -957,6 +957,24 @@ Even when authentication is enabled, the following endpoints are always reachabl
 | Invalid token/key | `401 Unauthorized` |
 | `AUTH_ENABLED=true` but no `SERVICE_TOKEN` and no `API_KEYS` configured | All requests rejected (misconfiguration warning logged at startup) |
 
+### Query limits {#query-limits}
+
+The API gateway sends three ClickHouse session settings with every query it runs, so one expensive request — a search over a large fleet, a project page over thousands of SBOMs — fails with an error instead of starving every other page and the ingestion pipeline (#344):
+
+```yaml
+apiGateway:
+  queryLimits:
+    maxExecutionTime: 30        # seconds per query (max_execution_time)
+    maxMemoryUsage: 536870912   # bytes per query (max_memory_usage), 512 MiB
+    maxThreads: 0               # threads per query (max_threads); 0 = server default
+```
+
+`0` leaves a setting unset, so the ClickHouse server or user-profile default applies. `maxMemoryUsage` is a plain byte count — `512Mi` fails the render — and the default is half of the chart's 1Gi ClickHouse memory limit: raise it together with `clickhouse.installation.podTemplate.resources.limits.memory`. A query that hits a limit returns `500` to that one caller; everything else keeps working.
+
+Only the gateway is limited. The parsing workers, the CVE refresher and the migration job read the same ClickHouse but get none of these variables: their long inserts and full-table refreshes are the job, not an accident, and a limit sized for interactive pages would make them fail on large instances. If legitimate pages start hitting the limit, scale ClickHouse and raise the limit rather than removing it — and `apiGateway.replicas` adds request capacity, not per-query headroom.
+
+Outside Helm, set `CLICKHOUSE_MAX_EXECUTION_TIME`, `CLICKHOUSE_MAX_MEMORY_USAGE` and `CLICKHOUSE_MAX_THREADS` on the gateway only. An invalid or negative value stops the gateway at startup.
+
 ---
 
 ## 8. GitHub Token (License Resolution)

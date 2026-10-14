@@ -370,6 +370,22 @@ apiGateway:
   # per-IP write budget. Lower it if the upload endpoint is exposed to
   # untrusted networks.
   maxUploadSizeMB: 50
+  # Per-query ClickHouse limits for the API gateway only (#344-I), sent as
+  # session settings with every query. One heavy interactive query should
+  # fail on its own instead of starving every other page and the ingestion
+  # pipeline. The parsing workers, cve-refresher and migrations stay
+  # unlimited: their long-running inserts and refreshes are legitimate.
+  # 0 = unset (the ClickHouse server/profile default applies).
+  queryLimits:
+    # Seconds a single query may run (max_execution_time).
+    maxExecutionTime: 30
+    # Bytes a single query may allocate (max_memory_usage). The default is
+    # half of clickhouse.installation.podTemplate.resources.limits.memory
+    # (1Gi); scale it with that limit. A plain integer — "512Mi" is refused.
+    maxMemoryUsage: 536870912
+    # Threads per query (max_threads). Unset: ClickHouse uses the CPU cores
+    # it sees in its cgroup.
+    maxThreads: 0
   service:
     type: ClusterIP
     port: 80

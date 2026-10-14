@@ -95,6 +95,9 @@ cp .env.example .env
 | `AUTH_ENABLED` | `false` | Enable API authentication middleware. When `false` (default), all API endpoints are unauthenticated. |
 | `SERVICE_TOKEN` | *(empty)* | Shared secret for upstream proxy/gateway integrations. Accepted via `Authorization: Bearer <token>` or `X-Service-Token: <token>`. |
 | `API_KEYS` | *(empty)* | Comma-separated list of API keys for direct API consumers (CI/CD, scripts). Accepted via `X-API-Key: <key>`. |
+| `CLICKHOUSE_MAX_EXECUTION_TIME` | *(unset)* | API gateway only: seconds a single ClickHouse query may run. Helm default `30` (`apiGateway.queryLimits`). `0` = unset. |
+| `CLICKHOUSE_MAX_MEMORY_USAGE` | *(unset)* | API gateway only: bytes a single ClickHouse query may allocate. Helm default 512 MiB. `0` = unset. |
+| `CLICKHOUSE_MAX_THREADS` | *(unset)* | API gateway only: threads per ClickHouse query. `0` = server default. |
 | `MAX_UPLOAD_SIZE_MB` | `50` | Max request body size for `POST /api/v1/sboms/upload`. The endpoint requires `AUTH_ENABLED=true`. |
 | `CUSTOM_THEME` | (example file) | Path to a custom CSS theme file for the UI. See "Custom Theme" section. |
 | `UI_CONFIG` | `./ui/public/ui-config.json` | Path to a JSON file with UI text overrides (brand name, dashboard texts, disclaimer). See "Site Configuration" section. |

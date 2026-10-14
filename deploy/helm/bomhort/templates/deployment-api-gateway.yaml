@@ -58,7 +58,20 @@ spec:
                 name: {{ .Release.Name }}-config
             - secretRef:
                 name: {{ .Release.Name }}-secret
-          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB }}
+          {{- $queryLimits := list }}
+          {{- range $key, $env := dict "maxExecutionTime" "CLICKHOUSE_MAX_EXECUTION_TIME" "maxMemoryUsage" "CLICKHOUSE_MAX_MEMORY_USAGE" "maxThreads" "CLICKHOUSE_MAX_THREADS" }}
+          {{- $v := index ($.Values.apiGateway.queryLimits | default dict) $key }}
+          {{- if not (or (kindIs "invalid" $v) (kindIs "float64" $v) (kindIs "int" $v) (kindIs "int64" $v)) }}
+          {{- fail (printf "apiGateway.queryLimits.%s must be a number (got %v); maxMemoryUsage is in bytes" $key $v) }}
+          {{- end }}
+          {{- if and (not (kindIs "invalid" $v)) (lt (int64 $v) 0) }}
+          {{- fail (printf "apiGateway.queryLimits.%s must not be negative (0 = unset)" $key) }}
+          {{- end }}
+          {{- if and (not (kindIs "invalid" $v)) (gt (int64 $v) 0) }}
+          {{- $queryLimits = append $queryLimits (dict "name" $env "value" (int64 $v | toString)) }}
+          {{- end }}
+          {{- end }}
+          {{- if or .Values.clickhouse.userPasswordSecret.enabled .Values.s3.credentialsSecret.enabled .Values.apiGateway.auth.enabled .Values.apiGateway.maxUploadSizeMB $queryLimits }}
           env:
             {{- if .Values.clickhouse.userPasswordSecret.enabled }}
             - name: CLICKHOUSE_PASSWORD
@@ -108,6 +121,10 @@ spec:
             {{- if .Values.apiGateway.maxUploadSizeMB }}
             - name: MAX_UPLOAD_SIZE_MB
               value: {{ .Values.apiGateway.maxUploadSizeMB | quote }}
+            {{- end }}
+            {{- range $queryLimits }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
             {{- end }}
           {{- end }}
           livenessProbe:

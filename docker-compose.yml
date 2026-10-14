@@ -47,6 +47,10 @@ services:
       CLICKHOUSE_DATABASE: bomhort
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: ""
+      # Per-query limits for the gateway only (#344-I); 0 or unset = no limit.
+      CLICKHOUSE_MAX_EXECUTION_TIME: ${CLICKHOUSE_MAX_EXECUTION_TIME:-30}
+      CLICKHOUSE_MAX_MEMORY_USAGE: ${CLICKHOUSE_MAX_MEMORY_USAGE:-0}
+      CLICKHOUSE_MAX_THREADS: ${CLICKHOUSE_MAX_THREADS:-0}
       API_PORT: "8080"
       SBOM_DIR: /data/sboms
       # Ownership dimensions (#131 cluster, #138 namespace, #57 project).

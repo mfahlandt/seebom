@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -63,6 +64,16 @@ type Config struct {
 	ClickHouseDatabase string
 	ClickHouseUser     string
 	ClickHousePassword string
+
+	// Per-query limits sent as ClickHouse session settings on every query of
+	// this process (#344-I). 0 means "not set": the server or user profile
+	// decides. Only the API gateway gets them by default (Helm
+	// apiGateway.queryLimits): interactive reads must not starve the rest,
+	// while worker inserts, the CVE refresh and migrations legitimately run
+	// long and must not be cut off.
+	ClickHouseMaxExecutionTime int   // seconds, max_execution_time
+	ClickHouseMaxMemoryUsage   int64 // bytes, max_memory_usage
+	ClickHouseMaxThreads       int   // max_threads
 
 	// SBOM source directory (local filesystem)
 	SBOMDir string
@@ -248,6 +259,10 @@ func Load() (*Config, error) {
 		MCPAPIKey:         getEnv("MCP_API_KEY", ""),
 		MCPServiceToken:   getEnv("MCP_SERVICE_TOKEN", ""),
 		MCPRequestTimeout: getEnvInt("MCP_REQUEST_TIMEOUT_SECONDS", 30),
+	}
+
+	if err := loadClickHouseLimits(cfg); err != nil {
+		return nil, err
 	}
 
 	switch cfg.MCPTransport {
@@ -477,6 +492,40 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return i
+}
+
+// loadClickHouseLimits reads the per-query limits. Unlike getEnvInt it
+// refuses malformed or negative values: silently falling back to "no limit"
+// would leave an operator believing a guard is in place that is not.
+func loadClickHouseLimits(cfg *Config) error {
+	execTime, err := getEnvNonNegative("CLICKHOUSE_MAX_EXECUTION_TIME", math.MaxInt32)
+	if err != nil {
+		return err
+	}
+	memory, err := getEnvNonNegative("CLICKHOUSE_MAX_MEMORY_USAGE", math.MaxInt64)
+	if err != nil {
+		return err
+	}
+	threads, err := getEnvNonNegative("CLICKHOUSE_MAX_THREADS", math.MaxInt32)
+	if err != nil {
+		return err
+	}
+	cfg.ClickHouseMaxExecutionTime = int(execTime)
+	cfg.ClickHouseMaxMemoryUsage = memory
+	cfg.ClickHouseMaxThreads = int(threads)
+	return nil
+}
+
+func getEnvNonNegative(key string, max int64) (int64, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0, nil
+	}
+	v, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || v < 0 || v > max {
+		return 0, fmt.Errorf("invalid %s %q (want a non-negative integer, 0 = unset)", key, raw)
+	}
+	return v, nil
 }
 
 func getEnvBool(key string, fallback bool) bool {

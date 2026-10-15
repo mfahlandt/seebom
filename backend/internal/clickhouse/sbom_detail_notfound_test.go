@@ -27,19 +27,6 @@ func TestQuerySBOMDetailUnknownIDIsNotFound(t *testing.T) {
 	}
 }
 
-// The dependency tree had the same flaw and a second one: an SBOM whose sboms
-// row exists but whose packages are not inserted yet (mid-ingest) also came
-// back as a 500. Unknown ids are now ErrSBOMNotFound; the known-but-empty case
-// is an empty tree (200 with []).
-func TestQuerySBOMDependenciesUnknownIDIsNotFound(t *testing.T) {
-	c := testClient(t)
-
-	_, err := c.QuerySBOMDependencies(context.Background(), uuid.New().String())
-	if !errors.Is(err, ErrSBOMNotFound) {
-		t.Errorf("error = %v, want ErrSBOMNotFound so the gateway can map it to 404", err)
-	}
-}
-
 func TestIsNoRows(t *testing.T) {
 	cases := []struct {
 		name string

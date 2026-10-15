@@ -230,6 +230,25 @@ type ProjectLicenseViolation struct {
 	PackageScopes map[string]string `json:"package_scopes,omitempty"`
 }
 
+// ProjectLicenseViolationSummary is one row of
+// GET /api/v1/projects/license-compliance?summary=true: a
+// ProjectLicenseViolation with the package lists reduced to counts.
+// NonCompliantPackageCount equals len(non_compliant_packages) of the full
+// listing; packages that are neither direct nor transitive (root, or no
+// recorded depth) are in neither DirectCount nor TransitiveCount.
+type ProjectLicenseViolationSummary struct {
+	SBOMID                   string   `json:"sbom_id"`
+	SourceFile               string   `json:"source_file"`
+	DocumentName             string   `json:"document_name"`
+	CopyleftCount            uint64   `json:"copyleft_count"`
+	UnapprovedCount          uint64   `json:"unapproved_count"`
+	UnknownCount             uint64   `json:"unknown_count"`
+	ViolatingLicenses        []string `json:"violating_licenses"`
+	NonCompliantPackageCount uint64   `json:"non_compliant_package_count"`
+	DirectCount              uint64   `json:"direct_count"`
+	TransitiveCount          uint64   `json:"transitive_count"`
+}
+
 // AffectedProject represents a project affected by a specific CVE.
 type AffectedProject struct {
 	SBOMID       string `json:"sbom_id"`

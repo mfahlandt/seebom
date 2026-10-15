@@ -13,6 +13,7 @@ import {
   LicenseSourceItem,
   VEXStatementItem,
   ProjectLicenseViolation,
+  ProjectLicenseViolationSummary,
   AffectedProject,
   DependencyStatsResponse,
   DependencySearchResponse,
@@ -129,6 +130,12 @@ export class ApiService {
 
   getProjectsWithLicenseViolations(): Observable<ProjectLicenseViolation[]> {
     return this.http.get<ProjectLicenseViolation[]>(`${this.baseUrl}/projects/license-compliance`);
+  }
+
+  /** Same rows without the package lists; what the compliance page renders. */
+  getProjectLicenseViolationSummaries(): Observable<ProjectLicenseViolationSummary[]> {
+    const params = new HttpParams().set('summary', 'true');
+    return this.http.get<ProjectLicenseViolationSummary[]>(`${this.baseUrl}/projects/license-compliance`, { params });
   }
 
   getDependencyStats(limit = 50): Observable<DependencyStatsResponse> {

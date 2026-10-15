@@ -110,6 +110,12 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryLicenseCompliance", func() error { _, err := c.QueryLicenseCompliance(ctx); return err }},
 		{"QueryLicenseSources", func() error { _, err := c.QueryLicenseSources(ctx); return err }},
 		{"QueryProjectsWithLicenseViolations", func() error { _, err := c.QueryProjectsWithLicenseViolations(ctx, nil); return err }},
+		{"QueryProjectLicenseViolationSummaries", func() error { _, err := c.QueryProjectLicenseViolationSummaries(ctx, nil); return err }},
+		// The batched form an empty database never reaches through the summary.
+		{"scanLicenseViolations/ids", func() error {
+			return c.scanLicenseViolations(ctx, nil, []string{someID}, func(*sbomViolations) error { return nil })
+		}},
+		{"packageScopesFor", func() error { _, err := c.packageScopesFor(ctx, map[string][]string{someID: {"x"}}); return err }},
 		{"QueryVulnerabilities", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10, ""); return err }},
 		{"QueryVEXStatements", func() error { _, err := c.QueryVEXStatements(ctx, 1, 10); return err }},
 		{"QueryClusters", func() error { _, err := c.QueryClusters(ctx); return err }},

@@ -212,6 +212,24 @@ export interface ProjectLicenseViolation {
   package_scopes?: Record<string, DependencyScope>;
 }
 
+/**
+ * GET /projects/license-compliance?summary=true: a ProjectLicenseViolation
+ * with the package lists reduced to counts. Root packages and packages without
+ * a recorded depth are in neither direct_count nor transitive_count.
+ */
+export interface ProjectLicenseViolationSummary {
+  sbom_id: string;
+  source_file: string;
+  document_name: string;
+  copyleft_count: number;
+  unapproved_count: number;
+  unknown_count: number;
+  violating_licenses: string[];
+  non_compliant_package_count: number;
+  direct_count: number;
+  transitive_count: number;
+}
+
 export interface AffectedProject {
   sbom_id: string;
   source_file: string;

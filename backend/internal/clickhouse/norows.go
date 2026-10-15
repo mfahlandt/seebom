@@ -1,8 +1,10 @@
 package clickhouse
 
 import (
+	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 )
 
 // isNoRows reports whether err means "the query matched nothing".
@@ -20,4 +22,16 @@ func isNoRows(err error) bool {
 		return true
 	}
 	return err.Error() == "sql: no rows in result set"
+}
+
+// sbomExists reports whether sboms holds a row for sbomID. Used to tell an
+// unknown id (404) apart from a known SBOM whose dependent rows are missing.
+func (c *Client) sbomExists(ctx context.Context, sbomID string) (bool, error) {
+	var n uint64
+	if err := c.Conn.QueryRow(ctx,
+		"SELECT count() FROM sboms WHERE sbom_id = ?", sbomID,
+	).Scan(&n); err != nil {
+		return false, fmt.Errorf("failed to check sbom %s: %w", sbomID, err)
+	}
+	return n > 0, nil
 }

@@ -694,6 +694,12 @@ The UI reconstructs the tree by following `children` indices. Root nodes are tho
 
 `license_source` says where `license` came from (`declared`, `github`, `npm`, `nuget`, `depsdev`, `packagist`, `pypi`, optionally with `+latest` / `+normalized`) or, when the license is still unknown, why (`first-party`, `not-published`, `no-license-upstream`, `no-purl`, `unsupported-ecosystem`, `unresolved`). It is omitted for SBOMs ingested before BOMHort recorded it. See [License Resolution](/docs/license-resolution/).
 
+An SBOM that exists but has no package rows yet (for example while it is being ingested) returns `200` with `[]`.
+
+**Errors:**
+- `400` — `id` is not a UUID
+- `404` — No SBOM with this ID
+
 ---
 
 ## Vulnerabilities

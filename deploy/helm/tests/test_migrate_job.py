@@ -8,7 +8,9 @@ failed the Argo sync. These tests pin the replacement:
 
 - the name is stable for identical input (no Argo diff, no re-run),
 - it changes when a migration file or the Job spec changes (new Job runs),
-- the password comes from userPasswordSecret when that is enabled.
+- the password comes from userPasswordSecret when that is enabled,
+- the Job fails instead of hanging: an upgrade with the same migrations
+  renders the same name and never replaces a stuck Job.
 
 Run with python3 -m unittest discover -s deploy/helm/tests -v (requires helm).
 """
@@ -97,6 +99,31 @@ class MigrateJobPasswordTest(unittest.TestCase):
         self.assertIn("name: clickhouse-password", output)
         self.assertIn("key: password", output)
         self.assertNotIn("test-secret", output)
+
+
+class MigrateJobFailsVisiblyTest(unittest.TestCase):
+    def script(self):
+        result = subprocess.run(
+            ["helm", "template", "test", str(CHART),
+             "--show-only", "templates/configmap-migrations.yaml"],
+            cwd=ROOT, text=True, capture_output=True, check=True,
+        )
+        return result.stdout
+
+    def test_active_deadline_default_and_override(self):
+        self.assertIn("activeDeadlineSeconds: 3600", render())
+        self.assertIn("activeDeadlineSeconds: 600",
+                      render(values={"migrations": {"activeDeadlineSeconds": 600}}))
+
+    def test_wait_loop_is_bounded(self):
+        script = self.script()
+        self.assertIn('if [ "$tries" -ge 100 ]; then', script)
+        # The client's error is kept, not discarded, so the log says why.
+        self.assertNotIn('--query="SELECT 1" >/dev/null', script)
+
+    def test_rejected_credentials_fail_at_once(self):
+        script = self.script()
+        self.assertIn("*AUTHENTICATION_FAILED*|*UNKNOWN_USER*|*REQUIRED_PASSWORD*)", script)
 
 
 if __name__ == "__main__":

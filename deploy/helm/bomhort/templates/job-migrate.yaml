@@ -26,6 +26,7 @@ spec:
 ttlSecondsAfterFinished: 300
 {{- end }}
 backoffLimit: 10
+activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
 template:
   metadata:
     labels:

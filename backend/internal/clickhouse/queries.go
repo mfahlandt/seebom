@@ -533,6 +533,20 @@ func (c *Client) QuerySBOMDependencies(ctx context.Context, sbomID string) ([]dt
 		&spdxIDs, &names, &versions, &purls, &licenses, &sources,
 		&relSources, &relTargets, &relTypes, &depths,
 	)
+	if isNoRows(err) {
+		// No package row is not necessarily an error: the sboms row is
+		// written before the packages, so a document that is mid-ingest (or
+		// re-ingest) has none yet. Only an id that is not in sboms at all is
+		// a 404; reporting both as a 500 filled the log with ERROR lines.
+		exists, existsErr := c.sbomExists(ctx, sbomID)
+		if existsErr != nil {
+			return nil, existsErr
+		}
+		if !exists {
+			return nil, ErrSBOMNotFound
+		}
+		return []dto.DependencyNode{}, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to query sbom_packages for %s: %w", sbomID, err)
 	}

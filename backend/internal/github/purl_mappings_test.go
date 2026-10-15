@@ -5,10 +5,9 @@ import (
 	"testing"
 )
 
-// The archived-repo views rebuild ExtractGitHubRepo's mapping in SQL from
-// WellKnownModuleMappings. That only stays correct while the exported table
-// and the function agree, so the agreement is asserted here rather than left
-// to whoever next adds a module to the map.
+// WellKnownModuleMappings exports the table ExtractGitHubRepo maps with. The
+// exported view and the function must agree, so the agreement is asserted
+// here rather than left to whoever next adds a module to the map.
 
 // TestWellKnownMappingsRoundTrip is the drift guard: every exported prefix must
 // resolve, through ExtractGitHubRepo, to exactly the repo key exported with it.

@@ -118,7 +118,7 @@ bomhort/
         ├── deployment-ui.yaml              # Optional custom-theme + ui-config volumes
         ├── cronjob-ingestion-watcher.yaml  # git-sync initContainer
         ├── cronjob-cve-refresher.yaml      # Daily CVE refresh (configurable)
-        ├── job-migrate.yaml                # DB migration job (runs at install/upgrade)
+        ├── job-migrate.yaml                # DB migration job, named after a hash of its migrations (re-runs when they change)
         ├── validate-removed-values.yaml    # Fails the render on removed values (seedJob, #391)
         ├── pvc-sbom-data.yaml              # PVC for SBOM storage
         ├── service-api-gateway.yaml

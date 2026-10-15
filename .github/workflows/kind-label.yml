@@ -34,7 +34,9 @@ jobs:
             case "$l" in kind/*) echo "already has $l — leaving it"; exit 0;; esac
           done
           # "feat(api)!: ..." -> "feat"; anything before the first ( ! or :
-          prefix=$(printf '%s' "$TITLE" | sed -E 's/^([A-Za-z]+).*/\1/' | tr '[:upper:]' '[:lower:]')
+          # Backports are titled "[release/vX.Y] <original title>" (hack/cherry-pick.sh),
+          # so leading [...] tags are skipped first.
+          prefix=$(printf '%s' "$TITLE" | sed -E 's/^([[:space:]]*\[[^]]*\])*[[:space:]]*//; s/^([A-Za-z]+).*/\1/' | tr '[:upper:]' '[:lower:]')
           case "$prefix" in
             feat)                                   kind=feature ;;
             fix|revert)                             kind=bug ;;

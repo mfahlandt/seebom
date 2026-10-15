@@ -138,7 +138,8 @@ Release-notes categories in [`.github/release.yml`](.github/release.yml) are the
 labels. `.github/workflows/kind-label.yml` derives one from the conventional-commit prefix of
 the PR title (`feat:` → `kind/feature`, `fix:` → `kind/bug`, `perf:` → `kind/performance`,
 `docs:` → `kind/docs`, `test:` → `kind/test`, `chore:`/`ci:`/`build:`/`refactor:` →
-`kind/cleanup`), so a well-formed title is all a PR needs. A PR without one carries `needs-kind`
+`kind/cleanup`), so a well-formed title is all a PR needs. Leading `[...]` tags are skipped,
+so a backport titled `[release/v0.8] fix: …` gets `kind/bug` too. A PR without one carries `needs-kind`
 until `/kind` sets it. The component labels (`documentation`, `backend`, `helm`, …) say *where*
 a change is, not *what* it is, and do not sort release notes.
 

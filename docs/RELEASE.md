@@ -144,7 +144,8 @@ The GitHub Actions workflow (`.github/workflows/release.yml`) triggers on any `v
    - **Pre-release** flag for `-rc`, `-alpha`, `-beta` versions
 
 Release notes are grouped by the PR's `kind/*` label (see `.github/release.yml`), which
-`.github/workflows/kind-label.yml` derives from the conventional-commit prefix of the title:
+`.github/workflows/kind-label.yml` derives from the conventional-commit prefix of the title
+(leading `[...]` tags such as a backport's `[release/v0.8]` are skipped):
 - 🔒 Security (`kind/security` — set by hand, listed first)
 - 🚀 Features (`kind/feature` ← `feat:`)
 - 🐛 Bug Fixes (`kind/bug` ← `fix:`, `revert:`)

@@ -727,7 +727,9 @@ apiGateway:
     serviceToken: "your-strong-random-secret-here"
 ```
 
-> **UI ⇄ API Gateway:** When you deploy the bundled Angular UI alongside the API Gateway, the chart automatically injects the same `SERVICE_TOKEN` into the UI's nginx container. Nginx adds the `Authorization: Bearer …` header on every `/api/` proxy call before forwarding to the API Gateway, so the browser never sees the token. No extra configuration is required — flip `auth.enabled` to `true` and both sides are wired up.
+> **UI ⇄ API Gateway:** When you deploy the bundled Angular UI alongside the API Gateway, the chart automatically injects the same `SERVICE_TOKEN` into the UI's nginx container. Nginx adds the `Authorization: Bearer …` header on `/api/` read requests before forwarding to the API Gateway, so the browser never sees the token. No extra configuration is required — flip `auth.enabled` to `true` and both sides are wired up.
+>
+> The token is injected on **`GET` and `HEAD` only**. The UI is read-only, and the nginx proxy is reachable by anyone who can open the UI — injecting on writes would let every anonymous visitor call `POST /api/v1/sboms/upload` and `PATCH /api/v1/sboms/{id}` as the service. Writers (CI pipelines pushing SBOMs) must send their own credential, e.g. an `X-API-Key`, either directly to the API Gateway or through the UI host; a client-supplied `Authorization` header is always passed through unchanged.
 
 Clients send the token via either header:
 

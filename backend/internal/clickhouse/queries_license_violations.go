@@ -11,10 +11,11 @@ import (
 )
 
 // scopeBatchSize is how many SBOMs one batched query covers. It keeps the
-// interpolated `sbom_id IN (...)` list far below ClickHouse's max_query_size
+// interpolated `sbom_id IN (...)` lists far below ClickHouse's max_query_size
 // (256 KiB: a single list of every violating SBOM failed with a syntax error
-// at position 262108 in production) and bounds the package arrays held at once.
-const scopeBatchSize = 200
+// at position 262108 in production); 1000 ids are ~40 KiB per list. Measured
+// on 6000 SBOMs, batches of 200 were ~40% slower than 1000 (per-query overhead).
+const scopeBatchSize = 1000
 
 // violationsQuery lists non-compliant license rows, ordered by SBOM so a
 // caller can finish one SBOM before the next starts. %s is empty or an
@@ -214,11 +215,11 @@ func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, excepti
 		return nil, err
 	}
 
-	want := make(map[string][]string, len(all))
+	ids := make([]string, 0, len(all))
 	for _, e := range all {
-		want[e.sbomID] = e.packages
+		ids = append(ids, e.sbomID)
 	}
-	scopes, err := c.packageScopesFor(ctx, want)
+	scopes, err := c.violationScopesFor(ctx, ids)
 	if err != nil {
 		log.Printf("WARNING: package scopes for license violations: %v", err)
 	}
@@ -266,11 +267,11 @@ func (c *Client) QueryProjectLicenseViolationSummaries(ctx context.Context, exce
 
 		var scopes map[string]map[string]string
 		if !scopesFailed && len(batch) > 0 {
-			want := make(map[string][]string, len(batch))
+			batchIDs := make([]string, 0, len(batch))
 			for _, e := range batch {
-				want[e.sbomID] = e.packages
+				batchIDs = append(batchIDs, e.sbomID)
 			}
-			scopes, err = c.packageScopesFor(ctx, want)
+			scopes, err = c.violationScopesFor(ctx, batchIDs)
 			if err != nil {
 				// Best effort, as in the full listing; one warning, not one per batch.
 				log.Printf("WARNING: package scopes for license violation summaries: %v", err)
@@ -316,6 +317,68 @@ func summarizeViolations(e *sbomViolations, scopes map[string]string) dto.Projec
 		}
 	}
 	return s
+}
+
+// violationScopesQuery returns, per SBOM, only the packages that appear in
+// one of its violating license_compliance rows, each with its nearest depth.
+// The narrowing happens in ClickHouse: sbom_packages holds every package of
+// an SBOM, and shipping all of them to the gateway to keep a few was most of
+// the endpoint's time. The (sbom_id, name) IN subquery is a hash lookup;
+// has() over the wanted names per package was measured ~10x slower.
+// arrayResize pads short depth arrays with depgraph.Unknown (65535), as
+// depgraph.DepthOf does.
+const violationScopesQuery = `
+	SELECT toString(sbom_id), groupArray(name), groupArray(depth)
+	FROM (
+		SELECT sbom_id, name, min(depth) AS depth
+		FROM (
+			SELECT sbom_id, package_names, arrayResize(package_depths, length(package_names), 65535) AS depths
+			FROM sbom_packages FINAL
+			WHERE sbom_id IN (?) AND notEmpty(package_depths)
+		)
+		ARRAY JOIN package_names AS name, depths AS depth
+		WHERE (sbom_id, name) IN (
+			SELECT sbom_id, arrayJoin(non_compliant_packages)
+			FROM license_compliance FINAL
+			WHERE sbom_id IN (?) AND category IN ('copyleft', 'unapproved', 'unknown')
+		)
+		GROUP BY sbom_id, name
+	)
+	GROUP BY sbom_id
+`
+
+// violationScopesFor returns, per SBOM id, the scope of each package named in
+// its violating license rows, in batches of scopeBatchSize SBOMs. SBOMs
+// without recorded depths (ingested before migration 025) are absent.
+func (c *Client) violationScopesFor(ctx context.Context, ids []string) (map[string]map[string]string, error) {
+	out := make(map[string]map[string]string, len(ids))
+	for _, chunk := range chunkStrings(ids, scopeBatchSize) {
+		if err := c.violationScopesBatch(ctx, chunk, out); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+func (c *Client) violationScopesBatch(ctx context.Context, ids []string, out map[string]map[string]string) error {
+	rows, err := c.Conn.Query(ctx, violationScopesQuery, ids, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id string
+		var names []string
+		var depths []uint16
+		if err := rows.Scan(&id, &names, &depths); err != nil {
+			return err
+		}
+		if m := packageScopes(names, depths); m != nil {
+			out[id] = m
+		}
+	}
+	return rows.Err()
 }
 
 // packageScopesFor returns, per SBOM id, the scope of each wanted package

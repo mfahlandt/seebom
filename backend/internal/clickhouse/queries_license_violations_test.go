@@ -123,9 +123,14 @@ func TestChunkStrings(t *testing.T) {
 // A batch of SBOM ids interpolated into `IN (...)` must stay well below
 // ClickHouse's default max_query_size of 256 KiB. One list of every violating
 // SBOM did not, and failed in production with a syntax error at position 262108.
+// violationScopesQuery interpolates the list twice; half the limit is the bound.
 func TestScopeBatchFitsMaxQuerySize(t *testing.T) {
 	id := "'" + strings.Repeat("f", 36) + "', "
-	if size := scopeBatchSize * len(id); size > 64<<10 {
+	lists := strings.Count(violationScopesQuery, "IN (?)")
+	if lists != 2 {
+		t.Fatalf("violationScopesQuery has %d id lists, test assumes 2", lists)
+	}
+	if size := lists * scopeBatchSize * len(id); size > 128<<10 {
 		t.Fatalf("a batch interpolates %d bytes of ids", size)
 	}
 }

@@ -189,6 +189,16 @@ describe('ApiService', () => {
     req.flush([]);
   });
 
+  it('should fetch license violation summaries', () => {
+    service.getProjectLicenseViolationSummaries().subscribe((summaries) => {
+      expect(summaries).toEqual([]);
+    });
+
+    const req = httpMock.expectOne('/api/v1/projects/license-compliance?summary=true');
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
   it('should fetch affected projects by CVE', () => {
     service.getAffectedProjectsByCVE('CVE-2024-1234').subscribe((projects) => {
       expect(projects).toEqual([]);

@@ -13,11 +13,29 @@ data:
   run-migrations.sh: |
     #!/bin/sh
     set -e
+    # Bounded wait, and credentials errors fail at once: the Job name only
+    # changes with the migrations or the spec, so a Job stuck here would
+    # never be replaced by an upgrade. Failing makes the problem visible
+    # (kubectl get jobs, Argo health); see the deployment guide.
     echo "⏳ Waiting for ClickHouse to be ready..."
-    until clickhouse-client --host="$CH_HOST" --port="$CH_PORT" \
+    tries=0
+    until out=$(clickhouse-client --host="$CH_HOST" --port="$CH_PORT" \
           --user="$CH_USER" --password="$CH_PASSWORD" \
-          --query="SELECT 1" >/dev/null 2>&1; do
-      echo "  ClickHouse not ready, retrying in 3s..."
+          --query="SELECT 1" 2>&1); do
+      case "$out" in
+        *AUTHENTICATION_FAILED*|*UNKNOWN_USER*|*REQUIRED_PASSWORD*)
+          echo "❌ ClickHouse rejected the credentials of user '$CH_USER':" >&2
+          echo "$out" >&2
+          exit 1
+          ;;
+      esac
+      tries=$((tries + 1))
+      if [ "$tries" -ge 100 ]; then
+        echo "❌ ClickHouse at $CH_HOST:$CH_PORT not ready after $tries attempts; last error:" >&2
+        echo "$out" >&2
+        exit 1
+      fi
+      echo "  ClickHouse not ready ($tries/100), retrying in 3s..."
       sleep 3
     done
 

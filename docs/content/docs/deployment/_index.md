@@ -505,7 +505,7 @@ SBOM is parsed. Changing them affects **new** ingests only.
 
 Run migration `015` before deploying the new images — the columns must exist
 before any writer references them. The `migrate` Job does this automatically on
-`helm upgrade`.
+`helm upgrade` or an Argo CD sync ([schema migrations](#schema-migrations)).
 
 ```bash
 helm upgrade bomhort ./deploy/helm/bomhort -f my-values.yaml
@@ -893,6 +893,114 @@ helm install bomhort ./deploy/helm/bomhort \
   --set parsingWorker.replicas=10
 ```
 
+### Schema migrations {#schema-migrations}
+
+Every install and upgrade runs a `migrate` Job that applies all files in the
+chart's `migrations/` directory. The migrations are idempotent
+(`IF NOT EXISTS`), so running them again changes nothing.
+
+The Job is named `<release>-migrate-<hash>`. The hash covers the migration
+files, the migration script and the Job spec. A release that adds or edits a
+migration therefore gets a **new** Job, which runs. A release with the same
+migrations renders the **same** Job, so nothing runs again and nothing shows
+up as a diff.
+
+{{% alert title="Up to 0.8.0-rc.1: the Job was named after the Helm revision" color="warning" %}}
+These charts named the Job `<release>-migrate-<revision>`. Argo CD renders
+charts with `helm template`, where the revision is always `1`. The Job stayed
+`bomhort-migrate-1` forever: it was created once and never ran again, so the
+migrations added by later releases were never applied. Once its pod template
+changed, every Argo sync also failed with `spec.template: … field is
+immutable`.
+
+When you upgrade, Argo creates the new `bomhort-migrate-<hash>` Job. With
+`prune: true` it also removes `bomhort-migrate-1`. Without pruning, delete the
+old Job yourself (`kubectl -n bomhort delete job bomhort-migrate-1`); the new
+Job runs either way. After that sync, check that the missing columns exist
+before anything else:
+
+```bash
+kubectl -n bomhort get jobs -l app.kubernetes.io/component=migrate
+kubectl -n bomhort logs -l app.kubernetes.io/component=migrate --tail=40
+```
+{{% /alert %}}
+
+To run the migrations again by hand (for example after restoring ClickHouse
+from an older backup), delete the current `migrate` Job. `helm upgrade` or the
+next Argo sync recreates it under the same name, and it runs again.
+
+### Argo CD (GitOps) {#argo-cd}
+
+Argo CD renders the chart with `helm template` and applies the result. Nothing
+in the chart relies on Helm's release history. Two settings matter for the
+batch Jobs:
+
+- **`cleanBatchJobs: false`.** With the default `true`, a finished Job deletes
+  itself after five minutes. Argo then reports the Job as missing, and with
+  `selfHeal` it recreates it, so the migrations run every few minutes. Keep the
+  Jobs; they are small.
+- **`ignoreDifferences` for Jobs.** Kubernetes adds `controller-uid` labels to a
+  Job's selector and pod template. Argo shows these as a permanent diff unless
+  they are ignored. Ignoring them is safe because the chart never changes a
+  Job's spec under the same name: a different spec renders as a different Job.
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: bomhort
+  namespace: argocd
+spec:
+  project: default
+  sources:
+    - repoURL: ghcr.io/seebom-labs/bomhort/charts
+      chart: bomhort
+      targetRevision: 0.8.0
+      helm:
+        valuesObject:
+          cleanBatchJobs: false
+          clickhouse:
+            userPasswordSecret:
+              enabled: true
+              secretName: clickhouse-password
+              key: password
+          s3:
+            buckets:
+              - name: my-org-sboms
+                endpoint: https://s3.example.com
+                region: us-east-1
+          licenseExceptions:
+            enabled: true
+            existingConfigMap: my-license-exceptions
+            existingConfigMapKey: license-exceptions.json
+    # Optional second source for the ConfigMaps you manage yourself
+    # (license exceptions, ...), see /docs/license-exceptions/#argo-cd-gitops.
+    - repoURL: https://github.com/my-org/platform.git
+      targetRevision: HEAD
+      path: manifests/bomhort
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: bomhort
+  syncPolicy:
+    automated:
+      prune: true      # removes Jobs the chart no longer renders, e.g. bomhort-migrate-1
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: batch
+      kind: Job
+      jqPathExpressions:
+        - .status
+        - .spec.selector
+        - .spec.template.metadata.labels
+```
+
+Do not use `ignoreDifferences` to hide changes to a Job's containers or
+volumes. If a Job's spec shows as changed under the same name, the chart is
+outdated: upgrade it rather than ignoring the diff.
+
 ---
 
 ## 10. Headless Mode (API-Only)
@@ -1204,7 +1312,7 @@ spec:
     namespace: bomhort
 ```
 
-After confirming data integrity, set `dataMigration.enabled: false` and remove the old `seebom` Application.
+After confirming data integrity, set `dataMigration.enabled: false` and remove the old `seebom` Application. See [Argo CD (GitOps)](#argo-cd) for the Job settings every Argo-managed install needs.
 
 ---
 

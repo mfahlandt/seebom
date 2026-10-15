@@ -391,6 +391,14 @@ License *policy* changes still need a re-scan.
 
 ### Argo CD (GitOps)
 
+Set `cleanBatchJobs: false` and ignore the server-added Job labels
+(`.spec.selector`, `.spec.template.metadata.labels`), otherwise Argo keeps
+recreating the finished Jobs. The schema-migration Job is named after the hash of
+its migrations, so a release with new migrations creates a new Job that runs,
+and the old one is pruned. Charts up to 0.8.0-rc.1 named it after the Helm
+revision, which is always `1` under Argo, so new migrations never ran. See the
+[Argo CD Application example](content/docs/deployment/_index.md#argo-cd).
+
 Store `licenseExceptions.custom` in Git-backed Helm values referenced by your
 Application's `helm.valueFiles` or `helm.valuesObject`. For multi-source
 Applications, configure the entry that renders the Helm chart.

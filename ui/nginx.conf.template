@@ -1,10 +1,20 @@
+# The SERVICE_TOKEN is injected for read requests only. The UI never writes,
+# and this proxy is public: injecting on POST/PATCH would authenticate every
+# anonymous visitor for the write endpoints (upload, source override).
+# Writers send their own credential.
+map $request_method $bomhort_read_auth {
+    default "";
+    GET     "${BOMHORT_AUTH_HEADER_VALUE}";
+    HEAD    "${BOMHORT_AUTH_HEADER_VALUE}";
+}
+
 # If the client already supplied an Authorization header, pass it through.
 # Otherwise inject the SERVICE_TOKEN configured for the API Gateway (when
 # AUTH_ENABLED=true on the gateway). When SERVICE_TOKEN is empty,
 # BOMHORT_AUTH_HEADER_VALUE is empty and nginx omits the header entirely.
 map $http_authorization $bomhort_effective_auth {
     default $http_authorization;
-    ""      "${BOMHORT_AUTH_HEADER_VALUE}";
+    ""      $bomhort_read_auth;
 }
 
 # index.html must be revalidated on every load: it names the hashed JS

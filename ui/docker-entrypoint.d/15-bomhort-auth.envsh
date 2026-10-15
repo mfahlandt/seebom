@@ -7,8 +7,8 @@
 #   SERVICE_TOKEN unset/empty -> BOMHORT_AUTH_HEADER_VALUE=""
 #     (nginx will omit the Authorization header when the client also sends none)
 #   SERVICE_TOKEN=<secret>    -> BOMHORT_AUTH_HEADER_VALUE="Bearer <secret>"
-#     (nginx injects this as Authorization on every /api/ proxy call that has
-#      no client-supplied Authorization header)
+#     (nginx injects this as Authorization on /api/ GET and HEAD calls that
+#      have no client-supplied Authorization header; never on writes)
 
 if [ -n "${SERVICE_TOKEN:-}" ]; then
     export BOMHORT_AUTH_HEADER_VALUE="Bearer ${SERVICE_TOKEN}"

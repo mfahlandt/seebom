@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
-	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
@@ -175,7 +174,12 @@ func (c *Client) QuerySBOMLicenses(ctx context.Context, sbomID string) ([]dto.SB
 	// Step 3: direct vs. transitive per listed package. Best effort - an
 	// SBOM ingested before migration 025 simply has no scopes.
 	if len(items) > 0 {
-		scopes, err := c.packageScopesForSBOMs(ctx, []string{sbomID})
+		var names []string
+		for _, it := range items {
+			names = append(names, it.Packages...)
+			names = append(names, it.ExemptedPackages...)
+		}
+		scopes, err := c.packageScopesFor(ctx, map[string][]string{sbomID: names})
 		if err != nil {
 			log.Printf("WARNING: package scopes for sbom %s: %v", sbomID, err)
 		} else if all := scopes[sbomID]; len(all) > 0 {
@@ -186,38 +190,6 @@ func (c *Client) QuerySBOMLicenses(ctx context.Context, sbomID string) ([]dto.SB
 	}
 
 	return items, nil
-}
-
-// packageScopesForSBOMs returns, per SBOM id, the name → scope map derived
-// from sbom_packages.package_depths. SBOMs without recorded depths are
-// absent from the result.
-func (c *Client) packageScopesForSBOMs(ctx context.Context, sbomIDs []string) (map[string]map[string]string, error) {
-	if len(sbomIDs) == 0 {
-		return map[string]map[string]string{}, nil
-	}
-	rows, err := c.Conn.Query(ctx, `
-		SELECT toString(sbom_id), package_names, package_depths
-		FROM sbom_packages FINAL
-		WHERE sbom_id IN (?)
-	`, sbomIDs)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make(map[string]map[string]string, len(sbomIDs))
-	for rows.Next() {
-		var id string
-		var names []string
-		var depths []uint16
-		if err := rows.Scan(&id, &names, &depths); err != nil {
-			return nil, err
-		}
-		if m := packageScopes(names, depths); m != nil {
-			out[id] = m
-		}
-	}
-	return out, rows.Err()
 }
 
 // pickScopes narrows a per-SBOM scope map to the names in the given lists.
@@ -330,133 +302,6 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 	}
 
 	return &detail, nil
-}
-
-// QueryProjectsWithLicenseViolations finds all SBOMs that have copyleft, unapproved or unknown licenses,
-// excluding any licenses/packages covered by exceptions.
-func (c *Client) QueryProjectsWithLicenseViolations(ctx context.Context, exceptions *license.ExceptionIndex) ([]dto.ProjectLicenseViolation, error) {
-	rows, err := c.Conn.Query(ctx, `
-		SELECT
-			lc.sbom_id,
-			lc.source_file,
-			ifNull(s.document_name, lc.source_file) AS document_name,
-			lc.license_id,
-			lc.category,
-			lc.package_count,
-			lc.non_compliant_packages
-		FROM (SELECT * FROM license_compliance FINAL) AS lc
-		LEFT JOIN (SELECT * FROM sboms FINAL) AS s ON s.sbom_id = lc.sbom_id
-		WHERE lc.category IN ('copyleft', 'unapproved', 'unknown')
-		ORDER BY lc.sbom_id, lc.license_id
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query license violations: %w", err)
-	}
-	defer rows.Close()
-
-	type sbomAgg struct {
-		sbomID       string
-		sourceFile   string
-		documentName string
-		copyleft     uint64
-		unapproved   uint64
-		unknown      uint64
-		licenses     []string
-		packages     []string
-	}
-
-	agg := make(map[string]*sbomAgg)
-	var order []string
-
-	for rows.Next() {
-		var sbomID, sourceFile, documentName, licenseID, category string
-		var packageCount uint32
-		var packages []string
-		if err := rows.Scan(&sbomID, &sourceFile, &documentName, &licenseID, &category, &packageCount, &packages); err != nil {
-			return nil, fmt.Errorf("failed to scan violation row: %w", err)
-		}
-
-		// Check blanket license exception.
-		if exceptions != nil {
-			if exempt, _ := exceptions.IsExempt("", licenseID); exempt {
-				continue // Entire license is exempted.
-			}
-		}
-
-		// Filter out exempted packages.
-		var violatingPkgs []string
-		for _, pkg := range packages {
-			if exceptions != nil {
-				if exempt, _ := exceptions.IsExempt(pkg, licenseID, documentName); exempt {
-					continue
-				}
-			}
-			violatingPkgs = append(violatingPkgs, pkg)
-		}
-
-		if len(violatingPkgs) == 0 {
-			continue // All packages in this license are exempted.
-		}
-
-		entry, ok := agg[sbomID]
-		if !ok {
-			entry = &sbomAgg{sbomID: sbomID, sourceFile: sourceFile, documentName: documentName}
-			agg[sbomID] = entry
-			order = append(order, sbomID)
-		}
-		switch category {
-		case "copyleft":
-			entry.copyleft += uint64(len(violatingPkgs))
-		case "unapproved":
-			entry.unapproved += uint64(len(violatingPkgs))
-		default:
-			entry.unknown += uint64(len(violatingPkgs))
-		}
-		entry.licenses = append(entry.licenses, licenseID)
-
-		seen := make(map[string]bool)
-		for _, pkg := range violatingPkgs {
-			if !seen[pkg] && pkg != "" {
-				seen[pkg] = true
-				entry.packages = append(entry.packages, pkg)
-			}
-		}
-	}
-
-	scopes, err := c.packageScopesForSBOMs(ctx, order)
-	if err != nil {
-		log.Printf("WARNING: package scopes for license violations: %v", err)
-	}
-
-	items := make([]dto.ProjectLicenseViolation, 0, len(order))
-	for _, id := range order {
-		e := agg[id]
-		// Deduplicate licenses.
-		licSeen := make(map[string]bool)
-		var uniqueLics []string
-		for _, l := range e.licenses {
-			if !licSeen[l] {
-				licSeen[l] = true
-				uniqueLics = append(uniqueLics, l)
-			}
-		}
-		items = append(items, dto.ProjectLicenseViolation{
-			SBOMID:               e.sbomID,
-			SourceFile:           e.sourceFile,
-			DocumentName:         e.documentName,
-			CopyleftCount:        e.copyleft,
-			UnapprovedCount:      e.unapproved,
-			UnknownCount:         e.unknown,
-			ViolatingLicenses:    uniqueLics,
-			NonCompliantPackages: e.packages,
-			PackageScopes:        pickScopes(scopes[id], e.packages),
-		})
-	}
-
-	if items == nil {
-		items = []dto.ProjectLicenseViolation{}
-	}
-	return items, nil
 }
 
 // QueryAffectedProjectsByCVE finds all SBOMs affected by a specific vulnerability.

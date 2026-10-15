@@ -118,7 +118,7 @@ bomhort/
         ├── deployment-ui.yaml              # Optional custom-theme + ui-config volumes
         ├── cronjob-ingestion-watcher.yaml  # git-sync initContainer
         ├── cronjob-cve-refresher.yaml      # Daily CVE refresh (configurable)
-        ├── job-migrate.yaml                # DB migration job (runs at install/upgrade)
+        ├── job-migrate.yaml                # DB migration job, named after a hash of its migrations (re-runs when they change)
         ├── validate-removed-values.yaml    # Fails the render on removed values (seedJob, #391)
         ├── pvc-sbom-data.yaml              # PVC for SBOM storage
         ├── service-api-gateway.yaml
@@ -239,7 +239,7 @@ S3 project grouping continues to use the source path. See the
 | GET | `/api/v1/licenses/sources` | License provenance breakdown (source / unresolved reason per package) |
 | GET | `/api/v1/projects?page=&page_size=&search=` | Grouped project listing (derived from S3 path or document_name) |
 | GET | `/api/v1/projects?group_by=parent` | Projects grouped under their resolved parent (`internal/projectgroup`: mapping file `PROJECT_GROUPS_FILE`, explicit bucket/path/upload `parent`, tag, then repository owner, document name, purl namespace, supplier — ambiguous owners group nothing) |
-| GET | `/api/v1/projects/license-compliance` | Projects with copyleft/unapproved/unknown licenses (filtered by exceptions) |
+| GET | `/api/v1/projects/license-compliance` | Projects with copyleft/unapproved/unknown licenses (filtered by exceptions); `?summary=true` returns counts instead of package lists, read in batches |
 | GET | `/api/v1/license-exceptions` | Active license exceptions (read-only, from config file) |
 | GET | `/api/v1/license-policy` | Active license classification (permissive/copyleft lists) |
 | GET | `/api/v1/vex/statements?page=&page_size=` | Paginated VEX statements with matched affected_sboms |

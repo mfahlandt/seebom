@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { ScrollingModule } from '@angular/cdk/scrolling';
 import { ApiService } from '../../core/api.service';
-import { ProjectLicenseViolation, LicenseExceptionsFile } from '../../core/api.models';
+import { ProjectLicenseViolationSummary, LicenseExceptionsFile } from '../../core/api.models';
 import { forkJoin } from 'rxjs';
 
 type Tab = 'non-compliant' | 'exceptions';
@@ -42,8 +42,8 @@ type Tab = 'non-compliant' | 'exceptions';
             </div>
             <div class="details">
               <span class="licenses">{{ v.violating_licenses.join(', ') }}</span>
-              <span class="pkgs" *ngIf="v.non_compliant_packages.length">
-                ({{ v.non_compliant_packages.length | number }} packages<ng-container *ngIf="scopeSummary(v) as sc">: {{ sc }}</ng-container>)
+              <span class="pkgs" *ngIf="v.non_compliant_package_count">
+                ({{ v.non_compliant_package_count | number }} packages<ng-container *ngIf="scopeSummary(v) as sc">: {{ sc }}</ng-container>)
               </span>
             </div>
           </div>
@@ -160,24 +160,14 @@ type Tab = 'non-compliant' | 'exceptions';
 })
 export class LicenseViolationsComponent implements OnInit {
   /** "3 direct, 5 transitive" for a violation row; '' when no scopes are recorded. */
-  scopeSummary(v: ProjectLicenseViolation): string {
-    if (!v.package_scopes) {
-      return '';
-    }
-    let direct = 0;
-    let transitive = 0;
-    for (const pkg of v.non_compliant_packages) {
-      const scope = v.package_scopes[pkg];
-      if (scope === 'direct') direct++;
-      else if (scope === 'transitive') transitive++;
-    }
+  scopeSummary(v: ProjectLicenseViolationSummary): string {
     const parts: string[] = [];
-    if (direct) parts.push(`${direct} direct`);
-    if (transitive) parts.push(`${transitive} transitive`);
+    if (v.direct_count) parts.push(`${v.direct_count} direct`);
+    if (v.transitive_count) parts.push(`${v.transitive_count} transitive`);
     return parts.join(', ');
   }
 
-  violations: ProjectLicenseViolation[] = [];
+  violations: ProjectLicenseViolationSummary[] = [];
   exceptionsFile: LicenseExceptionsFile = {
     version: '1.0.0', lastUpdated: '', blanketExceptions: [], exceptions: [],
   };
@@ -192,7 +182,7 @@ export class LicenseViolationsComponent implements OnInit {
 
   ngOnInit(): void {
     forkJoin({
-      violations: this.api.getProjectsWithLicenseViolations(),
+      violations: this.api.getProjectLicenseViolationSummaries(),
       exceptions: this.api.getLicenseExceptions(),
     }).subscribe({
       next: ({ violations, exceptions }) => {
@@ -212,6 +202,6 @@ export class LicenseViolationsComponent implements OnInit {
     return this.exceptionsFile.blanketExceptions.length + this.exceptionsFile.exceptions.length;
   }
 
-  trackByViolation(_i: number, v: ProjectLicenseViolation): string { return v.sbom_id; }
+  trackByViolation(_i: number, v: ProjectLicenseViolationSummary): string { return v.sbom_id; }
 }
 

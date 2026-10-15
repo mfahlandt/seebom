@@ -331,9 +331,21 @@ func main() {
 	})
 
 	// Projects with non-compliant licenses (filtered by exceptions).
+	// ?summary=true replaces the package lists with counts: the full listing
+	// carries every non-compliant package name and grows with the instance.
 	mux.HandleFunc("GET /api/v1/projects/license-compliance", func(w http.ResponseWriter, r *http.Request) {
 		excIdx, ok := requestExceptions(w, exceptions)
 		if !ok {
+			return
+		}
+		if r.URL.Query().Get("summary") == "true" {
+			summaries, err := chClient.QueryProjectLicenseViolationSummaries(r.Context(), excIdx)
+			if err != nil {
+				log.Printf("ERROR: license violation summaries: %v", err)
+				writeError(w, http.StatusInternalServerError, "Failed to fetch license violations")
+				return
+			}
+			writeJSON(w, http.StatusOK, summaries)
 			return
 		}
 		violations, err := chClient.QueryProjectsWithLicenseViolations(r.Context(), excIdx)

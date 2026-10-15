@@ -1099,6 +1099,32 @@ Projects with copyleft, unapproved or unknown license packages (filtered by acti
 
 `package_scopes` gives each non-compliant package its [dependency scope](#dependency-scope); `unknown` packages are left out, a missing key reads as `unknown`.
 
+The full listing carries every non-compliant package name of every SBOM and grows with the instance; on a large fleet it is tens of megabytes. Clients that only need the numbers should ask for the summary.
+
+**Query parameters:**
+
+| Parameter | Description |
+|---|---|
+| `summary` | `true` returns one summary per SBOM instead: the counts and licenses as above, the package lists reduced to `non_compliant_package_count` (equal to the length of `non_compliant_packages` in the full listing), `direct_count` and `transitive_count`. Root packages and packages without a recorded depth are in neither. The server reads the SBOMs in batches, so memory does not grow with the instance. The UI's License Compliance page uses this form. |
+
+**Response (`?summary=true`):** `200 OK`
+```json
+[
+  {
+    "sbom_id": "a1b2c3d4-...",
+    "source_file": "my-project.spdx.json",
+    "document_name": "my-project-v2.1",
+    "copyleft_count": 3,
+    "unapproved_count": 2,
+    "unknown_count": 1,
+    "violating_licenses": ["LGPL-2.1-only", "CC0-1.0", "NOASSERTION"],
+    "non_compliant_package_count": 2,
+    "direct_count": 1,
+    "transitive_count": 1
+  }
+]
+```
+
 ### `GET /api/v1/license-exceptions`
 
 Configured license exception document (read-only, loaded from the configured

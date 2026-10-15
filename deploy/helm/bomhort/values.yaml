@@ -602,6 +602,13 @@ dataMigration:
       cpu: "2"
       memory: 2Gi
 
+# Schema migration Job (templates/job-migrate.yaml).
+migrations:
+  # Upper bound for the whole Job, retries included; it then fails visibly
+  # instead of hanging. A failed Job is not replaced by an upgrade unless the
+  # migrations change: delete it to retry (see the deployment guide).
+  activeDeadlineSeconds: 3600
+
 # Set to false to keep Job resources after completion (for debugging, or better visibility in ArgoCD). By default, Jobs are cleaned up after 5 minutes to prevent clutter.
 # Argo CD: set to false. A Job deleted by its TTL is reported missing and recreated by selfHeal, re-running it every few minutes.
 cleanBatchJobs: true

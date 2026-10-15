@@ -929,6 +929,28 @@ To run the migrations again by hand (for example after restoring ClickHouse
 from an older backup), delete the current `migrate` Job. `helm upgrade` or the
 next Argo sync recreates it under the same name, and it runs again.
 
+**A failed `migrate` Job is not retried by an upgrade.** The same name means
+Helm and Argo leave the existing Job in place, failed or not. The migration
+script exits with an error instead of waiting forever; Kubernetes retries the
+pod up to `backoffLimit` (10) times and then marks the Job `Failed`:
+
+- rejected credentials (wrong password or user) end each attempt
+  immediately, with ClickHouse's error in the log;
+- an unreachable ClickHouse ends an attempt after 100 tries, three seconds
+  apart, again with the last error;
+- the whole Job, retries included, is stopped after
+  `migrations.activeDeadlineSeconds` (default `3600`).
+
+Fix the cause (for example the password in `clickhouse.password` or in the
+`clickhouse.userPasswordSecret` secret), then delete the failed Job so the next
+upgrade or sync runs it again:
+
+```bash
+kubectl -n bomhort get jobs -l app.kubernetes.io/component=migrate
+kubectl -n bomhort logs -l app.kubernetes.io/component=migrate --tail=40
+kubectl -n bomhort delete job -l app.kubernetes.io/component=migrate
+```
+
 ### Argo CD (GitOps) {#argo-cd}
 
 Argo CD renders the chart with `helm template` and applies the result. Nothing

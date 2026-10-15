@@ -8,7 +8,7 @@ description: >
 ---
 
 {{% alert title="Last Updated" color="info" %}}
-2026-10-14 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1) · Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) · [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) · [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) · [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) · [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3)
+2026-10-15 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1) · Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) · [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) · [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) · [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) · [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3)
 
 This page summarises [`ROADMAP.md`](https://github.com/seebom-labs/BOMHort/blob/main/ROADMAP.md), which is authoritative and carries the full reasoning. Both are updated when a release is cut, not in feature pull requests.
 {{% /alert %}}
@@ -22,7 +22,7 @@ The roadmap is organised around one hard deadline — the **v1.0.0 schema and AP
 | Release | Due | Theme |
 |---------|-----|-------|
 | **v0.8.0** ✅ | 2026-10-31 | **Contract** — MCP server, project aggregation, `source_repo` fix, `values.yaml` shape, CVE ids, CSV export, license provenance |
-| **v0.9.0** | 2026-11-30 | **Vulnerability register** — CVSS, CWE, KEV, EPSS, remediation record, SLA due dates ([#414](https://github.com/seebom-labs/BOMHort/issues/414)) |
+| **v0.9.0** | 2026-11-30 | **Ingest correctness + vulnerability register** — audit fixes first, then CVSS, CWE, KEV, EPSS, remediation record, SLA due dates ([#414](https://github.com/seebom-labs/BOMHort/issues/414)) |
 | **v1.0.0** | 2027-01-31 | **Freeze + CRA dashboard** — readiness score, MTTR, auditor report bundle, crypto-library inventory, versioned docs |
 | v1.1.0 | 2027-04-30 | Automation, fleet & cryptography — VEXViper, fleet views, OSV mirror, attestations, CBOM |
 | v1.2.0 | 2027-07-31 | Analytics — Scorecard, Lottery Factor, SBOM diff, tree view, blast radius, enriched export |
@@ -78,10 +78,26 @@ Two rules drive sequencing:
 | ✅ | ~~[#412](https://github.com/seebom-labs/BOMHort/issues/412)~~ CVE id + aliases | `cve_id` and `aliases` on findings, VEX statements and search; lookups by any alias. |
 | ✅ | ~~[#266](https://github.com/seebom-labs/BOMHort/issues/266)~~ CSV export | `GET /api/v1/reports/vulnerabilities?format=csv`, streamed, formula-injection safe. |
 | ✅ | ~~[#439](https://github.com/seebom-labs/BOMHort/issues/439)~~ License provenance | deps.dev/Packagist/PyPI resolvers, `unapproved` category, per-package license source (migration `024`). See [License Resolution](/docs/license-resolution/). |
+| ✅ | ~~GHSA-943f-mm2v-j478~~ UI proxy write auth | The UI's nginx injects `SERVICE_TOKEN` on `GET`/`HEAD` only; uploads through the UI host need their own credential. Shipped in `v0.8.0-rc.3`. |
 
 ### v0.9.0 — Vulnerability register {#v0-9}
 
 **Due 2026-11-30.** The [#414](https://github.com/seebom-labs/BOMHort/issues/414) umbrella: CRA Annex I Part II made queryable — per finding and per deployed version: CVE, CWE, CVSS, EPSS, KEV status, remediation status, due date, and a timestamp proving it is current.
+
+**First: ingest correctness.** The 2026-10-15 audit found ways to lose, hide or duplicate the rows the register is computed from. These land before the register columns; all except [#446](https://github.com/seebom-labs/BOMHort/issues/446) (migration) are backported to `release/v0.8` as v0.8.x patches.
+
+| Status | Issue | Migration | Description |
+|:------:|-------|-----------|-------------|
+| 🔲 | [#480](https://github.com/seebom-labs/BOMHort/issues/480) Refresher findings without `cluster`/`namespace`/`project` | none | Newly disclosed CVEs are invisible in scoped views. Before [#459](https://github.com/seebom-labs/BOMHort/issues/459). |
+| 🔲 | [#485](https://github.com/seebom-labs/BOMHort/issues/485) OSV stubs never refreshed | none | Precondition for the [#408](https://github.com/seebom-labs/BOMHort/issues/408)/[#409](https://github.com/seebom-labs/BOMHort/issues/409) backfill from `osv_json`. |
+| 🔲 | [#482](https://github.com/seebom-labs/BOMHort/issues/482) + [#487](https://github.com/seebom-labs/BOMHort/issues/487) Half-ingested SBOMs never retried; watcher queries per file | none | `sboms` written last as commit marker; one bulk "already queued" query. |
+| 🔲 | [#446](https://github.com/seebom-labs/BOMHort/issues/446) → [#483](https://github.com/seebom-labs/BOMHort/issues/483) Second-resolution queue timestamps; concurrent claims | `0xx` `DateTime64(3)` | Column-type change — must be pre-1.0. |
+| 🔲 | [#481](https://github.com/seebom-labs/BOMHort/issues/481) + [#489](https://github.com/seebom-labs/BOMHort/issues/489) Resolver cache keeps transient failures forever | none | Shared cache type, "cache definite answers only". |
+| 🔲 | [#484](https://github.com/seebom-labs/BOMHort/issues/484) Rate limit trusts client `X-Forwarded-For` | none | Security, small. |
+| 🔲 | [#486](https://github.com/seebom-labs/BOMHort/issues/486) Refresher scans per PURL | none | Same binary as the KEV/EPSS feeds. |
+| 🔲 | [#488](https://github.com/seebom-labs/BOMHort/issues/488) Search shows an older query's results | none | UI. |
+
+**Then the register.**
 
 | Status | Issue | Migration | Description |
 |:------:|-------|-----------|-------------|
@@ -143,6 +159,7 @@ All v0.x releases are development milestones and may contain breaking changes be
 | 🔲 | [#140](https://github.com/seebom-labs/BOMHort/issues/140) Workload vulnerability summary | Image → posture; additional [#141](https://github.com/seebom-labs/BOMHort/issues/141) input. |
 | 🔲 | [#57](https://github.com/seebom-labs/BOMHort/issues/57) Per-project policies | License policies, severity thresholds, exception scopes per project. |
 | 🔲 | [#136](https://github.com/seebom-labs/BOMHort/issues/136) CORS (remaining) | `CORS_ALLOW_CREDENTIALS`, configurable methods/headers. |
+| 🔲 | [#490](https://github.com/seebom-labs/BOMHort/issues/490) Resolver response limits | Bounded bodies, deps.dev page cap; lands with the mirror's outbound feeds. |
 | 🔲 | [#60](https://github.com/seebom-labs/BOMHort/issues/60) Local OSV mirror | Offline / air-gapped; KEV and EPSS feeds get the same treatment. |
 | 🔲 | [#143](https://github.com/seebom-labs/BOMHort/issues/143) In-toto Witness integration | `03x_create_attestations`, signature verification; additional [#141](https://github.com/seebom-labs/BOMHort/issues/141) input. |
 
@@ -202,6 +219,7 @@ Everything that touches `db/migrations/` or a frozen response shape. The authori
 | — | [#412](https://github.com/seebom-labs/BOMHort/issues/412), [#266](https://github.com/seebom-labs/BOMHort/issues/266) | `cve_id` + `aliases` on findings; CSV export endpoint | ✅ shipped (**pre**, API) |
 | — | [#411](https://github.com/seebom-labs/BOMHort/issues/411) | `remediation-policy.json`; derived `due_date`/`overdue`, no storage | **pre** (v0.9.0, values) |
 | — | [#141](https://github.com/seebom-labs/BOMHort/issues/141), [#62](https://github.com/seebom-labs/BOMHort/issues/62) | CRA readiness score; report bundle | **pre** (v1.0.0, API) |
+| `0xx_ingestion_queue_created_at_datetime64` | [#446](https://github.com/seebom-labs/BOMHort/issues/446) | `MODIFY COLUMN created_at DateTime64(3)` on `ingestion_queue`; number assigned at merge | **pre** (v0.9.0, column type) |
 | `027_add_vulnerability_cvss_cwe` | [#408](https://github.com/seebom-labs/BOMHort/issues/408), [#409](https://github.com/seebom-labs/BOMHort/issues/409) | CVSS score/vector/version and CWE IDs on `vulnerabilities` | **pre** (v0.9.0) |
 | `028_create_kev_catalog` | [#410](https://github.com/seebom-labs/BOMHort/issues/410) | New table | **pre** (v0.9.0) |
 | `029_create_epss_scores` | [#64](https://github.com/seebom-labs/BOMHort/issues/64) | New table | **pre** (v0.9.0) |

@@ -603,4 +603,5 @@ dataMigration:
       memory: 2Gi
 
 # Set to false to keep Job resources after completion (for debugging, or better visibility in ArgoCD). By default, Jobs are cleaned up after 5 minutes to prevent clutter.
+# Argo CD: set to false. A Job deleted by its TTL is reported missing and recreated by selfHeal, re-running it every few minutes.
 cleanBatchJobs: true

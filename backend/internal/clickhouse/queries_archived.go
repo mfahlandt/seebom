@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"sort"
 	"time"
 
 	gh "github.com/seebom-labs/bomhort/backend/internal/github"
@@ -13,164 +14,216 @@ import (
 //
 // The hard part is mapping a package back to its repository. The resolver
 // does it with github.ExtractGitHubRepo when it *writes* github_repo_metadata,
-// so the read path has to reproduce the same mapping — and the mapping is not
-// a substring relation. `pkg:golang/gopkg.in/yaml.v3` belongs to the repo
-// `go-yaml/yaml` and shares not one character with it; `k8s.io/api` belongs to
-// `kubernetes/api`. Matching `purl LIKE '%' || repo || '%'` therefore finds
-// only packages whose import path happens to spell out their repository, and
-// silently reports nothing for everything the well-known table exists to
-// translate.
+// and the mapping is not a substring relation: `pkg:golang/gopkg.in/yaml.v3`
+// belongs to `go-yaml/yaml`, `k8s.io/api` to `kubernetes/api`.
 //
-// So the mapping is rebuilt in SQL, in the same order ExtractGitHubRepo uses:
+// This used to be rebuilt in SQL: every package row of the corpus evaluated
+// two lambdas over the whole well-known prefix table. ClickHouse materialises
+// the constant arrays per row inside such lambdas, so on a production-sized
+// corpus (millions of package rows) the query blew through the gateway's
+// 512 MiB max_memory_usage — and QueryArchivedReposInUse runs it on every
+// dashboard load.
 //
-//  1. pkg:golang/github.com/{owner}/{repo}… and pkg:github/{owner}/{repo} →
-//     first two path segments.
-//  2. otherwise the well-known module table, exact match or prefix match,
-//     retried with a trailing /vN major-version segment stripped.
+// The mapping now runs in Go, with the very function the writer uses, on the
+// only input it needs: the distinct, version-stripped golang/github purls.
 //
-// The result is a real equality join against github_repo_metadata instead of a
-// cross join with a wildcard LIKE, which is both correct and cheaper.
-//
-// purlRepoKeyQuery yields one row per (sbom_id, package) with the repo key it
-// resolves to, or '' when the package is not a recognisable GitHub package.
-// Parameter order: wkPrefixes, wkPrefixes, wkRepos, wkRepos.
-const purlRepoKeyQuery = `
-	SELECT
-		sbom_id,
-		package_name,
-		package_purl,
-		multiIf(
-			direct_owner != '' AND direct_repo != '',
-				concat(direct_owner, '/', direct_repo),
-			wk_idx > 0,
-				wk_repos[wk_idx],
-			wk_idx_stripped > 0,
-				wk_repos[wk_idx_stripped],
-			''
-		) AS repo_key
-	FROM (
-		SELECT
-			sbom_id,
-			package_name,
-			package_purl,
-			arrayElement(splitByChar('/', direct_path), 1) AS direct_owner,
-			arrayElement(splitByChar('/', direct_path), 2) AS direct_repo,
-			arrayFirstIndex(
-				i -> module_path = wk_prefixes[i]
-				     OR startsWith(module_path, concat(wk_prefixes[i], '/')),
-				arrayEnumerate(wk_prefixes)
-			) AS wk_idx,
-			arrayFirstIndex(
-				i -> module_path_stripped = wk_prefixes[i]
-				     OR startsWith(module_path_stripped, concat(wk_prefixes[i], '/')),
-				arrayEnumerate(wk_prefixes)
-			) AS wk_idx_stripped,
-			wk_repos
-		FROM (
-			SELECT
-				sbom_id,
-				package_name,
-				package_purl,
-				direct_path,
-				module_path,
-				if(
-					length(splitByChar('/', module_path)) >= 2
-						AND match(arrayElement(splitByChar('/', module_path), -1), '^v[0-9]'),
-					arrayStringConcat(
-						arraySlice(splitByChar('/', module_path), 1, length(splitByChar('/', module_path)) - 1),
-						'/'
-					),
-					module_path
-				) AS module_path_stripped,
-				CAST(? AS Array(String)) AS wk_prefixes,
-				CAST(? AS Array(String)) AS wk_repos
-			FROM (
-				SELECT
-					sbom_id,
-					package_name,
-					package_purl,
-					multiIf(
-						startsWith(purl_clean, 'pkg:golang/github.com/'), substring(purl_clean, 23),
-						startsWith(purl_clean, 'pkg:github/'),            substring(purl_clean, 12),
-						''
-					) AS direct_path,
-					if(startsWith(purl_clean, 'pkg:golang/'), substring(purl_clean, 12), '') AS module_path
-				FROM (
-					SELECT
-						sbom_id,
-						package_name,
-						package_purl,
-						-- Cut at the first '@' (version), '?' (qualifiers) or
-						-- '#' (subpath), mirroring ExtractGitHubRepo. length()
-						-- is in the list so an unqualified purl keeps its tail.
-						-- Everything is toInt64: position() and length() are
-						-- UInt64, the subtraction is Int64, and ClickHouse
-						-- refuses to build a common array type from both.
-						substring(purl_lower, 1, arrayMin(arrayFilter(x -> x > 0, [
-							toInt64(if(position(purl_lower, '@') > 1, position(purl_lower, '@') - 1, 0)),
-							toInt64(if(position(purl_lower, '?') > 1, position(purl_lower, '?') - 1, 0)),
-							toInt64(if(position(purl_lower, '#') > 1, position(purl_lower, '#') - 1, 0)),
-							toInt64(length(purl_lower))
-						]))) AS purl_clean
-					FROM (
-						SELECT
-							p.sbom_id       AS sbom_id,
-							pkg_name        AS package_name,
-							pkg_purl        AS package_purl,
-							lower(pkg_purl) AS purl_lower
-						FROM sbom_packages p FINAL
-						ARRAY JOIN p.package_names AS pkg_name, p.package_purls AS pkg_purl
-						WHERE pkg_purl != ''
-					)
-				)
-			)
+//  1. Load the archived repos (a small set). None → nothing to scan.
+//  2. Stream DISTINCT cleaned purls, map each with ExtractGitHubRepo and keep
+//     those whose repo is archived.
+//  3. Fetch the package rows of only those purls, in batches.
+
+// archivedPurlFilter keeps the ecosystems ExtractGitHubRepo can map at all.
+const archivedPurlFilter = `(startsWith(purl_lower, 'pkg:golang/') OR startsWith(purl_lower, 'pkg:github/'))`
+
+// archivedPurlCleanExpr cuts purl_lower at the first '@' (version), '?'
+// (qualifiers) or '#' (subpath), mirroring ExtractGitHubRepo. length() is in
+// the list so an unqualified purl keeps its tail. Everything is toInt64:
+// position() and length() are UInt64, the subtraction is Int64, and
+// ClickHouse refuses to build a common array type from both.
+const archivedPurlCleanExpr = `
+	substring(purl_lower, 1, arrayMin(arrayFilter(x -> x > 0, [
+		toInt64(if(position(purl_lower, '@') > 1, position(purl_lower, '@') - 1, 0)),
+		toInt64(if(position(purl_lower, '?') > 1, position(purl_lower, '?') - 1, 0)),
+		toInt64(if(position(purl_lower, '#') > 1, position(purl_lower, '#') - 1, 0)),
+		toInt64(length(purl_lower))
+	])))`
+
+// archivedPurlBatchSize bounds the IN list of step 3, so the interpolated
+// query stays far below ClickHouse's max_query_size.
+const archivedPurlBatchSize = 500
+
+type archivedRepo struct {
+	pushedAt time.Time
+	stars    uint32
+}
+
+// queryArchivedRepos loads github_repo_metadata's archived repos, keyed by
+// the lowercase "owner/repo" key the resolver writes.
+func (c *Client) queryArchivedRepos(ctx context.Context) (map[string]archivedRepo, error) {
+	rows, err := c.Conn.Query(ctx, `
+		SELECT repo, pushed_at, stargazers
+		FROM github_repo_metadata FINAL
+		WHERE archived = true
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query archived repos: %w", err)
+	}
+	defer rows.Close()
+
+	repos := map[string]archivedRepo{}
+	for rows.Next() {
+		var (
+			key string
+			r   archivedRepo
 		)
-	)
-`
+		if err := rows.Scan(&key, &r.pushedAt, &r.stars); err != nil {
+			return nil, fmt.Errorf("failed to scan archived repo: %w", err)
+		}
+		repos[key] = r
+	}
+	return repos, rows.Err()
+}
+
+// queryArchivedPurls returns cleaned purl → archived repo key for every
+// distinct golang/github purl in the corpus that maps to an archived repo.
+func (c *Client) queryArchivedPurls(ctx context.Context, archived map[string]archivedRepo) (map[string]string, error) {
+	rows, err := c.Conn.Query(ctx, `
+		SELECT DISTINCT `+archivedPurlCleanExpr+` AS purl_clean
+		FROM (
+			SELECT lower(pkg_purl) AS purl_lower
+			FROM sbom_packages FINAL
+			ARRAY JOIN package_purls AS pkg_purl
+			WHERE `+archivedPurlFilter+`
+		)
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query package purls: %w", err)
+	}
+	defer rows.Close()
+
+	matches := map[string]string{}
+	for rows.Next() {
+		var purl string
+		if err := rows.Scan(&purl); err != nil {
+			return nil, fmt.Errorf("failed to scan package purl: %w", err)
+		}
+		if repo, ok := archivedRepoFor(purl, archived); ok {
+			matches[purl] = repo
+		}
+	}
+	return matches, rows.Err()
+}
+
+// archivedRepoFor maps one cleaned purl to its repo key with the resolver's
+// own ExtractGitHubRepo and reports whether that repo is archived.
+func archivedRepoFor[V any](purl string, archived map[string]V) (string, bool) {
+	owner, repo, ok := gh.ExtractGitHubRepo(purl)
+	if !ok {
+		return "", false
+	}
+	key := gh.RepoKey(owner, repo)
+	if _, isArchived := archived[key]; !isArchived {
+		return "", false
+	}
+	return key, true
+}
 
 // QueryArchivedPackages returns every package in the corpus whose GitHub
 // repository has been archived upstream.
 func (c *Client) QueryArchivedPackages(ctx context.Context) ([]ArchivedPackageInfo, error) {
-	prefixes, repoKeys := gh.WellKnownModuleMappings()
+	results := []ArchivedPackageInfo{}
 
+	archived, err := c.queryArchivedRepos(ctx)
+	if err != nil || len(archived) == 0 {
+		return results, err
+	}
+	matches, err := c.queryArchivedPurls(ctx, archived)
+	if err != nil || len(matches) == 0 {
+		return results, err
+	}
+
+	purls := make([]string, 0, len(matches))
+	for p := range matches {
+		purls = append(purls, p)
+	}
+	sort.Strings(purls)
+
+	for start := 0; start < len(purls); start += archivedPurlBatchSize {
+		batch := purls[start:min(start+archivedPurlBatchSize, len(purls))]
+		if err := c.scanArchivedPackages(ctx, batch, func(info ArchivedPackageInfo, purl string) {
+			repo := matches[purl]
+			info.Repo = repo
+			info.LastPushed = archived[repo].pushedAt
+			info.Stars = archived[repo].stars
+			results = append(results, info)
+		}); err != nil {
+			return nil, err
+		}
+	}
+
+	sort.SliceStable(results, func(i, j int) bool {
+		a, b := results[i], results[j]
+		if a.ProjectName != b.ProjectName {
+			return a.ProjectName < b.ProjectName
+		}
+		if a.SourceFile != b.SourceFile {
+			return a.SourceFile < b.SourceFile
+		}
+		return a.PackageName < b.PackageName
+	})
+	return results, nil
+}
+
+// scanArchivedPackages fetches the package rows whose cleaned purl is in
+// purls, with their SBOM's display columns.
+func (c *Client) scanArchivedPackages(ctx context.Context, purls []string, emit func(ArchivedPackageInfo, string)) error {
 	rows, err := c.Conn.Query(ctx, `
 		SELECT DISTINCT
 			k.sbom_id,
 			s.source_file,
-			s.document_name AS project_name,
-			s.document_version AS project_version,
+			s.document_name,
+			s.document_version,
 			k.package_name,
 			k.package_purl,
-			a.repo,
-			a.pushed_at,
-			a.stargazers
-		FROM (`+purlRepoKeyQuery+`) k
+			k.purl_clean
+		FROM (
+			SELECT sbom_id, package_name, package_purl, `+archivedPurlCleanExpr+` AS purl_clean
+			FROM (
+				SELECT
+					p.sbom_id       AS sbom_id,
+					pkg_name        AS package_name,
+					pkg_purl        AS package_purl,
+					lower(pkg_purl) AS purl_lower
+				FROM sbom_packages p FINAL
+				ARRAY JOIN p.package_names AS pkg_name, p.package_purls AS pkg_purl
+				WHERE `+archivedPurlFilter+`
+			)
+			WHERE purl_clean IN (?)
+		) k
 		INNER JOIN (
-			SELECT repo, pushed_at, stargazers
-			FROM github_repo_metadata FINAL
-			WHERE archived = true
-		) a ON k.repo_key = a.repo
-		INNER JOIN sboms s FINAL ON k.sbom_id = s.sbom_id
-		WHERE k.repo_key != ''
-		ORDER BY project_name, s.source_file, k.package_name
-	`, prefixes, repoKeys)
+			SELECT sbom_id, source_file, document_name, document_version
+			FROM sboms FINAL
+		) s ON k.sbom_id = s.sbom_id
+	`, purls)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query archived packages: %w", err)
+		return fmt.Errorf("failed to query archived packages: %w", err)
 	}
 	defer rows.Close()
 
-	results := []ArchivedPackageInfo{}
 	for rows.Next() {
-		var info ArchivedPackageInfo
+		var (
+			info ArchivedPackageInfo
+			purl string
+		)
 		if err := rows.Scan(
 			&info.SBOMID, &info.SourceFile, &info.ProjectName, &info.ProjectVersion,
-			&info.PackageName, &info.PackagePURL, &info.Repo, &info.LastPushed, &info.Stars,
+			&info.PackageName, &info.PackagePURL, &purl,
 		); err != nil {
-			return nil, fmt.Errorf("failed to scan archived package: %w", err)
+			return fmt.Errorf("failed to scan archived package: %w", err)
 		}
-		results = append(results, info)
+		emit(info, purl)
 	}
-	return results, rows.Err()
+	return rows.Err()
 }
 
 // QueryArchivedReposInUse counts the archived repositories that are actually
@@ -182,23 +235,22 @@ func (c *Client) QueryArchivedPackages(ctx context.Context) ([]ArchivedPackageIn
 // removed it happily reports archived repos that nothing depends on any more —
 // a banner offering to show three problems, followed by an empty list.
 func (c *Client) QueryArchivedReposInUse(ctx context.Context) (uint64, error) {
-	prefixes, repoKeys := gh.WellKnownModuleMappings()
-
-	var count uint64
-	err := c.Conn.QueryRow(ctx, `
-		SELECT uniqExact(a.repo)
-		FROM (`+purlRepoKeyQuery+`) k
-		INNER JOIN (
-			SELECT repo
-			FROM github_repo_metadata FINAL
-			WHERE archived = true
-		) a ON k.repo_key = a.repo
-		WHERE k.repo_key != ''
-	`, prefixes, repoKeys).Scan(&count)
+	archived, err := c.queryArchivedRepos(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count archived repos in use: %w", err)
 	}
-	return count, nil
+	if len(archived) == 0 {
+		return 0, nil
+	}
+	matches, err := c.queryArchivedPurls(ctx, archived)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count archived repos in use: %w", err)
+	}
+	inUse := map[string]struct{}{}
+	for _, repo := range matches {
+		inUse[repo] = struct{}{}
+	}
+	return uint64(len(inUse)), nil
 }
 
 // ArchivedPackageInfo represents a package using an archived GitHub repo.
@@ -213,5 +265,3 @@ type ArchivedPackageInfo struct {
 	LastPushed     time.Time `json:"last_pushed"`
 	Stars          uint32    `json:"stars"`
 }
-
-

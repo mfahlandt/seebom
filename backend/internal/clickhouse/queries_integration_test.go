@@ -140,10 +140,10 @@ func TestQueriesExecute(t *testing.T) {
 		{"QueryProjectVulnerabilities", func() error { _, err := c.QueryProjectVulnerabilities(ctx, "no-such-project", ""); return err }},
 		{"QueryProjectPackages", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, ""); return err }},
 		{"QueryProjectPackages/search", func() error { _, err := c.QueryProjectPackages(ctx, "no-such-project", 1, 10, "curl"); return err }},
-		// The archived-repo pair carries the purl→repo mapping rebuilt in SQL.
-		// It shipped broken twice: once semantically (a LIKE that could never
-		// match gopkg.in/yaml.v3 against go-yaml/yaml) and once as a plain type
-		// error ClickHouse only raises at plan time.
+		// The archived-repo pair shipped broken three times: once semantically
+		// (a LIKE that could never match gopkg.in/yaml.v3 against go-yaml/yaml),
+		// once as a plain type error ClickHouse only raises at plan time, and
+		// once by exceeding max_memory_usage with a per-row SQL mapping.
 		{"QueryArchivedPackages", func() error { _, err := c.QueryArchivedPackages(ctx); return err }},
 		{"QueryArchivedReposInUse", func() error { _, err := c.QueryArchivedReposInUse(ctx); return err }},
 		{"ResolveSBOMByProductRef", func() error {

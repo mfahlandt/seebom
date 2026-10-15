@@ -248,6 +248,10 @@ func main() {
 
 		nodes, err := chClient.QuerySBOMDependencies(r.Context(), sbomID)
 		if err != nil {
+			if errors.Is(err, clickhouse.ErrSBOMNotFound) {
+				writeError(w, http.StatusNotFound, "SBOM not found")
+				return
+			}
 			log.Printf("ERROR: sbom dependencies for %s: %v", sanitizeLogParam(sbomID), err)
 			writeError(w, http.StatusInternalServerError, "Failed to fetch dependencies")
 			return

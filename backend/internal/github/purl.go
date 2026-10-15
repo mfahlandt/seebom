@@ -188,8 +188,10 @@ func RepoKey(owner, repo string) string {
 // slices — module path prefix and the "owner/repo" key it maps to — sorted
 // longest prefix first.
 //
-// It exists so the query layer can reproduce ExtractGitHubRepo's mapping in
-// SQL. Going the other way (matching a purl against a repo name with LIKE)
+// It was introduced so the query layer could reproduce ExtractGitHubRepo's
+// mapping in SQL; the archived-repo views now call ExtractGitHubRepo itself
+// (the SQL version exhausted ClickHouse's memory limit on large corpora), and
+// the table export remains for the drift tests. Going the other way (matching a purl against a repo name with LIKE)
 // cannot work: gopkg.in/yaml.v3 belongs to go-yaml/yaml and shares not a
 // single character with it, so a substring match silently drops every package
 // whose import path differs from its repository — which is precisely what the

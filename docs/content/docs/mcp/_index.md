@@ -123,7 +123,7 @@ mcp:
   transport: http
   httpToken: ""                                # or existingSecret
   allowedOrigins:
-    - https://agent.example.com
+    - https://agent.example.com                # see "Which origins to allow"
 ```
 
 `helm template` **fails** — not warns — if `httpToken` is missing, if
@@ -143,6 +143,136 @@ the list exists to stop browsers. Credentials are accepted as
 
 When `apiGateway.auth.enabled` is set, the MCP server automatically reads the
 release's `SERVICE_TOKEN` from the same Secret — one token, one place.
+
+### Which origins to allow
+
+`allowedOrigins` is not the address of the MCP server. It lists the web pages
+that may call it from a browser. An origin is scheme plus host (plus port),
+never a path.
+
+* **Only CLI/desktop agents** (Copilot CLI, Claude Code, VS Code, Claude
+  Desktop): they send no `Origin`, so the list never matches them. It still
+  must not be empty; use a name that cannot resolve, which states the intent:
+
+  ```yaml
+  mcp:
+    allowedOrigins: ["https://no-browser-clients.invalid"]
+  ```
+
+* **A browser-based agent**: list its exact origin, e.g.
+  `https://agent.example.com`.
+* Do **not** list the origin of BOMHort's own UI when the MCP server is served
+  under the same host (see below): every page of the UI would then be allowed
+  to drive it.
+
+### Exposing it
+
+The chart creates a `ClusterIP` Service `<release>-mcp-server` (port 80) and
+nothing else — neither the chart's Ingress nor its UI proxy route to it. Add
+your own route. The server answers on any path, so either a dedicated host or a
+path on the existing host works, without a rewrite.
+
+Generate the token and keep it in a Secret:
+
+```sh
+kubectl create secret generic bomhort-mcp \
+  --from-literal=MCP_HTTP_TOKEN="$(openssl rand -hex 32)"
+```
+
+```yaml
+mcp:
+  enabled: true
+  transport: http
+  allowedOrigins: ["https://no-browser-clients.invalid"]
+  existingSecret:
+    enabled: true
+    secretName: bomhort-mcp
+    httpTokenKey: MCP_HTTP_TOKEN
+```
+
+A path on the existing host (`https://bomhort.example.com/mcp`) — no new DNS
+name or certificate. The longest prefix wins, so `/` keeps going to the UI:
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: bomhort-mcp
+spec:
+  parentRefs: [{ name: <your-gateway> }]
+  hostnames: ["bomhort.example.com"]
+  rules:
+    - matches: [{ path: { type: PathPrefix, value: /mcp } }]
+      backendRefs: [{ name: <release>-mcp-server, port: 80 }]
+      timeouts: { request: 3600s }
+```
+
+For a dedicated host (`https://mcp.bomhort.example.com`), drop `matches` and
+change `hostnames`. Either way:
+
+* Route **directly** to the MCP Service, not through the UI's nginx — that
+  proxy injects its own `Authorization` header on read requests.
+* Streamable HTTP keeps responses open as server-sent events. Raise the request
+  timeout (gateway defaults are often 15–30 s) and do not buffer responses.
+
+Check it — `401` without a token, `200` and an `event: message` with one:
+
+```sh
+curl -s -X POST https://bomhort.example.com/mcp \
+  -H "Authorization: Bearer $BOMHORT_MCP_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"0"}}}'
+```
+
+### Connecting an agent
+
+Each client needs the URL and the token. Keep the token out of files that are
+committed.
+
+Copilot CLI — `~/.copilot/mcp-config.json`, then check with `/mcp`:
+
+```json
+{
+  "mcpServers": {
+    "bomhort": {
+      "type": "http",
+      "url": "https://bomhort.example.com/mcp",
+      "headers": { "Authorization": "Bearer <token>" },
+      "tools": ["*"]
+    }
+  }
+}
+```
+
+VS Code — `.vscode/mcp.json`; the token is prompted for once and not written to
+the file:
+
+```jsonc
+{
+  "inputs": [
+    { "type": "promptString", "id": "bomhort-token", "password": true, "description": "BOMHort MCP token" }
+  ],
+  "servers": {
+    "bomhort": {
+      "type": "http",
+      "url": "https://bomhort.example.com/mcp",
+      "headers": { "Authorization": "Bearer ${input:bomhort-token}" }
+    }
+  }
+}
+```
+
+Claude Code:
+
+```sh
+claude mcp add --transport http bomhort https://bomhort.example.com/mcp \
+  --header "Authorization: Bearer $BOMHORT_MCP_TOKEN"
+```
+
+A single user against a public instance does not need any of this: the
+[stdio setup](#running-it-on-a-laptop-stdio) with `MCP_API_BASE_URL` pointing
+at the instance needs no route, no token and no origin list.
 
 ## Configuration reference
 

@@ -16,6 +16,16 @@ defaultContentLanguageInSubdir = false
   [[module.imports]]
     path = "github.com/google/docsy/dependencies"
     disable = false
+  # bomhort-go and VEXViper keep their docs in their own repositories.
+  # deploy-docs.yml (or `make docs-deps`) checks them out into docs/ecosystem/,
+  # and content/docs/ecosystem/*/_content.gotmpl turns them into pages.
+  # Declaring an assets mount replaces the default one, so it is repeated here.
+  [[module.mounts]]
+    source = "assets"
+    target = "assets"
+  [[module.mounts]]
+    source = "ecosystem"
+    target = "assets/ecosystem"
 
 # Ignore the original markdown files in docs/ root (they are preserved as-is)
 ignoreFiles = ["^[A-Z_]+\\.md$"]

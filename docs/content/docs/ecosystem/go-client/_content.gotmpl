@@ -1,0 +1,14 @@
+{{ partial "ecosystem-pages.html" (dict
+  "adapter" .
+  "repo" "bomhort-go"
+  "github" "https://github.com/seebom-labs/bomhort-go"
+  "base" "/docs/ecosystem/go-client/"
+  "pages" (slice
+    (dict "file" "README.md" "path" "overview" "title" "Overview" "weight" 1 "description" "Install, quick start and what the client covers.")
+    (dict "file" "docs/VEX.md" "path" "how-to-upload-vex" "title" "How to: Upload VEX" "weight" 10)
+    (dict "file" "docs/MIGRATING-FROM-VEXVIPER.md" "path" "how-to-migrate-from-vexviper" "title" "How to: Migrate from VEXViper's client" "weight" 11)
+    (dict "file" "docs/TESTING.md" "path" "testing" "title" "Testing" "weight" 20 "description" "Unit tests, the bomhorttest fake gateway and API drift detection.")
+    (dict "file" "docs/API-COVERAGE.md" "path" "api-coverage" "title" "API Coverage" "weight" 30)
+    (dict "file" "docs/COMPATIBILITY.md" "path" "compatibility" "title" "Compatibility & Versioning" "weight" 31)
+  )
+) }}

@@ -1,0 +1,10 @@
+{{ partial "ecosystem-pages.html" (dict
+  "adapter" .
+  "repo" "vexviper"
+  "github" "https://github.com/seebom-labs/VEXViper"
+  "base" "/docs/ecosystem/vexviper/"
+  "pages" (slice
+    (dict "file" "README.md" "path" "overview" "title" "Overview" "weight" 1 "description" "Quick start, install, configuration, guardrails and the MCP server.")
+    (dict "file" "docs/INTEGRATION.md" "path" "integration" "title" "Integration with BOMHort" "weight" 10 "description" "Which API contract VEXViper relies on and why it is a sidecar.")
+  )
+) }}

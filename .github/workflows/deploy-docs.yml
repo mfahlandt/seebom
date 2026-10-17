@@ -8,6 +8,8 @@ on:
     paths:
       - 'docs/**'
       - '.github/workflows/deploy-docs.yml'
+  schedule:
+    - cron: '17 5 * * *'   # daily: picks up docs changes in bomhort-go and VEXViper
   workflow_dispatch:
 
 permissions:
@@ -31,6 +33,30 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # Ecosystem docs (content/docs/ecosystem/) live in their own repos and
+      # are taken from main on every build; the schedule picks up their changes.
+      - name: Checkout bomhort-go docs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: seebom-labs/bomhort-go
+          path: docs/ecosystem/bomhort-go
+          sparse-checkout: |
+            README.md
+            docs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Checkout VEXViper docs
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: seebom-labs/VEXViper
+          path: docs/ecosystem/vexviper
+          sparse-checkout: |
+            README.md
+            docs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
 
       - name: Install Hugo
         env:

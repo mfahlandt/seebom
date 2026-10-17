@@ -1,0 +1,48 @@
+{{/*
+  Turns Markdown files of a sibling repository (checked out into
+  docs/ecosystem/<repo>, mounted at assets/ecosystem/<repo>) into pages.
+  Called from a content adapter with:
+    adapter  the adapter context (.)
+    repo     directory under docs/ecosystem/, e.g. "bomhort-go"
+    github   https://github.com/seebom-labs/<repo>
+    base     site path of the section, e.g. "/docs/ecosystem/go-client/"
+    pages    slice of dict: file (repo-relative), path, title, weight, description
+  The file's own H1 is dropped (the page title replaces it). Links to a
+  published file become site links; every other relative link goes to GitHub.
+*/}}
+{{- $ctx := . -}}
+{{- $published := dict -}}
+{{- range .pages -}}
+  {{- $published = merge $published (dict .file .path) -}}
+{{- end -}}
+{{- range .pages -}}
+  {{- $page := . -}}
+  {{- with resources.Get (printf "ecosystem/%s/%s" $ctx.repo .file) -}}
+    {{- $md := replaceRE `^\s*# [^\n]*\n` "" .Content 1 -}}
+    {{- range findRESubmatch `\]\(([^)\s]+)\)` $md -}}
+      {{- $dest := index . 1 -}}
+      {{- if not (or (hasPrefix $dest "#") (hasPrefix $dest "/") (strings.Contains $dest ":")) -}}
+        {{- $parts := split $dest "#" -}}
+        {{- $frag := cond (gt (len $parts) 1) (printf "#%s" (index $parts 1)) "" -}}
+        {{- $file := path.Join (path.Dir $page.file) (index $parts 0) -}}
+        {{- $target := printf "%s/blob/main/%s%s" $ctx.github $file $frag -}}
+        {{- with index $published $file -}}
+          {{- $target = printf "%s%s/%s" $ctx.base . $frag -}}
+        {{- end -}}
+        {{- $md = replace $md (printf "](%s)" $dest) (printf "](%s)" $target) -}}
+      {{- end -}}
+    {{- end -}}
+    {{- $source := printf "%s/blob/main/%s" $ctx.github $page.file -}}
+    {{- $md = printf "> Maintained in [%s](%s) — edit it there.\n\n%s" (path.Base $ctx.github | printf "seebom-labs/%s") $source $md -}}
+    {{- $ctx.adapter.AddPage (dict
+      "path" $page.path
+      "title" $page.title
+      "weight" $page.weight
+      "params" (dict "description" ($page.description | default ""))
+      "content" (dict "mediaType" "text/markdown" "value" $md)
+    ) -}}
+  {{- else -}}
+    {{- $msg := printf "ecosystem docs: %s/%s not found — run `make docs-deps` to check out the sibling repositories" $ctx.repo .file -}}
+    {{- if hugo.IsProduction }}{{ errorf $msg }}{{ else }}{{ warnf $msg }}{{ end -}}
+  {{- end -}}
+{{- end -}}

@@ -415,8 +415,13 @@ kind-deploy-release: ## Upgrade Kind to a published release/RC from GHCR (VERSIO
 	@echo "✅ BOMHort $(VERSION) deployed. Watch: kubectl get pods -n bomhort -w"
 
 # ─── Documentation (Hugo + Docsy) ────────────────────────────────────────────
-docs-deps: ## Install Hugo docs dependencies (npm + Go modules)
+docs-deps: ## Install Hugo docs dependencies (npm + Go modules + ecosystem repos)
 	cd docs && npm install && hugo mod get
+	@for r in bomhort-go:bomhort-go VEXViper:vexviper; do \
+		dir=docs/ecosystem/$${r#*:}; \
+		if [ -d $$dir/.git ]; then git -C $$dir pull -q --ff-only; \
+		else git clone -q --depth 1 https://github.com/seebom-labs/$${r%%:*}.git $$dir; fi; \
+	done
 
 docs-serve: ## Start Hugo dev server with live reload (http://localhost:1313)
 	cd docs && hugo server --buildDrafts --buildFuture

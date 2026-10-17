@@ -99,10 +99,15 @@ s3:
 |---------|------|
 | `*.spdx.json` | SPDX SBOM |
 | `*_spdx.json` | SPDX SBOM (underscore variant) |
+| `*.cdx.json`, `*_cdx.json` | CycloneDX SBOM |
+| `*.spdx3.json`, `*_spdx3.json` | SPDX 3 JSON-LD SBOM (parsed via protobom) |
 | `*.openvex.json` | OpenVEX statement |
 | `*.vex.json` | OpenVEX statement |
 
 Nested keys are fully supported (e.g. `k3s-io/helm-controller/0.16.14/k3s-io_helm-controller_0_16_14_spdx.json`).
+Keys whose basename contains `_release_` (e.g. `cosign_3_1_3_release_spdx.json`) are skipped: that is the
+layout the CNCF pipeline uses for a project's own per-binary release assets, which would otherwise appear as a
+second SBOM with the same name for the same release.
 
 ### Option B: Seed Job (removed in 0.8.0)
 

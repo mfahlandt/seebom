@@ -1,6 +1,6 @@
 # BOMHort Product Roadmap
 
-> Last updated: 2026-10-15
+> Last updated: 2026-10-17
 > Project Board: https://github.com/orgs/seebom-labs/projects/1
 > Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5)  [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6)  [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1)  [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2)  [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3)  [v2.0.0](https://github.com/seebom-labs/BOMHort/milestone/4)
 
@@ -66,7 +66,7 @@ Two rules drive sequencing. The old one still holds: **if it can't be back-fille
 
 **Theme:** Freeze a contract that an external consumer has already exercised (#399), and ship a CRA-grade vulnerability register *inside* the frozen surface rather than bolting it on after.
 
-### 2a. v0.8.0 — Contract (due 2026-10-31)
+### 2a. v0.8.0 — Contract ✅ (released 2026-10-17)
 
 Everything that was blocking 1.0 on 2026-09-24, minus the tag. Order within the release is the order of the table.
 
@@ -83,6 +83,8 @@ Everything that was blocking 1.0 on 2026-09-24, minus the tag. Order within the 
 | ~~#266~~ | ~~CSV export for vulnerabilities (stdlib `encoding/csv`)~~ | New endpoint | ✅ `GET /api/v1/reports/vulnerabilities?format=csv[&scope=]`, streamed, formula-injection safe, `cve_id` first. Column list grows in v0.9.0 as fields arrive; the endpoint shape is set here. |
 | ~~#439~~ | ~~License resolution with provenance — deps.dev/Packagist/PyPI resolvers, `unapproved` category, per-package license source~~ | Migration `024` + new endpoint + DTO field | ✅ `license_source` on dependency nodes and `GET /api/v1/licenses/sources` are contract surface, so they land before the freeze. Every heuristic is documented on the License Resolution docs page, which a test keeps in sync with the code. |
 | ~~GHSA-943f-mm2v-j478~~ | ~~UI nginx injected `SERVICE_TOKEN` on write requests — anonymous upload/PATCH through the public UI~~ | nginx config (image + chart) | ✅ Token injected on `GET`/`HEAD` only; shipped in `v0.8.0-rc.3`. Release notes: CI uploads through the UI host need their own credential. Found by the 2026-10-15 audit, like the v0.9.0 ingest-correctness block below. |
+
+**Also shipped, unplanned:** SPDX license expressions (`AND`/`OR`/`WITH`) are evaluated instead of reported as unknown (#402); license exceptions from a ConfigMap, an `https://` URL or `s3://`, reloaded live and applied retroactively without re-ingest (#470); summary mode for `/projects/license-compliance` and bounded archived-packages memory (#475); installable release candidates cut from `release/vX.Y` branches.
 
 **Exit criteria:** an MCP client can ask `get_project` and get de-duplicated numbers; every `values.yaml` key 1.0 promises to keep exists; `source_repo` > 90 % on the CNCF corpus; a CSV of findings with CVE ids can be downloaded.
 
@@ -157,7 +159,7 @@ Every open issue carries a milestone — "no milestone" is not a valid state.
 
 | Milestone | Due | Theme | Open issues |
 |-----------|-----|-------|-------------|
-| [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | 2026-10-31 | Contract | ~~#399~~, ~~#58~~, ~~#355~~, ~~#397~~, ~~#391~~, ~~#392~~, ~~#344~~ (E+I), ~~#412~~, ~~#266~~, ~~#439~~, ~~GHSA-943f-mm2v-j478~~ |
+| [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | ✅ 2026-10-17 | Contract | ~~#399~~, ~~#58~~, ~~#355~~, ~~#397~~, ~~#391~~, ~~#392~~, ~~#344~~ (E+I), ~~#412~~, ~~#266~~, ~~#439~~, ~~GHSA-943f-mm2v-j478~~ |
 | [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) | 2026-11-30 | Ingest correctness + vulnerability register | #480, #485, #482, #487, #446, #483, #481, #489, #484, #486, #488, #408, #409, #410, #64, #413, #411, #414 |
 | [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) | 2027-01-31 | Freeze + CRA dashboard | #141, #7, #62, #419, #145 |
 | [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) | 2027-04-30 | Automation, fleet & cryptography | #338, #336, #333, #337, #334 (UI), #138 (API/UI), #267, #176, #140, #57, #136, #60, #143, #420, #415, #416, #417, #418, #490 |

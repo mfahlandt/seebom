@@ -8,7 +8,7 @@ description: >
 ---
 
 {{% alert title="Last Updated" color="info" %}}
-2026-10-15 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1) · Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) · [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) · [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) · [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) · [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3)
+2026-10-17 · [Project Board →](https://github.com/orgs/seebom-labs/projects/1) · Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) · [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) · [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) · [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) · [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3)
 
 This page summarises [`ROADMAP.md`](https://github.com/seebom-labs/BOMHort/blob/main/ROADMAP.md), which is authoritative and carries the full reasoning. Both are updated when a release is cut, not in feature pull requests.
 {{% /alert %}}
@@ -21,7 +21,7 @@ The roadmap is organised around one hard deadline — the **v1.0.0 schema and AP
 
 | Release | Due | Theme |
 |---------|-----|-------|
-| **v0.8.0** ✅ | 2026-10-31 | **Contract** — MCP server, project aggregation, `source_repo` fix, `values.yaml` shape, CVE ids, CSV export, license provenance |
+| **v0.8.0** ✅ | released 2026-10-17 | **Contract** — MCP server, project aggregation, `source_repo` fix, `values.yaml` shape, CVE ids, CSV export, license provenance |
 | **v0.9.0** | 2026-11-30 | **Ingest correctness + vulnerability register** — audit fixes first, then CVSS, CWE, KEV, EPSS, remediation record, SLA due dates ([#414](https://github.com/seebom-labs/BOMHort/issues/414)) |
 | **v1.0.0** | 2027-01-31 | **Freeze + CRA dashboard** — readiness score, MTTR, auditor report bundle, crypto-library inventory, versioned docs |
 | v1.1.0 | 2027-04-30 | Automation, fleet & cryptography — VEXViper, fleet views, OSV mirror, attestations, CBOM |
@@ -64,7 +64,7 @@ Two rules drive sequencing:
 
 **Oct 2026 – Jan 2027 · Theme:** Freeze a contract that an external consumer has already exercised ([#399](https://github.com/seebom-labs/BOMHort/issues/399)), and ship a CRA-grade vulnerability register *inside* the frozen surface rather than bolting it on after.
 
-### v0.8.0 — Contract ✅ {#v0-8}
+### v0.8.0 — Contract ✅ (released 2026-10-17) {#v0-8}
 
 | Status | Issue | Description |
 |:------:|-------|-------------|
@@ -79,6 +79,8 @@ Two rules drive sequencing:
 | ✅ | ~~[#266](https://github.com/seebom-labs/BOMHort/issues/266)~~ CSV export | `GET /api/v1/reports/vulnerabilities?format=csv`, streamed, formula-injection safe. |
 | ✅ | ~~[#439](https://github.com/seebom-labs/BOMHort/issues/439)~~ License provenance | deps.dev/Packagist/PyPI resolvers, `unapproved` category, per-package license source (migration `024`). See [License Resolution](/docs/license-resolution/). |
 | ✅ | ~~GHSA-943f-mm2v-j478~~ UI proxy write auth | The UI's nginx injects `SERVICE_TOKEN` on `GET`/`HEAD` only; uploads through the UI host need their own credential. Shipped in `v0.8.0-rc.3`. |
+
+**Also shipped:** SPDX license expressions evaluated instead of reported as unknown ([#402](https://github.com/seebom-labs/BOMHort/issues/402)); license exceptions from a ConfigMap, URL or S3, reloaded live and applied retroactively ([#470](https://github.com/seebom-labs/BOMHort/issues/470)); summary mode for license compliance and bounded archived-packages memory ([#475](https://github.com/seebom-labs/BOMHort/issues/475)); installable release candidates.
 
 ### v0.9.0 — Vulnerability register {#v0-9}
 

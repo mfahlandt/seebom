@@ -98,6 +98,20 @@ Two rules drive sequencing:
 | 🔲 | [#484](https://github.com/seebom-labs/BOMHort/issues/484) Rate limit trusts client `X-Forwarded-For` | none | Security, small. |
 | 🔲 | [#486](https://github.com/seebom-labs/BOMHort/issues/486) Refresher scans per PURL | none | Same binary as the KEV/EPSS feeds. |
 | 🔲 | [#488](https://github.com/seebom-labs/BOMHort/issues/488) Search shows an older query's results | none | UI. |
+| 🔲 | [#493](https://github.com/seebom-labs/BOMHort/issues/493) CNCF buckets: CycloneDX / SPDX 3 keys skipped, `_release_*` assets | none | Accept `_cdx.json`/`_spdx3.json`; skip `_release_*` keys — one SBOM per release. |
+| 🔲 | [#447](https://github.com/seebom-labs/BOMHort/issues/447) `/licenses/compliance` unpaginated (10 MiB ingress cut) | none (shape) | `PaginatedResponse[T]` like every other list; before the freeze. |
+
+**Second: runtime-scanner identity.** Raised by a Kubernetes runtime scanner: *how* was a document produced, *which image* does it describe, *which workload* runs it — and "do you already have this digest?". All additive columns; pre-1.0 because upload parameters and filters are contract. [#460](https://github.com/seebom-labs/BOMHort/issues/460) adds a Go dependency and is decided separately.
+
+| Status | Issue | Migration | Description |
+|:------:|-------|-----------|-------------|
+| 🔲 | [#459](https://github.com/seebom-labs/BOMHort/issues/459) Ownership filters on `/vulnerabilities`, per-cluster/namespace vulnerability routes | none | After [#480](https://github.com/seebom-labs/BOMHort/issues/480); the columns exist already. |
+| 🔲 | [#455](https://github.com/seebom-labs/BOMHort/issues/455) `origin` dimension (`cluster-scan`, `ci`, `registry`, `vendor`, `manual`) | `0xx` | Fixed vocabulary; upload param, per-bucket field, instance default. |
+| 🔲 | [#458](https://github.com/seebom-labs/BOMHort/issues/458) Workload identity (`workload_kind`/`name`/`uid`) | `0xx` | Upload params + filters; `project` defaults to the workload name. |
+| 🔲 | [#457](https://github.com/seebom-labs/BOMHort/issues/457) Image reference and digest; `?digest=`, `/images/{digest}` | `0xx` | Digest-based dedup is opt-in. |
+| 🔲 | [#461](https://github.com/seebom-labs/BOMHort/issues/461) CycloneDX 1.6 / SPDX 3.0.1 fixtures; `k8s_*`/`image` identifiers from the document | `0xx` | Explicit config outranks the document; extracted values fill empty dimensions only. |
+| 🔲 | [#456](https://github.com/seebom-labs/BOMHort/issues/456) Named, scoped API keys | `0xx` | Restrict a key to origins/clusters/namespaces/projects; flat `API_KEYS` keeps working. |
+| 🔲 | [#460](https://github.com/seebom-labs/BOMHort/issues/460) Prometheus `/metrics` + ServiceMonitor | none | Needs the dependency decision first. |
 
 **Then the register.**
 
@@ -222,6 +236,12 @@ Everything that touches `db/migrations/` or a frozen response shape. The authori
 | — | [#411](https://github.com/seebom-labs/BOMHort/issues/411) | `remediation-policy.json`; derived `due_date`/`overdue`, no storage | **pre** (v0.9.0, values) |
 | — | [#141](https://github.com/seebom-labs/BOMHort/issues/141), [#62](https://github.com/seebom-labs/BOMHort/issues/62) | CRA readiness score; report bundle | **pre** (v1.0.0, API) |
 | `0xx_ingestion_queue_created_at_datetime64` | [#446](https://github.com/seebom-labs/BOMHort/issues/446) | `MODIFY COLUMN created_at DateTime64(3)` on `ingestion_queue`; number assigned at merge | **pre** (v0.9.0, column type) |
+| `0xx_add_origin` | [#455](https://github.com/seebom-labs/BOMHort/issues/455) | `ADD COLUMN origin` on the 7 data tables | **pre** (v0.9.0) |
+| `0xx_add_workload_identity` | [#458](https://github.com/seebom-labs/BOMHort/issues/458) | `ADD COLUMN workload_kind, workload_name, workload_uid` on `sboms` | **pre** (v0.9.0) |
+| `0xx_add_image_identity` | [#457](https://github.com/seebom-labs/BOMHort/issues/457) | `ADD COLUMN image_ref, image_digest` on `sboms` (+ skip index), `image_digest` on children | **pre** (v0.9.0) |
+| `0xx_add_producer_identifiers` | [#461](https://github.com/seebom-labs/BOMHort/issues/461) | `ADD COLUMN producer_identifiers Map(String,String)` on `sboms` | **pre** (v0.9.0) |
+| `0xx_add_uploaded_by` | [#456](https://github.com/seebom-labs/BOMHort/issues/456) | `ADD COLUMN uploaded_by` on `sboms` | **pre** (v0.9.0) |
+| — | [#447](https://github.com/seebom-labs/BOMHort/issues/447) | `/licenses/compliance` → `PaginatedResponse[T]` | **pre** (v0.9.0, API) |
 | `027_add_vulnerability_cvss_cwe` | [#408](https://github.com/seebom-labs/BOMHort/issues/408), [#409](https://github.com/seebom-labs/BOMHort/issues/409) | CVSS score/vector/version and CWE IDs on `vulnerabilities` | **pre** (v0.9.0) |
 | `028_create_kev_catalog` | [#410](https://github.com/seebom-labs/BOMHort/issues/410) | New table | **pre** (v0.9.0) |
 | `029_create_epss_scores` | [#64](https://github.com/seebom-labs/BOMHort/issues/64) | New table | **pre** (v0.9.0) |
@@ -256,6 +276,12 @@ CRYPTO (#420):
 #419 (library inventory, SBOM-only)                         v1.0.0
 #415 (CBOM ingest) ── #416 (inventory) ── #417 (policy) ── #418 (PQC)   v1.1.0
                                                  └── #409 (CWE-327 filter on the register)
+
+RUNTIME-SCANNER IDENTITY (v0.9.0, after ingest correctness):
+#455 (origin) ── #456 (scoped API keys)
+#457 (image digest) ──┬── #461 (identifiers from the document)
+#458 (workload) ──────┘
+#460 (Prometheus) ── dependency decision first
 
 VEXVIPER (#338):
 #355 ── #336 (idempotent upload) ── #333 (since/cursor) ── #337 (webhooks) ── #334 UI

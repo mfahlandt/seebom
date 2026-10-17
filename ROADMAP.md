@@ -102,6 +102,20 @@ Everything that was blocking 1.0 on 2026-09-24, minus the tag. Order within the 
 | **#484** | Rate limit / auth logs trust client `X-Forwarded-For` | none | Small; security. |
 | **#486** | `cve-refresher` scans `sbom_packages` once per new PURL | none | Same binary as the #410/#64 feeds; fix before adding to it. |
 | **#488** | Search pages render results of an older query | none (UI) | Small. |
+| **#493** | CNCF buckets: `ClassifyKey` skips `_cdx.json`/`_spdx3.json`; `_release_*` assets would duplicate a release | none | Consumer-raised (cncf/sbom), so first. Accept CycloneDX and SPDX 3 keys; **skip `_release_*` keys** — one SBOM per release, the per-binary asset is not it. |
+| **#447** | `GET /api/v1/licenses/compliance` unpaginated, cut at 10 MiB by the ingress | none (response shape) | `PaginatedResponse[T]` like every other list. Shape change → before the freeze. Not backported. |
+
+**Second: runtime-scanner identity (#455–#461, raised 2026-10-13 by a Kubernetes runtime scanner).** A scanner that walks pods needs to say *how* a document was produced, *which image* it describes and *which workload* runs it, and needs to ask "do you already have this digest?" before scanning again. Every column is `ADD COLUMN … DEFAULT ''`, so all of it is additive — it is pre-1.0 because the upload parameters and filters are contract, and because the register's "per deployed version" only means something once a finding can be scoped to a running workload. Order is dependency order; #460 adds the 7th direct Go dependency and is decided separately.
+
+| # | Issue | Migration | Notes |
+|---|-------|-----------|-------|
+| **#459** | Ownership filters (`?cluster=`/`?namespace=`/`?project=`/`?tag=`) on `/vulnerabilities`, per-cluster/namespace vulnerability routes | none | **After #480** — until then the filters would hide every refresher finding. Columns already exist (`012`/`015`). |
+| **#455** | `origin` dimension: `cluster-scan`, `ci`, `registry`, `vendor`, `manual` | `0xx` `ADD COLUMN origin` on the 7 data tables | Fixed vocabulary, `400` on anything else; upload param, per-bucket field, `ORIGIN` default — same plumbing as `cluster`. Prerequisite for #456. |
+| **#458** | Workload identity: `workload_kind`, `workload_name`, `workload_uid` | `0xx` `ADD COLUMN` on `sboms` | Upload params + filters; `project` defaults to `workload_name`. One identity per SBOM — the `sbom_identities` table is a post-1.0 follow-up. |
+| **#457** | Image reference and digest as SBOM identity; `?digest=`, `/images/{digest}`, `HEAD` existence check | `0xx` `ADD COLUMN image_ref, image_digest` on `sboms` (+ skip index), `image_digest` on children | Digest from upload param or `pkg:oci` purl. Digest-based dedup is **opt-in** (`DEDUP_BY_IMAGE_DIGEST`), off by default. |
+| **#461** | CycloneDX 1.6 / SPDX 3.0.1 scanner fixtures; `k8s_*`/`image` identifiers read from the document | `0xx` `ADD COLUMN producer_identifiers Map(String,String)` on `sboms` | Explicit config still outranks the document; extracted values only fill empty dimensions, conflicts are logged and kept auditable. Needs #457/#458 for the target columns. |
+| **#456** | Named, scoped API keys (`API_KEYS_JSON`, `auth.apiKeys[]`): restrict a key to origins/clusters/namespaces/projects | `0xx` `ADD COLUMN uploaded_by` on `sboms` | Flat `API_KEYS` keeps working unchanged. `403` with the key *name*; names in the startup log, never the secrets. Needs #455's `origin`. |
+| **#460** | Prometheus `/metrics` + `ServiceMonitor`/`PodMonitor` in the chart | none | **Needs the dependency decision** (`prometheus/client_golang`). Labels bounded by config (`cluster`, `origin`), never `project`/`sbom_id`. |
 
 **Then the register.**
 
@@ -257,7 +271,13 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | — (parser only) ✅ | #355 | `documentNamespace` fallback in `extractSourceRepo` | **pre** (v0.8.0) | makes #332 true |
 | — (DTO + query) ✅ | #412 | `cve_id`, `aliases` on finding DTOs; lookups by alias | **pre** (v0.8.0) | market (additive) |
 | — (endpoint) ✅ | #266 | CSV export | **pre** (v0.8.0) | market (additive) |
-| `0xx_ingestion_queue_created_at_datetime64` | #446 | `MODIFY COLUMN created_at DateTime64(3)` on `ingestion_queue` | **pre** (v0.9.0) | **contract** — a column-type change, not allowed after 1.0. Number assigned at merge; the planned numbers below shift by one if it lands first. |
+| `0xx_ingestion_queue_created_at_datetime64` | #446 | `MODIFY COLUMN created_at DateTime64(3)` on `ingestion_queue` | **pre** (v0.9.0) | **contract** — a column-type change, not allowed after 1.0. Number assigned at merge; the planned numbers below shift if it lands first. |
+| `0xx_add_origin` | #455 | `ADD COLUMN origin LowCardinality(String) DEFAULT ''` on the 7 data tables | **pre** (v0.9.0) | contract (upload param + filter), additive |
+| `0xx_add_workload_identity` | #458 | `ADD COLUMN workload_kind, workload_name, workload_uid` on `sboms` | **pre** (v0.9.0) | contract (upload params), additive |
+| `0xx_add_image_identity` | #457 | `ADD COLUMN image_ref, image_digest` on `sboms` (+ skip index), `image_digest` on `sbom_packages`/`vulnerabilities` | **pre** (v0.9.0) | contract (`/images/{digest}`), additive |
+| `0xx_add_producer_identifiers` | #461 | `ADD COLUMN producer_identifiers Map(String,String)` on `sboms` | **pre** (v0.9.0) | additive (audit trail) |
+| `0xx_add_uploaded_by` | #456 | `ADD COLUMN uploaded_by` on `sboms` | **pre** (v0.9.0) | additive (attribution) |
+| — (response shape) | #447 | `/licenses/compliance` → `PaginatedResponse[T]` | **pre** (v0.9.0) | **contract** — shape change |
 | `027_add_vulnerability_cvss_cwe` | #408, #409 | `ADD COLUMN cvss_score Float32, cvss_vector String, cvss_version LowCardinality(String), cwe_ids Array(String)` on `vulnerabilities` | **pre** (v0.9.0) | market (additive; backfill from `osv_json`) |
 | `028_create_kev_catalog` | #410 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
 | `029_create_epss_scores` | #64 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
@@ -302,6 +322,12 @@ INGEST CORRECTNESS (v0.9.0, before the register):
 #486 (refresher bulk query) ── #410/#64 (feeds in the same binary)
 #446 (DateTime64) ── #483 (claim race)        #482 ── #487 (one bulk hash query)
 #489 (shared resolver cache) ── #481 (cache definite answers only)
+
+RUNTIME-SCANNER IDENTITY (v0.9.0, after ingest correctness):
+#455 (origin) ── #456 (scoped API keys)
+#457 (image digest) ──┬── #461 (identifiers from the document)
+#458 (workload) ──────┘
+#460 (Prometheus) ── dependency decision first
 
 VEXVIPER (#338):
 #355 ── #336 (idempotent upload) ── #333 (since/cursor) ── #337 (webhooks) ── #334 UI

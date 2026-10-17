@@ -13,6 +13,15 @@ func TestClassifyKey(t *testing.T) {
 	}{
 		{"k3s-io/helm-controller/0.16.14/k3s-io_helm-controller_0_16_14_spdx.json", "sbom"},
 		{"project/v1.0/foo.spdx.json", "sbom"},
+		{"aquasecurity/trivy/0.76.0/aquasecurity_trivy_0_76_0_cdx.json", "sbom"},
+		{"project/v1.0/foo.cdx.json", "sbom"},
+		{"fluxcd/flux2/2.9.6/fluxcd_flux2_2_9_6_spdx3.json", "sbom"},
+		{"project/v1.0/foo.spdx3.json", "sbom"},
+		// Per-binary release assets next to the project SBOM: one SBOM per release (#493).
+		{"sigstore/cosign/3.1.3/sigstore_cosign_3_1_3_release_spdx.json", ""},
+		{"aquasecurity/trivy/0.76.0/aquasecurity_trivy_0_76_0_release_cdx.json", ""},
+		{"fluxcd/flux2/2.9.6/fluxcd_flux2_2_9_6_release_spdx3.json", ""},
+		{"org/_release_/1.0/org_1_0_spdx.json", "sbom"}, // only the basename is checked
 		{"golang-common.openvex.json", "vex"},
 		{"advisories/cve-2025.vex.json", "vex"},
 		{"README.md", ""},

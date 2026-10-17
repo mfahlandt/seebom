@@ -179,7 +179,7 @@ func sourceName(source string) string {
 	} else {
 		label = path.Base(strings.ReplaceAll(source, `\`, "/"))
 	}
-	for _, suffix := range []string{".spdx.json", "_spdx.json", ".cdx.json", ".json"} {
+	for _, suffix := range []string{".spdx.json", "_spdx.json", ".spdx3.json", "_spdx3.json", ".cdx.json", "_cdx.json", ".json"} {
 		if strings.HasSuffix(strings.ToLower(label), suffix) {
 			label = label[:len(label)-len(suffix)]
 			break

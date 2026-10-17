@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"path"
 	"strings"
 	"time"
 
@@ -319,12 +320,21 @@ func IsReservedKey(key string) bool {
 
 // ClassifyKey determines the file type from an S3 object key.
 // Returns "sbom", "vex", or "" (unknown/skip).
+//
+// The CNCF buckets (#493) upload a project's own per-binary release assets
+// next to the project SBOM as "<slug>_<version>_release_<fmt>.json". They
+// describe one binary for one platform under the same document name, so they
+// are skipped: one SBOM per release.
 func ClassifyKey(key string) string {
 	lower := strings.ToLower(key)
 	switch {
 	case strings.HasSuffix(lower, ".openvex.json"), strings.HasSuffix(lower, ".vex.json"):
 		return "vex"
-	case strings.HasSuffix(lower, ".spdx.json"), strings.HasSuffix(lower, "_spdx.json"):
+	case strings.Contains(path.Base(lower), "_release_"):
+		return ""
+	case strings.HasSuffix(lower, ".spdx.json"), strings.HasSuffix(lower, "_spdx.json"),
+		strings.HasSuffix(lower, ".cdx.json"), strings.HasSuffix(lower, "_cdx.json"),
+		strings.HasSuffix(lower, ".spdx3.json"), strings.HasSuffix(lower, "_spdx3.json"):
 		return "sbom"
 	default:
 		return ""

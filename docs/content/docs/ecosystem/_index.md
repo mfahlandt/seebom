@@ -23,5 +23,7 @@ built from their `main` branch on every docs deploy.
 - [Upload VEX with the Go client](go-client/how-to-upload-vex/)
 - [Test your code against a fake BOMHort](go-client/testing/#the-fake-gateway-bomhorttest)
 - [Migrate from VEXViper's internal client to bomhort-go](go-client/how-to-migrate-from-vexviper/)
-- [Run VEXViper against your instance](vexviper/overview/#quick-start) · [install it](vexviper/overview/#install)
+- [Run VEXViper as a CronJob against your instance](vexviper/how-to-cronjob/)
+- [Review VEX drafts in pull requests before they reach BOMHort](vexviper/how-to-gitops/)
+- [Set up an LLM provider for VEXViper](vexviper/how-to-llm/)
 - [Connect an AI agent to BOMHort](/docs/mcp/#connecting-an-agent)

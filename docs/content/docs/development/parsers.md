@@ -94,7 +94,7 @@ The conservative rules are:
    `serialNumber`. Ordinary dependencies are not treated as metadata components.
 5. Otherwise use the full S3 object key (preserving project/version context), or
    the basename of a local/HTTP source, removing `.spdx.json`, `_spdx.json`,
-   `.cdx.json`, or `.json`. URL credentials, query strings, and fragments are not
+   `.spdx3.json`, `_spdx3.json`, `.cdx.json`, `_cdx.json`, or `.json`. URL credentials, query strings, and fragments are not
    part of the label. If no usable source remains, use `Unnamed SBOM`.
 
 The built-in in-toto parser applies the same rule to its SPDX predicate. This does

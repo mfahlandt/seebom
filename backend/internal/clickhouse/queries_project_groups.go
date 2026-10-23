@@ -353,9 +353,14 @@ func (c *Client) groupCounts(ctx context.Context, what, query string, memberName
 	for rows.Next() {
 		var g string
 		var n uint64
-		if err := rows.Scan(&g, &n); err == nil {
-			out[g] = n
+		if err := rows.Scan(&g, &n); err != nil {
+			log.Printf("WARNING: project group %s counts: %v", what, err)
+			return out
 		}
+		out[g] = n
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("WARNING: project group %s counts: %v", what, err)
 	}
 	return out
 }

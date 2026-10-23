@@ -3,6 +3,8 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"sync"
+	"time"
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
@@ -13,6 +15,10 @@ import (
 // Client wraps the ClickHouse connection.
 type Client struct {
 	Conn driver.Conn
+
+	archivedMu    sync.Mutex
+	archivedCount uint64
+	archivedAt    time.Time
 }
 
 // NewClient creates a new ClickHouse client from config.
@@ -47,6 +53,11 @@ func querySettings(cfg *config.Config) clickhouse.Settings {
 	}
 	if cfg.ClickHouseMaxMemoryUsage > 0 {
 		settings["max_memory_usage"] = cfg.ClickHouseMaxMemoryUsage
+		// Spill GROUP BY / ORDER BY to disk at half the cap instead of failing:
+		// package-wide aggregations over a large corpus otherwise abort
+		// mid-stream and a page renders empty.
+		settings["max_bytes_before_external_group_by"] = cfg.ClickHouseMaxMemoryUsage / 2
+		settings["max_bytes_before_external_sort"] = cfg.ClickHouseMaxMemoryUsage / 2
 	}
 	if cfg.ClickHouseMaxThreads > 0 {
 		settings["max_threads"] = cfg.ClickHouseMaxThreads

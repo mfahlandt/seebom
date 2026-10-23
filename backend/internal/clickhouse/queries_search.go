@@ -503,23 +503,22 @@ func (c *Client) QueryDependencyStats(ctx context.Context, limit uint64) (*dto.D
 
 	// Total unique dependencies across all projects.
 	var totalUnique uint64
-	_ = c.Conn.QueryRow(ctx, `
+	if err := c.Conn.QueryRow(ctx, `
 		SELECT uniqExact(dep)
 		FROM sbom_packages
 		ARRAY JOIN package_names AS dep
-	`).Scan(&totalUnique)
+	`).Scan(&totalUnique); err != nil {
+		return nil, fmt.Errorf("failed to count unique dependencies: %w", err)
+	}
 
 	// Top N most-used dependencies across all projects.
 	// project_count counts distinct projects, not SBOMs; the project column is
 	// derived at ingest, source_file is the fallback for rows without one.
-	// No FINAL: it merges the ReplacingMergeTree in memory and blew the
-	// api-gateway's max_memory_usage on large instances (#dependencies page
-	// empty). Duplicate rows do not change uniqExact/groupUniqArray.
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			dep_name,
 			dep_purl,
-			uniqExact(if(project != '', project, source_file)) AS project_count,
+			uniqExact(`+packageProjectKey+`) AS project_count,
 			groupUniqArray(dep_version) AS versions
 		FROM sbom_packages
 		ARRAY JOIN
@@ -542,18 +541,41 @@ func (c *Client) QueryDependencyStats(ctx context.Context, limit uint64) (*dto.D
 		if err := rows.Scan(&item.PackageName, &item.PURL, &item.ProjectCount, &item.Versions); err != nil {
 			return nil, fmt.Errorf("failed to scan dep stat row: %w", err)
 		}
-
-		// Count vulnerabilities for this PURL.
-		if item.PURL != "" {
-			_ = c.Conn.QueryRow(ctx,
-				"SELECT count(DISTINCT vuln_id) FROM vulnerabilities FINAL WHERE purl = ?",
-				item.PURL).Scan(&item.VulnCount)
-		}
-
 		deps = append(deps, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error: %w", err)
+	}
+
+	// Vulnerability counts for the page in one query, not one per row.
+	purls := make([]string, 0, len(deps))
+	for _, d := range deps {
+		if d.PURL != "" {
+			purls = append(purls, d.PURL)
+		}
+	}
+	if len(purls) > 0 {
+		vRows, err := c.Conn.Query(ctx,
+			"SELECT purl, uniqExact(vuln_id) FROM vulnerabilities FINAL WHERE purl IN (?) GROUP BY purl", purls)
+		if err != nil {
+			return nil, fmt.Errorf("failed to count dependency vulnerabilities: %w", err)
+		}
+		defer vRows.Close()
+		counts := map[string]uint64{}
+		for vRows.Next() {
+			var purl string
+			var n uint64
+			if err := vRows.Scan(&purl, &n); err != nil {
+				return nil, fmt.Errorf("failed to scan vulnerability count: %w", err)
+			}
+			counts[purl] = n
+		}
+		if err := vRows.Err(); err != nil {
+			return nil, fmt.Errorf("rows error: %w", err)
+		}
+		for i := range deps {
+			deps[i].VulnCount = counts[deps[i].PURL]
+		}
 	}
 
 	if deps == nil {
@@ -585,12 +607,6 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 		searchFilter = "AND dep_name ILIKE ?"
 		args = append(args, "%"+search+"%")
 	}
-
-	// All three queries read sbom_packages alone, without FINAL or a join on
-	// sboms: both pushed the api-gateway past max_memory_usage on large
-	// instances and the page rendered empty. Duplicate pre-merge rows do not
-	// change uniqExact/groupUniqArray; project is the ingest-time column.
-	const projectKey = "if(project != '', project, source_file)"
 
 	// Count total skewed packages (packages with >1 version across projects).
 	var totalSkewed uint64
@@ -626,7 +642,7 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 		HAVING version_count > 1
 		ORDER BY project_count DESC, version_count DESC
 		LIMIT ? OFFSET ?
-	`, projectKey, searchFilter)
+	`, packageProjectKey, searchFilter)
 
 	rows, err := c.Conn.Query(ctx, mainQuery, append(args, pageSize, offset)...)
 	if err != nil {
@@ -660,7 +676,7 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 			WHERE dep_name = ?
 		)
 		GROUP BY dep_version
-	`, projectKey)
+	`, packageProjectKey)
 	for i := range items {
 		vRows, err := c.Conn.Query(ctx, versionQuery, items[i].PackageName)
 		if err != nil {
@@ -719,55 +735,27 @@ func (c *Client) QueryDependencySearch(ctx context.Context, query string, page, 
 	searchPattern := "%" + query + "%"
 
 	var totalResults uint64
-	_ = c.Conn.QueryRow(ctx, `
-		SELECT count() FROM (
-			SELECT dep_name
-			FROM (SELECT * FROM sbom_packages FINAL) AS p
-			ARRAY JOIN p.package_names AS dep_name
-			WHERE dep_name ILIKE ?
-			GROUP BY dep_name
-		)
-	`, searchPattern).Scan(&totalResults)
+	if err := c.Conn.QueryRow(ctx, `
+		SELECT uniqExact(dep_name)
+		FROM sbom_packages
+		ARRAY JOIN package_names AS dep_name
+		WHERE dep_name ILIKE ?
+	`, searchPattern).Scan(&totalResults); err != nil {
+		return nil, fmt.Errorf("failed to count dependency search: %w", err)
+	}
 
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			dep_name,
 			any(dep_purl) AS purl,
-			count(DISTINCT project_key) AS project_count,
-			groupArray(DISTINCT dep_version) AS versions
-		FROM (
-			SELECT
-				dep_name,
-				dep_purl,
-				dep_version,
-				multiIf(
-					position(source_file, 's3://') = 1,
-					if(
-						length(splitByChar('/', replaceOne(source_file, 's3://', ''))) > 4,
-						arrayStringConcat(arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2), '/'),
-						arrayElement(splitByChar('/', replaceOne(source_file, 's3://', '')), 2)
-					),
-					doc_name != '',
-					if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
-					source_file
-				) AS project_key
-			FROM (
-				SELECT
-					p.source_file,
-					ifNull(s.document_name, p.source_file) AS doc_name,
-					dep_name,
-					dep_purl,
-					dep_version
-				FROM (SELECT * FROM sbom_packages FINAL) AS p
-				INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
-					ON p.sbom_id = s.sbom_id
-				ARRAY JOIN
-					p.package_names AS dep_name,
-					p.package_purls AS dep_purl,
-					p.package_versions AS dep_version
-			)
-			WHERE dep_name ILIKE ?
-		)
+			uniqExact(`+packageProjectKey+`) AS project_count,
+			groupUniqArray(dep_version) AS versions
+		FROM sbom_packages
+		ARRAY JOIN
+			package_names AS dep_name,
+			package_purls AS dep_purl,
+			package_versions AS dep_version
+		WHERE dep_name ILIKE ?
 		GROUP BY dep_name
 		ORDER BY project_count DESC, dep_name ASC
 		LIMIT ? OFFSET ?
@@ -790,58 +778,11 @@ func (c *Client) QueryDependencySearch(ctx context.Context, query string, page, 
 	}
 
 	for i := range items {
-		projRows, err := c.Conn.Query(ctx, `
-			SELECT
-				project_key,
-				any(dep_version) AS version,
-				any(sbom_id) AS sbom_id
-			FROM (
-				SELECT
-					p.sbom_id,
-					dep_version,
-					multiIf(
-						position(p.source_file, 's3://') = 1,
-						if(
-							length(splitByChar('/', replaceOne(p.source_file, 's3://', ''))) > 4,
-							arrayStringConcat(arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2), '/'),
-							arrayElement(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2)
-						),
-						doc_name != '',
-						if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
-						p.source_file
-					) AS project_key
-				FROM (
-					SELECT
-						p.sbom_id,
-						p.source_file,
-						ifNull(s.document_name, p.source_file) AS doc_name,
-						dep_name,
-						dep_version
-					FROM (SELECT * FROM sbom_packages FINAL) AS p
-					INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
-						ON p.sbom_id = s.sbom_id
-					ARRAY JOIN
-						p.package_names AS dep_name,
-						p.package_versions AS dep_version
-				) AS p
-				WHERE dep_name = ?
-			)
-			GROUP BY project_key
-			ORDER BY project_key ASC
-			LIMIT 5
-		`, items[i].PackageName)
-		if err == nil {
-			for projRows.Next() {
-				var proj dto.DependencySearchProject
-				if err := projRows.Scan(&proj.ProjectName, &proj.Version, &proj.SBOMID); err == nil {
-					items[i].Projects = append(items[i].Projects, proj)
-				}
-			}
-			projRows.Close()
+		projects, err := c.queryPackageProjects(ctx, items[i].PackageName, 5, 0)
+		if err != nil {
+			return nil, err
 		}
-		if items[i].Projects == nil {
-			items[i].Projects = []dto.DependencySearchProject{}
-		}
+		items[i].Projects = projects
 	}
 
 	if items == nil {
@@ -868,80 +809,60 @@ func (c *Client) QueryPackageDetail(ctx context.Context, packageName string, pag
 	offset := (page - 1) * pageSize
 
 	var totalProjects uint64
-	_ = c.Conn.QueryRow(ctx, `
-		SELECT count(DISTINCT project_key) FROM (
-			SELECT
-				multiIf(
-					position(p.source_file, 's3://') = 1,
-					if(
-						length(splitByChar('/', replaceOne(p.source_file, 's3://', ''))) > 4,
-						arrayStringConcat(arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2), '/'),
-						arrayElement(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2)
-					),
-					doc_name != '',
-					if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
-					p.source_file
-				) AS project_key
-			FROM (
-				SELECT
-					p.source_file,
-					ifNull(s.document_name, p.source_file) AS doc_name,
-					dep_name
-				FROM (SELECT * FROM sbom_packages FINAL) AS p
-				INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
-					ON p.sbom_id = s.sbom_id
-				ARRAY JOIN p.package_names AS dep_name
-			) AS p
-			WHERE dep_name = ?
-		)
-	`, packageName).Scan(&totalProjects)
+	if err := c.Conn.QueryRow(ctx, `
+		SELECT uniqExact(`+packageProjectKey+`)
+		FROM sbom_packages
+		ARRAY JOIN package_names AS dep_name
+		WHERE dep_name = ?
+	`, packageName).Scan(&totalProjects); err != nil {
+		return nil, fmt.Errorf("failed to count package projects: %w", err)
+	}
 
+	projects, err := c.queryPackageProjects(ctx, packageName, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dto.PackageDetailResponse{
+		PackageName:   packageName,
+		TotalProjects: totalProjects,
+		Projects:      projects,
+		Page:          page,
+		PageSize:      pageSize,
+	}, nil
+}
+
+// packageProjectKey is the project a sbom_packages row belongs to: the
+// ingest-time project column, or the source path for rows without one.
+// Package-wide aggregations use it instead of joining sboms for
+// projectKeyExpr: that join over 6M+ rows exceeded the api-gateway's
+// max_memory_usage on large instances and the pages rendered empty.
+// shortcut: rows with an empty project column count by source_file, not by
+// the document-name rule of projectKeyExpr; revisit if an instance ingests
+// SBOMs without INGEST_PATH_LAYOUT or per-bucket project.
+const packageProjectKey = "if(project != '', project, source_file)"
+
+// queryPackageProjects lists the projects using a package, one row per
+// project, ordered by name.
+func (c *Client) queryPackageProjects(ctx context.Context, packageName string, limit, offset uint64) ([]dto.DependencySearchProject, error) {
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
-			project_key,
+			`+packageProjectKey+` AS project_key,
 			any(dep_version) AS version,
-			any(sbom_id) AS sbom_id
-		FROM (
-			SELECT
-				p.sbom_id,
-				dep_version,
-				multiIf(
-					position(p.source_file, 's3://') = 1,
-					if(
-						length(splitByChar('/', replaceOne(p.source_file, 's3://', ''))) > 4,
-						arrayStringConcat(arraySlice(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2, 2), '/'),
-						arrayElement(splitByChar('/', replaceOne(p.source_file, 's3://', '')), 2)
-					),
-					doc_name != '',
-					if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
-					p.source_file
-				) AS project_key
-			FROM (
-				SELECT
-					p.sbom_id,
-					p.source_file,
-					ifNull(s.document_name, p.source_file) AS doc_name,
-					dep_name,
-					dep_version
-				FROM (SELECT * FROM sbom_packages FINAL) AS p
-				INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
-					ON p.sbom_id = s.sbom_id
-				ARRAY JOIN
-					p.package_names AS dep_name,
-					p.package_versions AS dep_version
-			) AS p
-			WHERE dep_name = ?
-		)
+			any(toString(sbom_id)) AS sbom_id
+		FROM sbom_packages
+		ARRAY JOIN package_names AS dep_name, package_versions AS dep_version
+		WHERE dep_name = ?
 		GROUP BY project_key
 		ORDER BY project_key ASC
 		LIMIT ? OFFSET ?
-	`, packageName, pageSize, offset)
+	`, packageName, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query package detail: %w", err)
+		return nil, fmt.Errorf("failed to query package projects: %w", err)
 	}
 	defer rows.Close()
 
-	var projects []dto.DependencySearchProject
+	projects := []dto.DependencySearchProject{}
 	for rows.Next() {
 		var proj dto.DependencySearchProject
 		if err := rows.Scan(&proj.ProjectName, &proj.Version, &proj.SBOMID); err != nil {
@@ -952,15 +873,5 @@ func (c *Client) QueryPackageDetail(ctx context.Context, packageName string, pag
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
-	if projects == nil {
-		projects = []dto.DependencySearchProject{}
-	}
-
-	return &dto.PackageDetailResponse{
-		PackageName:   packageName,
-		TotalProjects: totalProjects,
-		Projects:      projects,
-		Page:          page,
-		PageSize:      pageSize,
-	}, nil
+	return projects, nil
 }

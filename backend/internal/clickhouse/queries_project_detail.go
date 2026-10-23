@@ -311,7 +311,7 @@ func (c *Client) QueryProjectPackages(ctx context.Context, name string, page, pa
 			FROM (
 				SELECT p.sbom_id AS sbom_id,
 					arrayJoin(arrayZip(%s, p.package_names, p.package_versions, p.package_purls)) AS z
-				FROM (SELECT * FROM sbom_packages FINAL) AS p
+				FROM (SELECT sbom_id, package_names, package_versions, package_purls FROM sbom_packages FINAL) AS p
 				WHERE p.sbom_id IN (SELECT sbom_id FROM %s AS s WHERE s.project_name = ?)
 			) AS pk
 		)

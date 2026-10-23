@@ -89,39 +89,28 @@ func (c *Client) QueryGlobalSearch(ctx context.Context, query string, limit uint
 
 func (c *Client) searchPackagesFacet(ctx context.Context, pattern string, limit uint64, resp *dto.GlobalSearchResponse) error {
 	if err := c.Conn.QueryRow(ctx, `
-		SELECT count() FROM (
-			SELECT dep_name
-			FROM (SELECT * FROM sbom_packages FINAL) AS p
-			ARRAY JOIN p.package_names AS dep_name
-			WHERE dep_name ILIKE ?
-			GROUP BY dep_name
-		)
+		SELECT uniqExact(dep_name)
+		FROM sbom_packages
+		ARRAY JOIN package_names AS dep_name
+		WHERE dep_name ILIKE ?
 	`, pattern).Scan(&resp.TotalPackages); err != nil {
 		return fmt.Errorf("failed to count package search results: %w", err)
 	}
 
-	rows, err := c.Conn.Query(ctx, fmt.Sprintf(`
+	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			dep_name,
 			any(dep_purl) AS purl,
-			count(DISTINCT project_key) AS project_count
-		FROM (
-			SELECT
-				dep_name,
-				dep_purl,
-				%s AS project_key
-			FROM (SELECT * FROM sbom_packages FINAL) AS p
-			INNER JOIN (SELECT sbom_id, source_file, document_name FROM sboms FINAL) AS s
-				ON p.sbom_id = s.sbom_id
-			ARRAY JOIN
-				p.package_names AS dep_name,
-				p.package_purls AS dep_purl
-			WHERE dep_name ILIKE ?
-		)
+			uniqExact(`+packageProjectKey+`) AS project_count
+		FROM sbom_packages
+		ARRAY JOIN
+			package_names AS dep_name,
+			package_purls AS dep_purl
+		WHERE dep_name ILIKE ?
 		GROUP BY dep_name
 		ORDER BY project_count DESC, dep_name ASC
 		LIMIT ?
-	`, globalSearchProjectKeyExpr), pattern, limit)
+	`, pattern, limit)
 	if err != nil {
 		return fmt.Errorf("failed to search packages: %w", err)
 	}

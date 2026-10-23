@@ -79,8 +79,10 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 	}
 
 	// Count exempted packages (packages covered by blanket or per-package exceptions).
-	_ = c.Conn.QueryRow(ctx,
-		"SELECT sum(length(exempted_packages)) FROM license_compliance FINAL").Scan(&stats.ExemptedPackages)
+	if err := c.Conn.QueryRow(ctx,
+		"SELECT sum(length(exempted_packages)) FROM license_compliance FINAL").Scan(&stats.ExemptedPackages); err != nil {
+		return nil, fmt.Errorf("failed to count exempted packages: %w", err)
+	}
 
 	// Subtract exempted from copyleft so the dashboard shows the real violation count.
 	if stats.LicenseBreakdown["copyleft"] > stats.ExemptedPackages {
@@ -90,8 +92,10 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 	}
 
 	// VEX: count suppressed vulnerabilities (not_affected) and total statements.
-	_ = c.Conn.QueryRow(ctx,
-		"SELECT count() FROM vex_statements FINAL").Scan(&stats.TotalVEXStatements)
+	if err := c.Conn.QueryRow(ctx,
+		"SELECT count() FROM vex_statements FINAL").Scan(&stats.TotalVEXStatements); err != nil {
+		return nil, fmt.Errorf("failed to count vex statements: %w", err)
+	}
 
 	// Scope-aware (#350): a statement only suppresses a finding in the SBOM
 	// it is scoped to; there is no global/fleet-wide VEX scope.
@@ -153,13 +157,15 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 	if err == nil && !lastRefresh.IsZero() {
 		stats.LastCVERefresh = lastRefresh.Format(time.RFC3339)
 		// Count vulns found in the most recent refresh.
-		_ = c.Conn.QueryRow(ctx, `
+		if err := c.Conn.QueryRow(ctx, `
 			SELECT ifNull(new_vulns_found, 0)
 			FROM cve_refresh_log FINAL
 			WHERE status = 'completed'
 			ORDER BY finished_at DESC
 			LIMIT 1
-		`).Scan(&stats.NewVulnsSinceRefresh)
+		`).Scan(&stats.NewVulnsSinceRefresh); err != nil && !isNoRows(err) {
+			return nil, fmt.Errorf("failed to query last refresh: %w", err)
+		}
 	}
 
 	// Archived repos that something in the corpus actually depends on. Counting
@@ -668,36 +674,36 @@ func (c *Client) QueryVEXStatements(ctx context.Context, page, pageSize uint64) 
 		return nil, err
 	}
 
-	// Collect unique PURLs, then batch-lookup which SBOMs contain them.
-	purlSet := make(map[string]struct{})
+	// One pass over sbom_packages for every PURL on the page: the previous
+	// per-PURL full scan timed out at the ingress on large instances.
+	purls := make([]string, 0, len(items))
 	for _, item := range items {
 		if item.ProductPURL != "" {
-			purlSet[item.ProductPURL] = struct{}{}
+			purls = append(purls, item.ProductPURL)
 		}
 	}
-
-	// Build a map: purl -> []VEXAffectedSBOM
 	purlToSBOMs := make(map[string][]dto.VEXAffectedSBOM)
-	for purl := range purlSet {
+	if len(purls) > 0 {
 		sbomRows, err := c.Conn.Query(ctx, `
-			SELECT toString(p.sbom_id), ifNull(s.document_name, p.source_file)
-			FROM (SELECT * FROM sbom_packages FINAL) AS p
-			LEFT JOIN (SELECT * FROM sboms FINAL) AS s ON s.sbom_id = p.sbom_id
-			WHERE has(p.package_purls, ?)
-		`, purl)
+			SELECT DISTINCT hit, toString(p.sbom_id), ifNull(s.document_name, p.source_file)
+			FROM sbom_packages AS p
+			ARRAY JOIN arrayFilter(x -> x IN (?), p.package_purls) AS hit
+			LEFT JOIN (SELECT sbom_id, document_name FROM sboms) AS s ON s.sbom_id = p.sbom_id
+		`, purls)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("failed to query affected sboms: %w", err)
 		}
+		defer sbomRows.Close()
 		for sbomRows.Next() {
-			var sbomID, docName string
-			if err := sbomRows.Scan(&sbomID, &docName); err == nil {
-				purlToSBOMs[purl] = append(purlToSBOMs[purl], dto.VEXAffectedSBOM{
-					SBOMID:       sbomID,
-					DocumentName: docName,
-				})
+			var purl, sbomID, docName string
+			if err := sbomRows.Scan(&purl, &sbomID, &docName); err != nil {
+				return nil, fmt.Errorf("failed to scan affected sbom: %w", err)
 			}
+			purlToSBOMs[purl] = append(purlToSBOMs[purl], dto.VEXAffectedSBOM{SBOMID: sbomID, DocumentName: docName})
 		}
-		sbomRows.Close()
+		if err := sbomRows.Err(); err != nil {
+			return nil, fmt.Errorf("rows error: %w", err)
+		}
 	}
 
 	// Attach affected SBOMs to each VEX item.

@@ -255,9 +255,14 @@ func (c *Client) enrichProjectStats(ctx context.Context, items []dto.ProjectList
 		for rows.Next() {
 			var name string
 			var count uint64
-			if err := rows.Scan(&name, &count); err == nil {
-				pkgMap[name] = count
+			if err := rows.Scan(&name, &count); err != nil {
+				log.Printf("WARNING: project package counts: %v", err)
+				break
 			}
+			pkgMap[name] = count
+		}
+		if err := rows.Err(); err != nil {
+			log.Printf("WARNING: project package counts: %v", err)
 		}
 		rows.Close()
 	}
@@ -278,9 +283,14 @@ func (c *Client) enrichProjectStats(ctx context.Context, items []dto.ProjectList
 		for rows.Next() {
 			var name string
 			var count uint64
-			if err := rows.Scan(&name, &count); err == nil {
-				vulnMap[name] = count
+			if err := rows.Scan(&name, &count); err != nil {
+				log.Printf("WARNING: project vulnerability counts: %v", err)
+				break
 			}
+			vulnMap[name] = count
+		}
+		if err := rows.Err(); err != nil {
+			log.Printf("WARNING: project vulnerability counts: %v", err)
 		}
 		rows.Close()
 	}

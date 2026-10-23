@@ -81,14 +81,18 @@ func (c *Client) QueryClusterStats(ctx context.Context, cluster string) (*dto.Cl
 	}
 
 	// Total packages.
-	_ = c.Conn.QueryRow(ctx,
+	if err := c.Conn.QueryRow(ctx,
 		"SELECT sum(length(package_names)) FROM sbom_packages FINAL WHERE cluster = ?", cluster).
-		Scan(&stats.TotalPackages)
+		Scan(&stats.TotalPackages); err != nil {
+		return nil, fmt.Errorf("failed to count cluster packages: %w", err)
+	}
 
 	// Vulnerability counts by severity.
-	_ = c.Conn.QueryRow(ctx,
+	if err := c.Conn.QueryRow(ctx,
 		"SELECT count() FROM vulnerabilities FINAL WHERE cluster = ?", cluster).
-		Scan(&stats.TotalVulnerabilities)
+		Scan(&stats.TotalVulnerabilities); err != nil {
+		return nil, fmt.Errorf("failed to count cluster vulnerabilities: %w", err)
+	}
 
 	sevRows, err := c.Conn.Query(ctx,
 		"SELECT severity, count() AS cnt FROM vulnerabilities FINAL WHERE cluster = ? GROUP BY severity", cluster)

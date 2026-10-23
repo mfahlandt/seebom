@@ -234,7 +234,26 @@ func (c *Client) scanArchivedPackages(ctx context.Context, purls []string, emit 
 // outlives the SBOMs that populated it, so after data is re-ingested or
 // removed it happily reports archived repos that nothing depends on any more —
 // a banner offering to show three problems, followed by an empty list.
+//
+// Cached for archivedInUseTTL: the answer changes once a day with the
+// cve-refresher, and every dashboard view asked for it.
 func (c *Client) QueryArchivedReposInUse(ctx context.Context) (uint64, error) {
+	c.archivedMu.Lock()
+	defer c.archivedMu.Unlock()
+	if time.Since(c.archivedAt) < archivedInUseTTL {
+		return c.archivedCount, nil
+	}
+	n, err := c.queryArchivedReposInUse(ctx)
+	if err != nil {
+		return 0, err
+	}
+	c.archivedCount, c.archivedAt = n, time.Now()
+	return n, nil
+}
+
+const archivedInUseTTL = 5 * time.Minute
+
+func (c *Client) queryArchivedReposInUse(ctx context.Context) (uint64, error) {
 	archived, err := c.queryArchivedRepos(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count archived repos in use: %w", err)

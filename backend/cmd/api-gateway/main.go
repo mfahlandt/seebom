@@ -896,7 +896,16 @@ func main() {
 		log.Println("API authentication disabled (set AUTH_ENABLED=true to enforce)")
 	}
 	log.Printf("API Gateway listening on %s", addr)
-	if err := http.ListenAndServe(addr, handler); err != nil {
+	// WriteTimeout bounds a request end to end, so a slow query cannot hold
+	// a connection open after the ingress has long given up on it.
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }

@@ -411,18 +411,22 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 
 	// Every SBOM row carrying any affected PURL, one row per hit. A single
 	// pass over sbom_packages without FINAL: the per-PURL full scan it
-	// replaced timed out at the ingress on large instances.
+	// replaced timed out at the ingress on large instances. Name, version
+	// and depth are picked in SQL; shipping the full arrays of thousands of
+	// SBOMs to pick one element each took longer than the query.
+	// Depth: minimum over every occurrence of the PURL, 65535 (unknown) for
+	// a position beyond package_depths — the rule of depgraph.MinDepthForPURL.
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			p.sbom_id,
 			p.source_file,
 			ifNull(s.document_name, p.source_file) AS document_name,
 			hit,
-			indexOf(p.package_purls, hit) AS purl_idx,
-			p.package_names,
-			p.package_versions,
-			p.package_purls,
-			p.package_depths
+			indexOf(p.package_purls, hit) AS idx,
+			arrayElement(p.package_names, idx) AS name,
+			arrayElement(p.package_versions, idx) AS version,
+			arrayMin(arrayMap(i -> if(i <= length(p.package_depths), p.package_depths[i], 65535),
+				arrayFilter((i, x) -> x = hit, arrayEnumerate(p.package_purls), p.package_purls))) AS depth
 		FROM sbom_packages AS p
 		ARRAY JOIN arrayFilter(x -> x IN (?), p.package_purls) AS hit
 		LEFT JOIN (SELECT sbom_id, document_name FROM sboms) AS s ON s.sbom_id = p.sbom_id
@@ -435,21 +439,10 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 	var items []dto.AffectedProject
 	seen := map[vexKey]bool{}
 	for rows.Next() {
-		var (
-			sbomID       string
-			sourceFile   string
-			documentName string
-			hit          string
-			purlIdx      uint64
-			names        []string
-			versions     []string
-			purlList     []string
-			depths       []uint16
-		)
-		if err := rows.Scan(
-			&sbomID, &sourceFile, &documentName, &hit, &purlIdx,
-			&names, &versions, &purlList, &depths,
-		); err != nil {
+		var sbomID, sourceFile, documentName, hit, pkgName, version string
+		var idx uint64
+		var depthRaw uint16
+		if err := rows.Scan(&sbomID, &sourceFile, &documentName, &hit, &idx, &pkgName, &version, &depthRaw); err != nil {
 			return nil, fmt.Errorf("failed to scan project row: %w", err)
 		}
 		// No FINAL above: skip a duplicate pre-merge row.
@@ -458,19 +451,7 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 		}
 		seen[vexKey{sbomID, hit}] = true
 
-		pkgName := ""
-		version := ""
-		if purlIdx > 0 && int(purlIdx) <= len(names) {
-			pkgName = names[purlIdx-1] // indexOf is 1-based in ClickHouse
-			if int(purlIdx) <= len(versions) {
-				version = versions[purlIdx-1]
-			}
-		}
-
-		// Direct vs. transitive from the depth recorded at parse time;
-		// the nearest occurrence of the PURL counts.
-		scope, depth := scopeFields(depgraph.MinDepthForPURL(purlList, depths, hit))
-
+		scope, depth := scopeFields(depthRaw)
 		items = append(items, dto.AffectedProject{
 			SBOMID:          sbomID,
 			SourceFile:      sourceFile,
@@ -666,47 +647,50 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
-	// Second pass: per-version project counts and names (≤page_size queries).
-	versionQuery := fmt.Sprintf(`
-		SELECT dep_version, uniqExact(pk) AS project_count, groupUniqArray(pk) AS projects
-		FROM (
-			SELECT dep_version, %s AS pk
-			FROM sbom_packages
-			ARRAY JOIN package_names AS dep_name, package_versions AS dep_version
-			WHERE dep_name = ?
-		)
-		GROUP BY dep_version
-	`, packageProjectKey)
+	// Second pass: per-version project counts and names for the whole page
+	// in one query. One query per item took 12 s for a page of 50 on a
+	// 6M-row corpus, within reach of the ingress timeout.
+	names := make([]string, len(items))
+	byName := make(map[string]int, len(items))
 	for i := range items {
-		vRows, err := c.Conn.Query(ctx, versionQuery, items[i].PackageName)
+		names[i] = items[i].PackageName
+		byName[items[i].PackageName] = i
+	}
+	if len(items) > 0 {
+		vRows, err := c.Conn.Query(ctx, fmt.Sprintf(`
+			SELECT dep_name, dep_version, uniqExact(pk) AS project_count, groupUniqArray(pk) AS projects
+			FROM (
+				SELECT dep_name, dep_version, %s AS pk
+				FROM sbom_packages
+				ARRAY JOIN package_names AS dep_name, package_versions AS dep_version
+				WHERE dep_name IN (?)
+			)
+			GROUP BY dep_name, dep_version
+		`, packageProjectKey), names)
 		if err != nil {
 			return nil, fmt.Errorf("failed to query version detail: %w", err)
 		}
-		type versionInfo struct {
-			count    uint64
-			projects []string
-		}
-		versionData := make(map[string]versionInfo)
+		defer vRows.Close()
 		for vRows.Next() {
-			var v string
+			var name, v string
 			var cnt uint64
 			var projects []string
-			if err := vRows.Scan(&v, &cnt, &projects); err != nil {
-				vRows.Close()
+			if err := vRows.Scan(&name, &v, &cnt, &projects); err != nil {
 				return nil, fmt.Errorf("failed to scan version detail: %w", err)
 			}
-			versionData[v] = versionInfo{count: cnt, projects: projects}
-		}
-		err = vRows.Err()
-		vRows.Close()
-		if err != nil {
-			return nil, fmt.Errorf("rows error: %w", err)
-		}
-		for j := range items[i].Versions {
-			if info, ok := versionData[items[i].Versions[j].Version]; ok {
-				items[i].Versions[j].ProjectCount = info.count
-				items[i].Versions[j].Projects = info.projects
+			i, ok := byName[name]
+			if !ok {
+				continue
 			}
+			for j := range items[i].Versions {
+				if items[i].Versions[j].Version == v {
+					items[i].Versions[j].ProjectCount = cnt
+					items[i].Versions[j].Projects = projects
+				}
+			}
+		}
+		if err := vRows.Err(); err != nil {
+			return nil, fmt.Errorf("rows error: %w", err)
 		}
 	}
 

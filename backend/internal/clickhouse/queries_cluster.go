@@ -51,6 +51,9 @@ func (c *Client) QueryClusters(ctx context.Context) ([]dto.ClusterListItem, erro
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 
 	if items == nil {
 		items = []dto.ClusterListItem{}
@@ -194,6 +197,9 @@ func (c *Client) QueryClusterSBOMs(ctx context.Context, cluster string, page, pa
 		}
 		item.IngestedAt = ingestedAt.Format(time.RFC3339)
 		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
 	if items == nil {

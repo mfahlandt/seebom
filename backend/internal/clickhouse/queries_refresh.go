@@ -50,6 +50,9 @@ func (c *Client) QueryDistinctPURLs(ctx context.Context) ([]string, error) {
 		}
 		purls = append(purls, purl)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 	return purls, nil
 }
 
@@ -71,6 +74,9 @@ func (c *Client) QueryExistingVulnKeys(ctx context.Context) (map[string]struct{}
 			return nil, fmt.Errorf("failed to scan vuln key: %w", err)
 		}
 		keys[vulnID+"\x00"+purl] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 	return keys, nil
 }
@@ -95,6 +101,9 @@ func (c *Client) QuerySBOMsByPURL(ctx context.Context, purl string) ([]SBOMRef, 
 			return nil, fmt.Errorf("failed to scan SBOM ref: %w", err)
 		}
 		refs = append(refs, ref)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 	return refs, nil
 }

@@ -26,6 +26,9 @@ func (c *Client) QueryRegistryLicenseCache(ctx context.Context, registry string)
 		}
 		cache[pkg] = spdxID
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 	return cache, nil
 }
 

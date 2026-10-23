@@ -285,4 +285,3 @@ func TestInsertPlaceholdersMatchColumns(t *testing.T) {
 		t.Errorf("only %d Exec INSERT(s) checked — expected at least CompleteJob and FailJob", checked)
 	}
 }
-

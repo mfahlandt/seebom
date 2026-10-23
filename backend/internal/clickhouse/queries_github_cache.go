@@ -27,6 +27,9 @@ func (c *Client) QueryGitHubLicenseCache(ctx context.Context) (map[string]string
 		}
 		cache[repo] = spdxID
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 	return cache, nil
 }
 
@@ -70,6 +73,9 @@ func (c *Client) QueryGitHubRepoMetadata(ctx context.Context) ([]*gh.RepoMetadat
 		}
 		metadata = append(metadata, m)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 	return metadata, nil
 }
 
@@ -97,4 +103,3 @@ func (c *Client) InsertGitHubRepoMetadata(ctx context.Context, entries []*gh.Rep
 
 	return batch.Send()
 }
-

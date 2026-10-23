@@ -107,6 +107,9 @@ func (c *Client) QuerySBOMVulnerabilities(ctx context.Context, sbomID string, sc
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 	if items == nil {
 		items = []dto.VulnerabilityListItem{}
 	}
@@ -143,6 +146,9 @@ func (c *Client) QuerySBOMLicenses(ctx context.Context, sbomID string) ([]dto.SB
 			item.ExemptionReason = reason
 		}
 		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 	if items == nil {
 		items = []dto.SBOMLicenseBreakdownItem{}
@@ -237,6 +243,9 @@ func (c *Client) resolvePackagesByLicense(ctx context.Context, sbomID string) (m
 			continue
 		}
 		result[license] = names
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 	return result, nil
 }
@@ -447,6 +456,9 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 				DependencyDepth: depth,
 			})
 		}
+		if err := rows.Err(); err != nil {
+			return nil, fmt.Errorf("rows error: %w", err)
+		}
 		rows.Close()
 	}
 
@@ -466,50 +478,27 @@ func (c *Client) QueryDependencyStats(ctx context.Context, limit uint64) (*dto.D
 	var totalUnique uint64
 	_ = c.Conn.QueryRow(ctx, `
 		SELECT uniqExact(dep)
-		FROM sbom_packages FINAL
+		FROM sbom_packages
 		ARRAY JOIN package_names AS dep
 	`).Scan(&totalUnique)
 
 	// Top N most-used dependencies across all projects.
-	// project_count = distinct projects, not SBOMs. We derive the project key from
-	// source_file by extracting the first two path segments (org/repo) which are
-	// stable across versions. For local files we fall back to document_name.
-	// This avoids counting multiple releases of the same project separately.
-	// Note: ClickHouse does not allow "TABLE FINAL AS alias" with ARRAY JOIN,
-	// so we wrap sbom_packages in a subquery.
+	// project_count counts distinct projects, not SBOMs; the project column is
+	// derived at ingest, source_file is the fallback for rows without one.
+	// No FINAL: it merges the ReplacingMergeTree in memory and blew the
+	// api-gateway's max_memory_usage on large instances (#dependencies page
+	// empty). Duplicate rows do not change uniqExact/groupUniqArray.
 	rows, err := c.Conn.Query(ctx, `
 		SELECT
 			dep_name,
 			dep_purl,
-			count(DISTINCT
-				multiIf(
-					position(source_file, 's3://') = 1,
-					if(
-						length(splitByChar('/', replaceOne(source_file, 's3://', ''))) > 4,
-						arrayStringConcat(arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2), '/'),
-						arrayElement(splitByChar('/', replaceOne(source_file, 's3://', '')), 2)
-					),
-					doc_name != '',
-					if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
-					source_file
-				)
-			) AS project_count,
-			groupArray(DISTINCT dep_version) AS versions
-		FROM (
-			SELECT
-				p.source_file,
-				ifNull(s.document_name, p.source_file) AS doc_name,
-				dep_name,
-				dep_purl,
-				dep_version
-			FROM (SELECT * FROM sbom_packages FINAL) AS p
-			INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
-				ON p.sbom_id = s.sbom_id
-			ARRAY JOIN
-				p.package_names AS dep_name,
-				p.package_purls AS dep_purl,
-				p.package_versions AS dep_version
-		)
+			uniqExact(if(project != '', project, source_file)) AS project_count,
+			groupUniqArray(dep_version) AS versions
+		FROM sbom_packages
+		ARRAY JOIN
+			package_names AS dep_name,
+			package_purls AS dep_purl,
+			package_versions AS dep_version
 		WHERE dep_name != ''
 		GROUP BY dep_name, dep_purl
 		ORDER BY project_count DESC
@@ -535,6 +524,9 @@ func (c *Client) QueryDependencyStats(ctx context.Context, limit uint64) (*dto.D
 		}
 
 		deps = append(deps, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
 	if deps == nil {
@@ -567,22 +559,26 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 		args = append(args, "%"+search+"%")
 	}
 
+	// All three queries read sbom_packages alone, without FINAL or a join on
+	// sboms: both pushed the api-gateway past max_memory_usage on large
+	// instances and the page rendered empty. Duplicate pre-merge rows do not
+	// change uniqExact/groupUniqArray; project is the ingest-time column.
+	const projectKey = "if(project != '', project, source_file)"
+
 	// Count total skewed packages (packages with >1 version across projects).
 	var totalSkewed uint64
 	countQuery := fmt.Sprintf(`
 		SELECT count() FROM (
 			SELECT dep_name
-			FROM (SELECT * FROM sbom_packages FINAL) AS p
-			ARRAY JOIN p.package_names AS dep_name, p.package_versions AS dep_version
+			FROM sbom_packages
+			ARRAY JOIN package_names AS dep_name, package_versions AS dep_version
 			WHERE dep_name != '' AND dep_version != '' %s
 			GROUP BY dep_name
 			HAVING uniqExact(dep_version) > 1
 		)
 	`, searchFilter)
-	if search != "" {
-		_ = c.Conn.QueryRow(ctx, countQuery, "%"+search+"%").Scan(&totalSkewed)
-	} else {
-		_ = c.Conn.QueryRow(ctx, countQuery).Scan(&totalSkewed)
+	if err := c.Conn.QueryRow(ctx, countQuery, args...).Scan(&totalSkewed); err != nil {
+		return nil, fmt.Errorf("failed to count version skew: %w", err)
 	}
 
 	// Find paginated skewed packages.
@@ -591,69 +587,24 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 			dep_name,
 			any(dep_purl) AS purl,
 			uniqExact(dep_version) AS version_count,
-			count(DISTINCT project_key) AS project_count,
-			groupArray(DISTINCT dep_version) AS versions
-		FROM (
-			SELECT
-				dep_name,
-				dep_purl,
-				dep_version,
-				multiIf(
-					position(source_file, 's3://') = 1,
-					if(
-						length(splitByChar('/', replaceOne(source_file, 's3://', ''))) > 4,
-						arrayStringConcat(arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2), '/'),
-						arrayElement(splitByChar('/', replaceOne(source_file, 's3://', '')), 2)
-					),
-					doc_name != '',
-					if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
-					source_file
-				) AS project_key
-			FROM (
-				SELECT
-					p.source_file,
-					ifNull(s.document_name, p.source_file) AS doc_name,
-					dep_name,
-					dep_purl,
-					dep_version
-				FROM (SELECT * FROM sbom_packages FINAL) AS p
-				INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
-					ON p.sbom_id = s.sbom_id
-				ARRAY JOIN
-					p.package_names AS dep_name,
-					p.package_purls AS dep_purl,
-					p.package_versions AS dep_version
-			)
-			WHERE dep_name != '' AND dep_version != '' %s
-		)
+			uniqExact(%s) AS project_count,
+			groupUniqArray(dep_version) AS versions
+		FROM sbom_packages
+		ARRAY JOIN
+			package_names AS dep_name,
+			package_purls AS dep_purl,
+			package_versions AS dep_version
+		WHERE dep_name != '' AND dep_version != '' %s
 		GROUP BY dep_name
-		HAVING uniqExact(dep_version) > 1
+		HAVING version_count > 1
 		ORDER BY project_count DESC, version_count DESC
 		LIMIT ? OFFSET ?
-	`, searchFilter)
+	`, projectKey, searchFilter)
 
-	var rows interface {
-		Next() bool
-		Scan(dest ...interface{}) error
-		Close() error
+	rows, err := c.Conn.Query(ctx, mainQuery, append(args, pageSize, offset)...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query version skew: %w", err)
 	}
-	var err error
-	if search != "" {
-		rows2, err2 := c.Conn.Query(ctx, mainQuery, "%"+search+"%", pageSize, offset)
-		if err2 != nil {
-			return nil, fmt.Errorf("failed to query version skew: %w", err2)
-		}
-		rows = rows2
-		err = nil
-	} else {
-		rows2, err2 := c.Conn.Query(ctx, mainQuery, pageSize, offset)
-		if err2 != nil {
-			return nil, fmt.Errorf("failed to query version skew: %w", err2)
-		}
-		rows = rows2
-		err = nil
-	}
-	_ = err
 	defer rows.Close()
 
 	var items []dto.VersionSkewItem
@@ -663,73 +614,55 @@ func (c *Client) QueryVersionSkew(ctx context.Context, page, pageSize uint64, se
 		if err := rows.Scan(&item.PackageName, &item.PURL, &item.VersionCount, &item.ProjectCount, &versions); err != nil {
 			return nil, fmt.Errorf("failed to scan version skew row: %w", err)
 		}
-
 		for _, v := range versions {
-			item.Versions = append(item.Versions, dto.VersionSkewDetail{
-				Version:      v,
-				ProjectCount: 0,
-			})
+			item.Versions = append(item.Versions, dto.VersionSkewDetail{Version: v})
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 
-	// Second pass: per-version project counts and names (efficient for ≤50 items per page).
+	// Second pass: per-version project counts and names (≤page_size queries).
+	versionQuery := fmt.Sprintf(`
+		SELECT dep_version, uniqExact(pk) AS project_count, groupUniqArray(pk) AS projects
+		FROM (
+			SELECT dep_version, %s AS pk
+			FROM sbom_packages
+			ARRAY JOIN package_names AS dep_name, package_versions AS dep_version
+			WHERE dep_name = ?
+		)
+		GROUP BY dep_version
+	`, projectKey)
 	for i := range items {
-		vRows, err := c.Conn.Query(ctx, `
-			SELECT
-				dep_version,
-				count(DISTINCT project_key) AS project_count,
-				groupArray(DISTINCT project_key) AS projects
-			FROM (
-				SELECT
-					dep_version,
-					multiIf(
-						position(source_file, 's3://') = 1,
-						if(
-							length(splitByChar('/', replaceOne(source_file, 's3://', ''))) > 4,
-							arrayStringConcat(arraySlice(splitByChar('/', replaceOne(source_file, 's3://', '')), 2, 2), '/'),
-							arrayElement(splitByChar('/', replaceOne(source_file, 's3://', '')), 2)
-						),
-						doc_name != '',
-						if(position(doc_name, ' - ') > 0, trim(BOTH ' ' FROM substring(doc_name, 1, position(doc_name, ' - ') - 1)), doc_name),
-						source_file
-					) AS project_key
-				FROM (
-					SELECT
-						p.source_file,
-						ifNull(s.document_name, p.source_file) AS doc_name,
-						dep_version
-					FROM (SELECT * FROM sbom_packages FINAL) AS p
-					INNER JOIN (SELECT sbom_id, document_name FROM sboms FINAL) AS s
-						ON p.sbom_id = s.sbom_id
-					ARRAY JOIN
-						p.package_names AS dep_name,
-						p.package_versions AS dep_version
-					WHERE dep_name = ?
-				)
-			)
-			GROUP BY dep_version
-		`, items[i].PackageName)
-		if err == nil {
-			type versionInfo struct {
-				count    uint64
-				projects []string
+		vRows, err := c.Conn.Query(ctx, versionQuery, items[i].PackageName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query version detail: %w", err)
+		}
+		type versionInfo struct {
+			count    uint64
+			projects []string
+		}
+		versionData := make(map[string]versionInfo)
+		for vRows.Next() {
+			var v string
+			var cnt uint64
+			var projects []string
+			if err := vRows.Scan(&v, &cnt, &projects); err != nil {
+				vRows.Close()
+				return nil, fmt.Errorf("failed to scan version detail: %w", err)
 			}
-			versionData := make(map[string]versionInfo)
-			for vRows.Next() {
-				var v string
-				var cnt uint64
-				var projects []string
-				if err := vRows.Scan(&v, &cnt, &projects); err == nil {
-					versionData[v] = versionInfo{count: cnt, projects: projects}
-				}
-			}
-			vRows.Close()
-			for j := range items[i].Versions {
-				if info, ok := versionData[items[i].Versions[j].Version]; ok {
-					items[i].Versions[j].ProjectCount = info.count
-					items[i].Versions[j].Projects = info.projects
-				}
+			versionData[v] = versionInfo{count: cnt, projects: projects}
+		}
+		err = vRows.Err()
+		vRows.Close()
+		if err != nil {
+			return nil, fmt.Errorf("rows error: %w", err)
+		}
+		for j := range items[i].Versions {
+			if info, ok := versionData[items[i].Versions[j].Version]; ok {
+				items[i].Versions[j].ProjectCount = info.count
+				items[i].Versions[j].Projects = info.projects
 			}
 		}
 	}
@@ -824,6 +757,9 @@ func (c *Client) QueryDependencySearch(ctx context.Context, query string, page, 
 			return nil, fmt.Errorf("failed to scan search result: %w", err)
 		}
 		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
 	for i := range items {
@@ -985,6 +921,9 @@ func (c *Client) QueryPackageDetail(ctx context.Context, packageName string, pag
 			return nil, fmt.Errorf("failed to scan project row: %w", err)
 		}
 		projects = append(projects, proj)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 	if projects == nil {
 		projects = []dto.DependencySearchProject{}

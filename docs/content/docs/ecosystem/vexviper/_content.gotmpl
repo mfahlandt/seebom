@@ -1,0 +1,13 @@
+{{ partial "ecosystem-pages.html" (dict
+  "adapter" .
+  "repo" "vexviper"
+  "github" "https://github.com/seebom-labs/VEXViper"
+  "base" "/docs/ecosystem/vexviper/"
+  "pages" (slice
+    (dict "file" "README.md" "path" "overview" "title" "Overview" "weight" 1 "description" "Quick start, install, configuration, guardrails and the MCP server.")
+    (dict "file" "docs/INTEGRATION.md" "path" "integration" "title" "Integration with BOMHort" "weight" 10 "description" "Which API contract VEXViper relies on and why it is a sidecar.")
+    (dict "file" "docs/HOWTO-CRONJOB.md" "path" "how-to-cronjob" "title" "How to: run VEXViper as a CronJob" "weight" 30 "description" "Helm CronJob against your BOMHort: token, repository mapping, verifying applied statements.")
+    (dict "file" "docs/HOWTO-GITOPS.md" "path" "how-to-gitops" "title" "How to: review VEX drafts in pull requests" "weight" 31 "description" "Review-first publishing with vex.git before anything reaches BOMHort.")
+    (dict "file" "docs/HOWTO-LLM.md" "path" "how-to-llm" "title" "How to: set up an LLM provider" "weight" 32 "description" "OpenAI-compatible, GitHub Models or Copilot CLI, with a spend cap.")
+  )
+) }}

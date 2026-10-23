@@ -1,6 +1,6 @@
 # BOMHort Product Roadmap
 
-> Last updated: 2026-10-14
+> Last updated: 2026-10-17
 > Project Board: https://github.com/orgs/seebom-labs/projects/1
 > Milestones: [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5)  [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6)  [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1)  [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2)  [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3)  [v2.0.0](https://github.com/seebom-labs/BOMHort/milestone/4)
 
@@ -66,7 +66,7 @@ Two rules drive sequencing. The old one still holds: **if it can't be back-fille
 
 **Theme:** Freeze a contract that an external consumer has already exercised (#399), and ship a CRA-grade vulnerability register *inside* the frozen surface rather than bolting it on after.
 
-### 2a. v0.8.0 — Contract (due 2026-10-31)
+### 2a. v0.8.0 — Contract ✅ (released 2026-10-17)
 
 Everything that was blocking 1.0 on 2026-09-24, minus the tag. Order within the release is the order of the table.
 
@@ -82,10 +82,42 @@ Everything that was blocking 1.0 on 2026-09-24, minus the tag. Order within the 
 | ~~#412~~ | ~~Expose the CVE id and OSV aliases in API, UI and lookups~~ | DTO + query, **no migration** | ✅ `cve_id` + `aliases` on findings, VEX statements and search results; affected-projects and global search accept any alias. UI leads with the CVE. |
 | ~~#266~~ | ~~CSV export for vulnerabilities (stdlib `encoding/csv`)~~ | New endpoint | ✅ `GET /api/v1/reports/vulnerabilities?format=csv[&scope=]`, streamed, formula-injection safe, `cve_id` first. Column list grows in v0.9.0 as fields arrive; the endpoint shape is set here. |
 | ~~#439~~ | ~~License resolution with provenance — deps.dev/Packagist/PyPI resolvers, `unapproved` category, per-package license source~~ | Migration `024` + new endpoint + DTO field | ✅ `license_source` on dependency nodes and `GET /api/v1/licenses/sources` are contract surface, so they land before the freeze. Every heuristic is documented on the License Resolution docs page, which a test keeps in sync with the code. |
+| ~~GHSA-943f-mm2v-j478~~ | ~~UI nginx injected `SERVICE_TOKEN` on write requests — anonymous upload/PATCH through the public UI~~ | nginx config (image + chart) | ✅ Token injected on `GET`/`HEAD` only; shipped in `v0.8.0-rc.3`. Release notes: CI uploads through the UI host need their own credential. Found by the 2026-10-15 audit, like the v0.9.0 ingest-correctness block below. |
+
+**Also shipped, unplanned:** SPDX license expressions (`AND`/`OR`/`WITH`) are evaluated instead of reported as unknown (#402); license exceptions from a ConfigMap, an `https://` URL or `s3://`, reloaded live and applied retroactively without re-ingest (#470); summary mode for `/projects/license-compliance` and bounded archived-packages memory (#475); installable release candidates cut from `release/vX.Y` branches.
 
 **Exit criteria:** an MCP client can ask `get_project` and get de-duplicated numbers; every `values.yaml` key 1.0 promises to keep exists; `source_repo` > 90 % on the CNCF corpus; a CSV of findings with CVE ids can be downloaded.
 
 ### 2b. v0.9.0 — Vulnerability register (due 2026-11-30)
+
+**First: ingest correctness (2026-10-15 audit).** A register is only as good as the rows under it, and the audit found ways to lose, hide or duplicate those rows silently. These land *before* the register columns, because every register column is computed from the rows they fix — #485's stubs have no `osv_json` for #408/#409 to backfill from, and #480's rows are invisible to every scoped view, including #459's. All are fixes, so each is backported to `release/v0.8` after merge (`make cherry-pick`) and ships as a v0.8.x patch; #446 is the exception (migration).
+
+| # | Issue | Migration | Notes |
+|---|-------|-----------|-------|
+| **#480** | `cve-refresher` writes findings without `cluster`/`namespace`/`project` | none (+ one-off backfill `INSERT … SELECT`) | The newest CVEs are the ones scoped views miss. **Before #459**, which adds more such filters. Brings the first tests for `cmd/cve-refresher`. |
+| **#485** | Un-hydrated OSV entries stored as stubs, never refreshed | none | Precondition for #408/#409 backfill. Moves the duplicated vulnerability builder into `osvutil` — #408/#409 then add their columns in one place, not two. |
+| **#482** + **#487** | Failed jobs leave half-ingested SBOMs that are never retried; watcher queries per file | none | Write `sboms` last (commit marker), defer on shutdown, decide "already queued" on the latest status per job — in one bulk query (#487) instead of N. |
+| **#446** → **#483** | `ingestion_queue.created_at` second resolution; workers claim the same jobs | `0xx` `MODIFY COLUMN created_at DateTime64(3)` on `ingestion_queue` | **Column-type change → must be pre-1.0** (Schema Change Register). #483's "keep only own claims" re-read needs #446's ordering. Not backported (migration). |
+| **#481** + **#489** | Registry resolvers cache transient failures forever; cache plumbing copied 5× | none | #489's shared cache type first, so #481's rule ("cache definite answers only") lives in one place. Plus cleanup of poisoned `registry_license_cache` rows. |
+| **#484** | Rate limit / auth logs trust client `X-Forwarded-For` | none | Small; security. |
+| **#486** | `cve-refresher` scans `sbom_packages` once per new PURL | none | Same binary as the #410/#64 feeds; fix before adding to it. |
+| **#488** | Search pages render results of an older query | none (UI) | Small. |
+| **#493** | CNCF buckets: `ClassifyKey` skips `_cdx.json`/`_spdx3.json`; `_release_*` assets would duplicate a release | none | Consumer-raised (cncf/sbom), so first. Accept CycloneDX and SPDX 3 keys; **skip `_release_*` keys** — one SBOM per release, the per-binary asset is not it. |
+| **#447** | `GET /api/v1/licenses/compliance` unpaginated, cut at 10 MiB by the ingress | none (response shape) | `PaginatedResponse[T]` like every other list. Shape change → before the freeze. Not backported. |
+
+**Second: runtime-scanner identity (#455–#461, raised 2026-10-13 by a Kubernetes runtime scanner).** A scanner that walks pods needs to say *how* a document was produced, *which image* it describes and *which workload* runs it, and needs to ask "do you already have this digest?" before scanning again. Every column is `ADD COLUMN … DEFAULT ''`, so all of it is additive — it is pre-1.0 because the upload parameters and filters are contract, and because the register's "per deployed version" only means something once a finding can be scoped to a running workload. Order is dependency order; #460 adds the 7th direct Go dependency and is decided separately.
+
+| # | Issue | Migration | Notes |
+|---|-------|-----------|-------|
+| **#459** | Ownership filters (`?cluster=`/`?namespace=`/`?project=`/`?tag=`) on `/vulnerabilities`, per-cluster/namespace vulnerability routes | none | **After #480** — until then the filters would hide every refresher finding. Columns already exist (`012`/`015`). |
+| **#455** | `origin` dimension: `cluster-scan`, `ci`, `registry`, `vendor`, `manual` | `0xx` `ADD COLUMN origin` on the 7 data tables | Fixed vocabulary, `400` on anything else; upload param, per-bucket field, `ORIGIN` default — same plumbing as `cluster`. Prerequisite for #456. |
+| **#458** | Workload identity: `workload_kind`, `workload_name`, `workload_uid` | `0xx` `ADD COLUMN` on `sboms` | Upload params + filters; `project` defaults to `workload_name`. One identity per SBOM — the `sbom_identities` table is a post-1.0 follow-up. |
+| **#457** | Image reference and digest as SBOM identity; `?digest=`, `/images/{digest}`, `HEAD` existence check | `0xx` `ADD COLUMN image_ref, image_digest` on `sboms` (+ skip index), `image_digest` on children | Digest from upload param or `pkg:oci` purl. Digest-based dedup is **opt-in** (`DEDUP_BY_IMAGE_DIGEST`), off by default. |
+| **#461** | CycloneDX 1.6 / SPDX 3.0.1 scanner fixtures; `k8s_*`/`image` identifiers read from the document | `0xx` `ADD COLUMN producer_identifiers Map(String,String)` on `sboms` | Explicit config still outranks the document; extracted values only fill empty dimensions, conflicts are logged and kept auditable. Needs #457/#458 for the target columns. |
+| **#456** | Named, scoped API keys (`API_KEYS_JSON`, `auth.apiKeys[]`): restrict a key to origins/clusters/namespaces/projects | `0xx` `ADD COLUMN uploaded_by` on `sboms` | Flat `API_KEYS` keeps working unchanged. `403` with the key *name*; names in the startup log, never the secrets. Needs #455's `origin`. |
+| **#460** | Prometheus `/metrics` + `ServiceMonitor`/`PodMonitor` in the chart | none | **Needs the dependency decision** (`prometheus/client_golang`). Labels bounded by config (`cluster`, `origin`), never `project`/`sbom_id`. |
+
+**Then the register.**
 
 The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify and document vulnerabilities, remediate without delay. A register that a security officer can hand to an auditor needs, per finding and per deployed version: CVE, CWE, CVSS, EPSS, KEV status, remediation status, due date, and a timestamp proving it is current. Order is dependency order.
 
@@ -131,8 +163,8 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 - [x] ~~Schema wave `014`–`022`~~ (#256, #138, #332, #334, #57 column, #350, #357)
 - [x] ~~One row per `(vuln_id, purl)` — latest VEX wins (#335)~~ · ~~`cluster` in `SBOMListItem` (#177)~~
 - [x] ~~Project-centric read model + de-duplicated counts (#398)~~
-- [x] **v0.8.0:** ~~MCP server + `mcp.*` (#399)~~ · ~~Aggregated SBOM View (#58)~~ · ~~`source_repo` fallback (#355)~~ · ~~`existingConfigMap` (#397)~~ · ~~seed job (#391)~~ · ~~ClickHouse floor (#392)~~ · ~~perf E + I (#344)~~ · ~~CVE id/aliases (#412)~~ · ~~CSV export (#266)~~ · ~~license provenance (#439)~~
-- [ ] **v0.9.0:** CVSS (#408) · CWE (#409) · KEV (#410) · EPSS (#64) · remediation record (#413) · SLA due dates (#411) · register docs (#414)
+- [x] **v0.8.0:** ~~MCP server + `mcp.*` (#399)~~ · ~~Aggregated SBOM View (#58)~~ · ~~`source_repo` fallback (#355)~~ · ~~`existingConfigMap` (#397)~~ · ~~seed job (#391)~~ · ~~ClickHouse floor (#392)~~ · ~~perf E + I (#344)~~ · ~~CVE id/aliases (#412)~~ · ~~CSV export (#266)~~ · ~~license provenance (#439)~~ · ~~UI proxy write auth (GHSA-943f-mm2v-j478)~~
+- [ ] **v0.9.0:** ingest correctness (#480, #485, #482, #487, #446, #483, #481, #489, #484, #486, #488) · CVSS (#408) · CWE (#409) · KEV (#410) · EPSS (#64) · remediation record (#413) · SLA due dates (#411) · register docs (#414)
 - [ ] **v1.0.0:** CRA dashboard (#141) · MTTR (#7, stretch) · report bundle (#62) · crypto-library inventory (#419) · versioned docs (#145) · migration guide + values review
 
 ### Milestone map
@@ -141,10 +173,10 @@ Every open issue carries a milestone — "no milestone" is not a valid state.
 
 | Milestone | Due | Theme | Open issues |
 |-----------|-----|-------|-------------|
-| [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | 2026-10-31 | Contract | ~~#399~~, ~~#58~~, ~~#355~~, ~~#397~~, ~~#391~~, ~~#392~~, ~~#344~~ (E+I), ~~#412~~, ~~#266~~, ~~#439~~ |
-| [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) | 2026-11-30 | Vulnerability register | #408, #409, #410, #64, #413, #411, #414 |
+| [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | ✅ 2026-10-17 | Contract | ~~#399~~, ~~#58~~, ~~#355~~, ~~#397~~, ~~#391~~, ~~#392~~, ~~#344~~ (E+I), ~~#412~~, ~~#266~~, ~~#439~~, ~~GHSA-943f-mm2v-j478~~ |
+| [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) | 2026-11-30 | Ingest correctness + vulnerability register | #480, #485, #482, #487, #446, #483, #481, #489, #484, #486, #488, #408, #409, #410, #64, #413, #411, #414 |
 | [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) | 2027-01-31 | Freeze + CRA dashboard | #141, #7, #62, #419, #145 |
-| [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) | 2027-04-30 | Automation, fleet & cryptography | #338, #336, #333, #337, #334 (UI), #138 (API/UI), #267, #176, #140, #57, #136, #60, #143, #420, #415, #416, #417, #418 |
+| [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) | 2027-04-30 | Automation, fleet & cryptography | #338, #336, #333, #337, #334 (UI), #138 (API/UI), #267, #176, #140, #57, #136, #60, #143, #420, #415, #416, #417, #418, #490 |
 | [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3) | 2027-07-31 | Analytics | #61, #82, #38, #56, #63, #255, #254 |
 | [v2.0.0](https://github.com/seebom-labs/BOMHort/milestone/4) | — | breaking only | #268 |
 
@@ -180,6 +212,7 @@ Every open issue carries a milestone — "no milestone" is not a valid state.
 | **#140** | Workload vulnerability summary | Image → posture cross-reference; becomes an additional input to the #141 score. |
 | **#57** (policies) | Per-project license policies, severity thresholds, exception scopes | Project identity fixed by #398; policies have a stable key. |
 | **#136** (rest) | `CORS_ALLOW_CREDENTIALS`, configurable methods/headers | Small, additive. |
+| **#490** | Bounded response sizes in the license resolvers, deps.dev page cap | Hardening; default registries are trusted, a configurable mirror is not. Lands with #60, which adds more outbound feeds. |
 | **#60** | Local OSV mirror | Offline / air-gapped; no rate limits. KEV/EPSS feeds (#410, #64) get the same mirror treatment here. |
 | **#143** | In-toto Witness integration | New `attestations` table (additive), signature verification, provenance display. Additional #141 score input. Phase 1 no new deps; `sigstore-go` later. |
 | **#399** (write tools) | MCP write/mutation tools, if ever wanted | The 1.0 server is read-only by design. |
@@ -238,6 +271,13 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | — (parser only) ✅ | #355 | `documentNamespace` fallback in `extractSourceRepo` | **pre** (v0.8.0) | makes #332 true |
 | — (DTO + query) ✅ | #412 | `cve_id`, `aliases` on finding DTOs; lookups by alias | **pre** (v0.8.0) | market (additive) |
 | — (endpoint) ✅ | #266 | CSV export | **pre** (v0.8.0) | market (additive) |
+| `0xx_ingestion_queue_created_at_datetime64` | #446 | `MODIFY COLUMN created_at DateTime64(3)` on `ingestion_queue` | **pre** (v0.9.0) | **contract** — a column-type change, not allowed after 1.0. Number assigned at merge; the planned numbers below shift if it lands first. |
+| `0xx_add_origin` | #455 | `ADD COLUMN origin LowCardinality(String) DEFAULT ''` on the 7 data tables | **pre** (v0.9.0) | contract (upload param + filter), additive |
+| `0xx_add_workload_identity` | #458 | `ADD COLUMN workload_kind, workload_name, workload_uid` on `sboms` | **pre** (v0.9.0) | contract (upload params), additive |
+| `0xx_add_image_identity` | #457 | `ADD COLUMN image_ref, image_digest` on `sboms` (+ skip index), `image_digest` on `sbom_packages`/`vulnerabilities` | **pre** (v0.9.0) | contract (`/images/{digest}`), additive |
+| `0xx_add_producer_identifiers` | #461 | `ADD COLUMN producer_identifiers Map(String,String)` on `sboms` | **pre** (v0.9.0) | additive (audit trail) |
+| `0xx_add_uploaded_by` | #456 | `ADD COLUMN uploaded_by` on `sboms` | **pre** (v0.9.0) | additive (attribution) |
+| — (response shape) | #447 | `/licenses/compliance` → `PaginatedResponse[T]` | **pre** (v0.9.0) | **contract** — shape change |
 | `027_add_vulnerability_cvss_cwe` | #408, #409 | `ADD COLUMN cvss_score Float32, cvss_vector String, cvss_version LowCardinality(String), cwe_ids Array(String)` on `vulnerabilities` | **pre** (v0.9.0) | market (additive; backfill from `osv_json`) |
 | `028_create_kev_catalog` | #410 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
 | `029_create_epss_scores` | #64 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
@@ -275,6 +315,19 @@ CRYPTO (#420):
 #419 (library inventory, SBOM-only)                         v1.0.0
 #415 (CBOM ingest) ── #416 (inventory) ── #417 (policy) ── #418 (PQC)   v1.1.0
                                                  └── #409 (CWE-327 filter on the register)
+
+INGEST CORRECTNESS (v0.9.0, before the register):
+#480 (refresher ownership) ── #459 (ownership filters on vulnerabilities)
+#485 (no OSV stubs) ── #408/#409 (backfill from osv_json)
+#486 (refresher bulk query) ── #410/#64 (feeds in the same binary)
+#446 (DateTime64) ── #483 (claim race)        #482 ── #487 (one bulk hash query)
+#489 (shared resolver cache) ── #481 (cache definite answers only)
+
+RUNTIME-SCANNER IDENTITY (v0.9.0, after ingest correctness):
+#455 (origin) ── #456 (scoped API keys)
+#457 (image digest) ──┬── #461 (identifiers from the document)
+#458 (workload) ──────┘
+#460 (Prometheus) ── dependency decision first
 
 VEXVIPER (#338):
 #355 ── #336 (idempotent upload) ── #333 (since/cursor) ── #337 (webhooks) ── #334 UI

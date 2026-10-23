@@ -340,7 +340,7 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 		}
 	}
 
-	// First find all PURLs affected by this CVE.
+	// Severity per affected PURL.
 	purlRows, err := c.Conn.Query(ctx,
 		`SELECT purl,
 			argMax(severity, multiIf(severity = 'CRITICAL', 4, severity = 'HIGH', 3, severity = 'MEDIUM', 2, severity = 'LOW', 1, 0))
@@ -352,114 +352,141 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 	}
 	defer purlRows.Close()
 
-	type purlSeverity struct {
-		purl     string
-		severity string
-	}
-	var affectedPURLs []purlSeverity
+	severityByPURL := map[string]string{}
+	var purls []string
 	for purlRows.Next() {
-		var ps purlSeverity
-		if err := purlRows.Scan(&ps.purl, &ps.severity); err != nil {
+		var purl, severity string
+		if err := purlRows.Scan(&purl, &severity); err != nil {
 			return nil, fmt.Errorf("failed to scan purl: %w", err)
 		}
-		affectedPURLs = append(affectedPURLs, ps)
+		severityByPURL[purl] = severity
+		purls = append(purls, purl)
 	}
-
-	if len(affectedPURLs) == 0 {
+	if err := purlRows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	if len(purls) == 0 {
 		return []dto.AffectedProject{}, nil
 	}
 
-	// For each affected PURL, find all SBOMs that contain it anywhere in their dependency tree.
+	// VEX status per (sbom, purl), one query for the whole listing.
+	//
+	// Scoped to sbom_id (#350): without it a statement issued for one
+	// product coloured the rows of every other project carrying the same
+	// library. argMax over vex_timestamp (#335) so the newest statement
+	// wins, and '*' matches the product-wide shape. A failure leaves the
+	// statuses empty rather than failing the listing, but it is logged -
+	// discarding it is how the dashboard reported a wrong 0 for months (#356).
+	type vexKey struct{ sbomID, purl string }
+	vexByKey := map[vexKey]string{}
+	vexRows, err := c.Conn.Query(ctx, `
+		SELECT sbom_id, product_purl, argMax(status, vex_timestamp)
+		FROM vex_statements FINAL
+		WHERE vuln_id IN (?) AND (product_purl IN (?) OR product_purl = '*')
+		GROUP BY sbom_id, product_purl
+	`, matchIDs, purls)
+	if err != nil {
+		log.Printf("WARNING: vex status for %s: %v", vulnID, err)
+	} else {
+		for vexRows.Next() {
+			var k vexKey
+			var status string
+			if err := vexRows.Scan(&k.sbomID, &k.purl, &status); err != nil {
+				log.Printf("WARNING: vex status for %s: %v", vulnID, err)
+				break
+			}
+			vexByKey[k] = status
+		}
+		if err := vexRows.Err(); err != nil {
+			log.Printf("WARNING: vex status for %s: %v", vulnID, err)
+		}
+		vexRows.Close()
+	}
+	vexStatus := func(sbomID, purl string) string {
+		if st, ok := vexByKey[vexKey{sbomID, purl}]; ok {
+			return st
+		}
+		return vexByKey[vexKey{sbomID, "*"}]
+	}
+
+	// Every SBOM row carrying any affected PURL, one row per hit. A single
+	// pass over sbom_packages without FINAL: the per-PURL full scan it
+	// replaced timed out at the ingress on large instances.
+	rows, err := c.Conn.Query(ctx, `
+		SELECT
+			p.sbom_id,
+			p.source_file,
+			ifNull(s.document_name, p.source_file) AS document_name,
+			hit,
+			indexOf(p.package_purls, hit) AS purl_idx,
+			p.package_names,
+			p.package_versions,
+			p.package_purls,
+			p.package_depths
+		FROM sbom_packages AS p
+		ARRAY JOIN arrayFilter(x -> x IN (?), p.package_purls) AS hit
+		LEFT JOIN (SELECT sbom_id, document_name FROM sboms) AS s ON s.sbom_id = p.sbom_id
+	`, purls)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query projects for %s: %w", vulnID, err)
+	}
+	defer rows.Close()
+
 	var items []dto.AffectedProject
-	for _, ps := range affectedPURLs {
-		rows, err := c.Conn.Query(ctx, `
-			SELECT
-				p.sbom_id,
-				p.source_file,
-				ifNull(s.document_name, p.source_file) AS document_name,
-				indexOf(p.package_purls, ?) AS purl_idx,
-				p.package_names,
-				p.package_versions,
-				p.package_purls,
-				p.package_depths
-			FROM (SELECT * FROM sbom_packages FINAL) AS p
-			LEFT JOIN (SELECT * FROM sboms FINAL) AS s ON s.sbom_id = p.sbom_id
-			WHERE has(p.package_purls, ?)
-		`, ps.purl, ps.purl)
-		if err != nil {
-			return nil, fmt.Errorf("failed to query projects for purl %s: %w", ps.purl, err)
+	seen := map[vexKey]bool{}
+	for rows.Next() {
+		var (
+			sbomID       string
+			sourceFile   string
+			documentName string
+			hit          string
+			purlIdx      uint64
+			names        []string
+			versions     []string
+			purlList     []string
+			depths       []uint16
+		)
+		if err := rows.Scan(
+			&sbomID, &sourceFile, &documentName, &hit, &purlIdx,
+			&names, &versions, &purlList, &depths,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan project row: %w", err)
+		}
+		// No FINAL above: skip a duplicate pre-merge row.
+		if seen[vexKey{sbomID, hit}] {
+			continue
+		}
+		seen[vexKey{sbomID, hit}] = true
+
+		pkgName := ""
+		version := ""
+		if purlIdx > 0 && int(purlIdx) <= len(names) {
+			pkgName = names[purlIdx-1] // indexOf is 1-based in ClickHouse
+			if int(purlIdx) <= len(versions) {
+				version = versions[purlIdx-1]
+			}
 		}
 
-		for rows.Next() {
-			var (
-				sbomID       string
-				sourceFile   string
-				documentName string
-				purlIdx      uint64
-				names        []string
-				versions     []string
-				purls        []string
-				depths       []uint16
-			)
-			if err := rows.Scan(
-				&sbomID, &sourceFile, &documentName, &purlIdx,
-				&names, &versions, &purls, &depths,
-			); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("failed to scan project row: %w", err)
-			}
+		// Direct vs. transitive from the depth recorded at parse time;
+		// the nearest occurrence of the PURL counts.
+		scope, depth := scopeFields(depgraph.MinDepthForPURL(purlList, depths, hit))
 
-			pkgName := ""
-			version := ""
-			if purlIdx > 0 && int(purlIdx) <= len(names) {
-				pkgName = names[purlIdx-1] // indexOf is 1-based in ClickHouse
-				if int(purlIdx) <= len(versions) {
-					version = versions[purlIdx-1]
-				}
-			}
-
-			// Direct vs. transitive from the depth recorded at parse time;
-			// the nearest occurrence of the PURL counts.
-			scope, depth := scopeFields(depgraph.MinDepthForPURL(purls, depths, ps.purl))
-
-			// Check VEX status for this finding, in this SBOM.
-			//
-			// Scoped to sbom_id (#350): without it a statement issued for one
-			// product coloured the rows of every other project carrying the same
-			// library. Ordered by vex_timestamp (#335) so the newest statement
-			// wins instead of whichever row came back first, and '*' matches the
-			// product-wide shape. A failure leaves the status empty rather than
-			// failing the whole listing, but it is logged - discarding it is how
-			// the dashboard reported a wrong 0 for months (#356).
-			var vexStatus string
-			if err := c.Conn.QueryRow(ctx, `
-				SELECT argMax(status, vex_timestamp)
-				FROM vex_statements FINAL
-				WHERE vuln_id IN (?)
-					AND sbom_id = ?
-					AND (product_purl = ? OR product_purl = '*')
-			`, matchIDs, sbomID, ps.purl).Scan(&vexStatus); err != nil && !isNoRows(err) {
-				log.Printf("WARNING: vex status for %s/%s in sbom %s: %v", vulnID, ps.purl, sbomID, err)
-			}
-
-			items = append(items, dto.AffectedProject{
-				SBOMID:          sbomID,
-				SourceFile:      sourceFile,
-				DocumentName:    documentName,
-				PURL:            ps.purl,
-				PackageName:     pkgName,
-				Version:         version,
-				Severity:        ps.severity,
-				VEXStatus:       vexStatus,
-				IsDirect:        scope == depgraph.ScopeDirect,
-				DependencyScope: scope,
-				DependencyDepth: depth,
-			})
-		}
-		if err := rows.Err(); err != nil {
-			return nil, fmt.Errorf("rows error: %w", err)
-		}
-		rows.Close()
+		items = append(items, dto.AffectedProject{
+			SBOMID:          sbomID,
+			SourceFile:      sourceFile,
+			DocumentName:    documentName,
+			PURL:            hit,
+			PackageName:     pkgName,
+			Version:         version,
+			Severity:        severityByPURL[hit],
+			VEXStatus:       vexStatus(sbomID, hit),
+			IsDirect:        scope == depgraph.ScopeDirect,
+			DependencyScope: scope,
+			DependencyDepth: depth,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
 	if items == nil {

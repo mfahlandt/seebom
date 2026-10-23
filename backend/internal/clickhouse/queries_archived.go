@@ -237,6 +237,9 @@ func (c *Client) scanArchivedPackages(ctx context.Context, purls []string, emit 
 //
 // Cached for archivedInUseTTL: the answer changes once a day with the
 // cve-refresher, and every dashboard view asked for it.
+// shortcut: callers wait on the mutex during a refresh and a failed
+// refresh is not cached; fine for one query every 5 min, serve the stale
+// value instead if dashboards ever stall on it.
 func (c *Client) QueryArchivedReposInUse(ctx context.Context) (uint64, error) {
 	c.archivedMu.Lock()
 	defer c.archivedMu.Unlock()

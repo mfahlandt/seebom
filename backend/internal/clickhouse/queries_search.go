@@ -446,6 +446,8 @@ func (c *Client) QueryAffectedProjectsByCVE(ctx context.Context, vulnID string) 
 			return nil, fmt.Errorf("failed to scan project row: %w", err)
 		}
 		// No FINAL above: skip a duplicate pre-merge row.
+		// shortcut: the first row wins, which may be the older one until
+		// ClickHouse merges; revisit if re-scans become frequent.
 		if seen[vexKey{sbomID, hit}] {
 			continue
 		}
@@ -761,12 +763,43 @@ func (c *Client) QueryDependencySearch(ctx context.Context, query string, page, 
 		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
-	for i := range items {
-		projects, err := c.queryPackageProjects(ctx, items[i].PackageName, 5, 0)
-		if err != nil {
-			return nil, err
+	// Five example projects per result, one query for the whole page: one
+	// scan per result is the loop shape that made version skew take 12 s.
+	if len(items) > 0 {
+		names := make([]string, len(items))
+		byName := make(map[string]int, len(items))
+		for i := range items {
+			names[i] = items[i].PackageName
+			byName[items[i].PackageName] = i
+			items[i].Projects = []dto.DependencySearchProject{}
 		}
-		items[i].Projects = projects
+		pRows, err := c.Conn.Query(ctx, `
+			SELECT dep_name, `+packageProjectKey+` AS project_key,
+				any(dep_version) AS version, any(toString(sbom_id)) AS sbom_id
+			FROM sbom_packages
+			ARRAY JOIN package_names AS dep_name, package_versions AS dep_version
+			WHERE dep_name IN (?)
+			GROUP BY dep_name, project_key
+			ORDER BY dep_name, project_key
+			LIMIT 5 BY dep_name
+		`, names)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query package projects: %w", err)
+		}
+		defer pRows.Close()
+		for pRows.Next() {
+			var name string
+			var proj dto.DependencySearchProject
+			if err := pRows.Scan(&name, &proj.ProjectName, &proj.Version, &proj.SBOMID); err != nil {
+				return nil, fmt.Errorf("failed to scan project row: %w", err)
+			}
+			if i, ok := byName[name]; ok {
+				items[i].Projects = append(items[i].Projects, proj)
+			}
+		}
+		if err := pRows.Err(); err != nil {
+			return nil, fmt.Errorf("rows error: %w", err)
+		}
 	}
 
 	if items == nil {

@@ -22,7 +22,7 @@ func TestQuerySettings(t *testing.T) {
 		ClickHouseMaxExecutionTime: 30,
 		ClickHouseMaxMemoryUsage:   1 << 29,
 	})
-	want := clickhouse.Settings{"max_execution_time": 30, "max_memory_usage": int64(1 << 29)}
+	want := clickhouse.Settings{"max_execution_time": 30, "max_memory_usage": int64(1 << 29), "max_bytes_before_external_group_by": int64(1 << 28), "max_bytes_before_external_sort": int64(1 << 28)}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("settings = %#v, want %#v (unset max_threads must be omitted, not sent as 0)", got, want)
 	}

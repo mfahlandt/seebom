@@ -109,17 +109,21 @@ func (c *Client) QueryNamespaceStats(ctx context.Context, namespace, clusterFilt
 		stats.LastIngested = lastIngested.Format(time.RFC3339)
 	}
 
-	_ = c.Conn.QueryRow(ctx, `
+	if err := c.Conn.QueryRow(ctx, `
 		SELECT sum(length(package_names))
 		FROM sbom_packages FINAL
 		WHERE namespace = ? AND (? = '' OR cluster = ?)
-	`, namespace, clusterFilter, clusterFilter).Scan(&stats.TotalPackages)
+	`, namespace, clusterFilter, clusterFilter).Scan(&stats.TotalPackages); err != nil {
+		return nil, fmt.Errorf("failed to count namespace packages: %w", err)
+	}
 
-	_ = c.Conn.QueryRow(ctx, `
+	if err := c.Conn.QueryRow(ctx, `
 		SELECT count()
 		FROM vulnerabilities FINAL
 		WHERE namespace = ? AND (? = '' OR cluster = ?)
-	`, namespace, clusterFilter, clusterFilter).Scan(&stats.TotalVulnerabilities)
+	`, namespace, clusterFilter, clusterFilter).Scan(&stats.TotalVulnerabilities); err != nil {
+		return nil, fmt.Errorf("failed to count namespace vulnerabilities: %w", err)
+	}
 
 	sevRows, err := c.Conn.Query(ctx, `
 		SELECT severity, count() AS cnt

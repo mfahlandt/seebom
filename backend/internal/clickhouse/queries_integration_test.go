@@ -3,6 +3,7 @@ package clickhouse
 import (
 	"context"
 	"errors"
+	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"os"
 	"strings"
 	"testing"
@@ -60,6 +61,9 @@ func testClient(t *testing.T) *Client {
 			Password: os.Getenv("CLICKHOUSE_PASSWORD"),
 		},
 		DialTimeout: 5 * time.Second,
+		// The api-gateway's production limits, so a query that only works
+		// unbounded fails here too.
+		Settings: querySettings(&config.Config{ClickHouseMaxExecutionTime: 30, ClickHouseMaxMemoryUsage: 512 << 20}),
 	})
 	if err != nil {
 		t.Fatalf("failed to open ClickHouse connection: %v", err)
@@ -119,6 +123,14 @@ func TestQueriesExecute(t *testing.T) {
 		{"violationScopesFor", func() error { _, err := c.violationScopesFor(ctx, []string{someID}); return err }},
 		{"QueryVulnerabilities", func() error { _, err := c.QueryVulnerabilities(ctx, 1, 10, ""); return err }},
 		{"QueryVEXStatements", func() error { _, err := c.QueryVEXStatements(ctx, 1, 10); return err }},
+		// Package-wide aggregations: read sbom_packages alone (see packageProjectKey).
+		{"QueryDependencyStats", func() error { _, err := c.QueryDependencyStats(ctx, 10); return err }},
+		{"QueryVersionSkew", func() error { _, err := c.QueryVersionSkew(ctx, 1, 10, ""); return err }},
+		{"QueryVersionSkew/search", func() error { _, err := c.QueryVersionSkew(ctx, 1, 10, "yaml"); return err }},
+		{"QueryDependencySearch", func() error { _, err := c.QueryDependencySearch(ctx, "yaml", 1, 10); return err }},
+		{"QueryPackageDetail", func() error { _, err := c.QueryPackageDetail(ctx, "gopkg.in/yaml.v3", 1, 10); return err }},
+		{"QueryAffectedProjectsByCVE", func() error { _, err := c.QueryAffectedProjectsByCVE(ctx, "CVE-2024-45338"); return err }},
+		{"QueryGlobalSearch", func() error { _, err := c.QueryGlobalSearch(ctx, "yaml", 5); return err }},
 		{"QueryClusters", func() error { _, err := c.QueryClusters(ctx); return err }},
 		{"QueryClusterSBOMs", func() error { _, err := c.QueryClusterSBOMs(ctx, "test", 1, 10); return err }},
 		{"QueryNamespaces", func() error { _, err := c.QueryNamespaces(ctx, ""); return err }},

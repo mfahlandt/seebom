@@ -896,13 +896,13 @@ func main() {
 		log.Println("API authentication disabled (set AUTH_ENABLED=true to enforce)")
 	}
 	log.Printf("API Gateway listening on %s", addr)
-	// WriteTimeout bounds a request end to end, so a slow query cannot hold
-	// a connection open after the ingress has long given up on it.
+	// No WriteTimeout: it would also cap the body read of a slow upload of
+	// MaxUploadSizeMB. Slow queries are bounded by max_execution_time and
+	// the request context, which is cancelled when the client disconnects.
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 	if err := srv.ListenAndServe(); err != nil {

@@ -262,6 +262,9 @@ func (c *Client) QueryProjectVulnerabilities(ctx context.Context, name string, d
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 	if items == nil {
 		items = []dto.VulnerabilityListItem{}
 	}
@@ -362,6 +365,9 @@ func (c *Client) QueryProjectPackages(ctx context.Context, name string, page, pa
 			return nil, fmt.Errorf("failed to scan project package row: %w", err)
 		}
 		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 	if items == nil {
 		items = []dto.ProjectPackageItem{}

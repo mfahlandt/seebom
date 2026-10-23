@@ -57,6 +57,9 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 			stats.LowVulns = cnt
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 
 	// License breakdown
 	licRows, err := c.Conn.Query(ctx,
@@ -261,6 +264,9 @@ func (c *Client) QuerySBOMs(ctx context.Context, page, pageSize uint64, search, 
 		}
 		item.IngestedAt = ingestedAt.Format(time.RFC3339)
 		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
 	if items == nil {
@@ -497,6 +503,9 @@ func (c *Client) QueryLicenseCompliance(ctx context.Context) ([]dto.LicenseCompl
 		}
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 
 	if items == nil {
 		items = []dto.LicenseComplianceItem{}
@@ -647,6 +656,9 @@ func (c *Client) QueryVEXStatements(ctx context.Context, page, pageSize uint64) 
 		item.VEXTimestamp = vexTimestamp.Format(time.RFC3339)
 		item.IngestedAt = ingestedAt.Format(time.RFC3339)
 		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
 	if items == nil {

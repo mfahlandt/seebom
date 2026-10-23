@@ -75,6 +75,9 @@ func (c *Client) QueryNamespaces(ctx context.Context, clusterFilter string) ([]d
 		item.Cluster = clusterFilter
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 
 	if items == nil {
 		items = []dto.NamespaceListItem{}
@@ -239,6 +242,9 @@ func (c *Client) QueryNamespaceSBOMs(ctx context.Context, namespace, clusterFilt
 		item.IngestedAt = ingestedAt.Format(time.RFC3339)
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 
 	if items == nil {
 		items = []dto.SBOMListItem{}
@@ -324,6 +330,9 @@ func (c *Client) QueryFleetTree(ctx context.Context) ([]dto.FleetCluster, error)
 		clusters[ci].Namespaces[ni].VulnCount += vulnCount
 		clusters[ci].SBOMCount += sbomCount
 		clusters[ci].VulnCount += vulnCount
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
 
 	if clusters == nil {

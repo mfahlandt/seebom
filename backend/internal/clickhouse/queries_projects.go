@@ -191,6 +191,9 @@ func (c *Client) QueryProjects(ctx context.Context, page, pageSize uint64, searc
 		item.LatestIngested = latestIngested.UTC().Format(time.RFC3339)
 		items = append(items, item)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
 
 	if items == nil {
 		items = []dto.ProjectListItem{}

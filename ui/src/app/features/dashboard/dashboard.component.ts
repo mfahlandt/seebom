@@ -7,11 +7,12 @@ import { DashboardStats } from '../../core/api.models';
 import { SiteConfigService } from '../../core/site-config.service';
 import { DonutChartComponent, DonutSegment } from '../../shared/charts/donut-chart.component';
 import { HorizontalBarChartComponent, BarItem } from '../../shared/charts/horizontal-bar-chart.component';
+import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent],
+  imports: [CommonModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent, ScopeMatrixComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="dashboard">
@@ -77,6 +78,13 @@ import { HorizontalBarChartComponent, BarItem } from '../../shared/charts/horizo
                 <p class="empty-vex-hint">Add <code>.openvex.json</code> files to suppress non-applicable vulnerabilities.</p>
               </div>
             }
+          </div>
+        </div>
+
+        <div class="charts-row">
+          <div class="chart-card wide">
+            <h3>Vulnerabilities by Dependency Scope</h3>
+            <app-scope-matrix [breakdown]="stats.scope_breakdown" vulnLink="/vulnerabilities" />
           </div>
         </div>
 
@@ -165,6 +173,7 @@ import { HorizontalBarChartComponent, BarItem } from '../../shared/charts/horizo
 
     .charts-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
     .charts-row.two-col { grid-template-columns: repeat(2, 1fr); }
+    .chart-card.wide { grid-column: 1 / -1; }
     .chart-card {
       background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 20px;
     }

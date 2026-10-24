@@ -96,39 +96,26 @@ func (c *Client) QueryProjectDetail(ctx context.Context, name string) (*dto.Proj
 	// Distinct (vuln_id, purl) pairs, bucketed by severity. A pair that
 	// appears with different severities across versions (OSV re-rated it) is
 	// counted under its highest — argMax over a rank keeps it to one bucket.
+	// Its scope is the nearest depth it was seen at.
 	sevRows, err := c.Conn.Query(ctx, fmt.Sprintf(`
-		SELECT severity, count()
+		SELECT severity, scope, count()
 		FROM (
 			SELECT v.vuln_id, v.purl,
-				argMax(v.severity, multiIf(v.severity = 'CRITICAL', 4, v.severity = 'HIGH', 3, v.severity = 'MEDIUM', 2, v.severity = 'LOW', 1, 0)) AS severity
+				argMax(v.severity, multiIf(v.severity = 'CRITICAL', 4, v.severity = 'HIGH', 3, v.severity = 'MEDIUM', 2, v.severity = 'LOW', 1, 0)) AS severity,
+				`+scopeExpr("min(v.dependency_depth)")+` AS scope
 			FROM %s AS s
 			INNER JOIN %s AS v
 				ON v.sbom_id = s.sbom_id
 			GROUP BY v.vuln_id, v.purl
 		)
-		GROUP BY severity
-	`, projectSBOMs, projectRows("sbom_id, vuln_id, purl, severity", "vulnerabilities", "s.project_name = ?")), name)
+		GROUP BY severity, scope
+	`, projectSBOMs, projectRows("sbom_id, vuln_id, purl, severity, dependency_depth", "vulnerabilities", "s.project_name = ?")), name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query severity breakdown of %q: %w", name, err)
 	}
-	defer sevRows.Close()
-	for sevRows.Next() {
-		var severity string
-		var cnt uint64
-		if err := sevRows.Scan(&severity, &cnt); err != nil {
-			return nil, fmt.Errorf("failed to scan severity row: %w", err)
-		}
-		d.VulnCount += cnt
-		switch severity {
-		case "CRITICAL":
-			d.CriticalVulns = cnt
-		case "HIGH":
-			d.HighVulns = cnt
-		case "MEDIUM":
-			d.MediumVulns = cnt
-		case "LOW":
-			d.LowVulns = cnt
-		}
+	d.ScopeBreakdown, err = scanSeverityScopes(sevRows, &d.VulnCount, &d.CriticalVulns, &d.HighVulns, &d.MediumVulns, &d.LowVulns)
+	if err != nil {
+		return nil, err
 	}
 
 	// License categories, summed over SBOMs. This one is deliberately *not*

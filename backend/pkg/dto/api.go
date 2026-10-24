@@ -1,22 +1,51 @@
 package dto
 
 // DashboardStats is the response DTO for the /api/v1/stats/dashboard endpoint.
+// SeverityCounts is one severity breakdown; ScopeBreakdown maps a dependency
+// scope (root/direct/transitive/unknown) to the counts of findings in that
+// scope, so a reader can tell the CVEs in packages the project pulls in
+// itself from the ones buried deep in the tree.
+type SeverityCounts struct {
+	Total    uint64 `json:"total"`
+	Critical uint64 `json:"critical"`
+	High     uint64 `json:"high"`
+	Medium   uint64 `json:"medium"`
+	Low      uint64 `json:"low"`
+}
+
+// Add counts one severity bucket of n findings.
+func (c *SeverityCounts) Add(severity string, n uint64) {
+	c.Total += n
+	switch severity {
+	case "CRITICAL":
+		c.Critical += n
+	case "HIGH":
+		c.High += n
+	case "MEDIUM":
+		c.Medium += n
+	case "LOW":
+		c.Low += n
+	}
+}
+
 type DashboardStats struct {
-	TotalSBOMs               uint64            `json:"total_sboms"`
-	TotalPackages            uint64            `json:"total_packages"`
-	TotalVulnerabilities     uint64            `json:"total_vulnerabilities"`
-	EffectiveVulnerabilities uint64            `json:"effective_vulnerabilities"`
-	SuppressedByVEX          uint64            `json:"suppressed_by_vex"`
-	CriticalVulns            uint64            `json:"critical_vulns"`
-	HighVulns                uint64            `json:"high_vulns"`
-	MediumVulns              uint64            `json:"medium_vulns"`
-	LowVulns                 uint64            `json:"low_vulns"`
-	LicenseBreakdown         map[string]uint64 `json:"license_breakdown"`
-	ExemptedPackages         uint64            `json:"exempted_packages"`
-	TotalVEXStatements       uint64            `json:"total_vex_statements"`
-	LastCVERefresh           string            `json:"last_cve_refresh,omitempty"`
-	NewVulnsSinceRefresh     uint64            `json:"new_vulns_since_refresh"`
-	ArchivedReposCount       uint64            `json:"archived_repos_count"`
+	TotalSBOMs               uint64 `json:"total_sboms"`
+	TotalPackages            uint64 `json:"total_packages"`
+	TotalVulnerabilities     uint64 `json:"total_vulnerabilities"`
+	EffectiveVulnerabilities uint64 `json:"effective_vulnerabilities"`
+	SuppressedByVEX          uint64 `json:"suppressed_by_vex"`
+	CriticalVulns            uint64 `json:"critical_vulns"`
+	HighVulns                uint64 `json:"high_vulns"`
+	MediumVulns              uint64 `json:"medium_vulns"`
+	LowVulns                 uint64 `json:"low_vulns"`
+	// ScopeBreakdown splits the same findings by dependency scope.
+	ScopeBreakdown       map[string]SeverityCounts `json:"scope_breakdown,omitempty"`
+	LicenseBreakdown     map[string]uint64         `json:"license_breakdown"`
+	ExemptedPackages     uint64                    `json:"exempted_packages"`
+	TotalVEXStatements   uint64                    `json:"total_vex_statements"`
+	LastCVERefresh       string                    `json:"last_cve_refresh,omitempty"`
+	NewVulnsSinceRefresh uint64                    `json:"new_vulns_since_refresh"`
+	ArchivedReposCount   uint64                    `json:"archived_repos_count"`
 }
 
 // SBOMListItem is the response DTO for listing SBOMs.
@@ -200,6 +229,8 @@ type SBOMDetail struct {
 	HighVulns       uint64 `json:"high_vulns"`
 	MediumVulns     uint64 `json:"medium_vulns"`
 	LowVulns        uint64 `json:"low_vulns"`
+	// ScopeBreakdown splits the same findings by dependency scope.
+	ScopeBreakdown map[string]SeverityCounts `json:"scope_breakdown,omitempty"`
 }
 
 // SBOMLicenseBreakdownItem is a per-SBOM license summary.
@@ -552,6 +583,8 @@ type ProjectDetail struct {
 	HighVulns     uint64 `json:"high_vulns"`
 	MediumVulns   uint64 `json:"medium_vulns"`
 	LowVulns      uint64 `json:"low_vulns"`
+	// ScopeBreakdown splits the same findings by dependency scope.
+	ScopeBreakdown map[string]SeverityCounts `json:"scope_breakdown,omitempty"`
 
 	// LatestVersion is the highest document_version among the project's
 	// SBOMs (ingest time breaks ties and orders unparseable versions),

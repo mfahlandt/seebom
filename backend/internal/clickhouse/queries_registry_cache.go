@@ -24,6 +24,10 @@ func (c *Client) QueryRegistryLicenseCache(ctx context.Context, registry string)
 		if err := rows.Scan(&pkg, &spdxID); err != nil {
 			return nil, fmt.Errorf("failed to scan %s license cache row: %w", registry, err)
 		}
+		// "" rows are transient failures cached before #481; skip so they retry.
+		if spdxID == "" {
+			continue
+		}
 		cache[pkg] = spdxID
 	}
 	if err := rows.Err(); err != nil {
@@ -45,6 +49,9 @@ func (c *Client) InsertRegistryLicenseCache(ctx context.Context, registry string
 	}
 
 	for pkg, spdxID := range entries {
+		if spdxID == "" {
+			continue
+		}
 		if err := batch.Append(registry, pkg, spdxID); err != nil {
 			return fmt.Errorf("failed to append cache entry %s: %w", pkg, err)
 		}

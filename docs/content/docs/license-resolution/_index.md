@@ -228,7 +228,9 @@ it off, and which test pins it.
 
 - **Decision:** A package that a registry does not know, or that declares no
   license, is cached as a negative result *with its reason*, so it is not looked
-  up again on every ingest and the reason survives restarts.
+  up again on every ingest and the reason survives restarts. A failure without a
+  definite answer (timeout, `429`, `5xx`, malformed response) is not cached at
+  all and is retried on the next ingest (`license.ResolverCache`, #481).
 - **Risk:** A package that gets published or licensed later stays negative until
   its cache row is removed (see [Operations](#operations)).
 - **Test:** `npm`, `depsdev`, `packagist`, `pypi` resolver tests.
@@ -397,9 +399,8 @@ To re-check packages that were negative, delete their cache rows before the
 re-scan:
 
 ```sql
--- negatives cached before reasons were recorded
-ALTER TABLE registry_license_cache DELETE WHERE spdx_id = '';
--- all negatives of one registry
+-- all negatives of one registry (rows with spdx_id = '' are legacy transient
+-- failures; they are ignored on load and need no cleanup)
 ALTER TABLE registry_license_cache DELETE WHERE registry = 'pypi' AND startsWith(spdx_id, '!');
 ```
 

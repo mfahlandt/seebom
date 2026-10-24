@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	json "github.com/goccy/go-json"
@@ -35,8 +34,8 @@ const (
 type Resolver struct {
 	baseURL    string
 	httpClient *http.Client
-	cache      sync.Map // map[string]string (cache key → SPDX expression or "")
-	limiter    *ratelimit.TokenBucket
+	license.ResolverCache
+	limiter *ratelimit.TokenBucket
 }
 
 // NewResolver creates a resolver against the public npm registry.
@@ -73,8 +72,7 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 	}
 
 	key := CacheKey(name, version)
-	if cached, found := r.cache.Load(key); found {
-		lic, _ := license.SplitCacheValue(cached.(string))
+	if lic, _, found := r.Load(key); found {
 		return lic
 	}
 
@@ -83,11 +81,7 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 	}
 
 	lic, reason := r.fetchLicense(ctx, name, version)
-	if lic == "" {
-		r.cache.Store(key, license.NegativeCacheValue(reason))
-	} else {
-		r.cache.Store(key, lic)
-	}
+	r.StoreResult(key, lic, reason)
 
 	if lic != "" {
 		log.Printf("  npm license resolved: %s → %s", key, lic)
@@ -104,27 +98,7 @@ func (r *Resolver) Explain(purl string) (handled bool, reason string, latest boo
 	if !ok {
 		return false, "", false
 	}
-	if cached, found := r.cache.Load(CacheKey(name, version)); found {
-		_, reason = license.SplitCacheValue(cached.(string))
-	}
-	return true, reason, version == ""
-}
-
-// PreloadCache seeds the in-memory cache (e.g. from ClickHouse).
-func (r *Resolver) PreloadCache(entries map[string]string) {
-	for k, v := range entries {
-		r.cache.Store(k, v)
-	}
-}
-
-// CacheEntries exports the in-memory cache for persistence.
-func (r *Resolver) CacheEntries() map[string]string {
-	out := make(map[string]string)
-	r.cache.Range(func(k, v any) bool {
-		out[k.(string)] = v.(string)
-		return true
-	})
-	return out
+	return true, r.Reason(CacheKey(name, version)), version == ""
 }
 
 // manifest is the subset of the npm version manifest we care about.

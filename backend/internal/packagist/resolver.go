@@ -46,9 +46,9 @@ type Resolver struct {
 	baseURL    string
 	httpClient *http.Client
 	limiter    *ratelimit.TokenBucket
-	// cache: "vendor/name@version" → license, latestMarker+license, or a
+	// "vendor/name@version" → license, latestMarker+license, or a
 	// license.NegativeCacheValue. Persisted to registry_license_cache.
-	cache sync.Map
+	license.ResolverCache
 	// files: p2 file → expanded versions (nil = not found). In-memory only, so
 	// an SBOM listing several versions of one package costs one request.
 	files sync.Map
@@ -133,12 +133,12 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 		return ""
 	}
 	key := cacheKey(name, version)
-	if cached, found := r.cache.Load(key); found {
-		lic, _ := splitValue(cached.(string))
+	if cached, found := r.LoadValue(key); found {
+		lic, _ := splitValue(cached)
 		return lic
 	}
 	value := r.lookup(ctx, name, version)
-	r.cache.Store(key, value)
+	r.StoreValue(key, value)
 	lic, latest := splitValue(value)
 	if lic != "" {
 		via := ""
@@ -157,11 +157,10 @@ func (r *Resolver) Explain(purl string) (handled bool, reason string, latest boo
 	if !ok {
 		return false, "", false
 	}
-	cached, found := r.cache.Load(cacheKey(name, version))
+	v, found := r.LoadValue(cacheKey(name, version))
 	if !found {
 		return true, "", false
 	}
-	v := cached.(string)
 	if _, reason = license.SplitCacheValue(v); reason != "" {
 		return true, reason, false
 	}
@@ -320,22 +319,5 @@ func Expand(entries []map[string]json.RawMessage) []composerVersion {
 		}
 		out = append(out, composerVersion{Version: version, License: current})
 	}
-	return out
-}
-
-// PreloadCache seeds the in-memory cache (e.g. from ClickHouse).
-func (r *Resolver) PreloadCache(entries map[string]string) {
-	for k, v := range entries {
-		r.cache.Store(k, v)
-	}
-}
-
-// CacheEntries exports the in-memory cache for persistence.
-func (r *Resolver) CacheEntries() map[string]string {
-	out := make(map[string]string)
-	r.cache.Range(func(k, v any) bool {
-		out[k.(string)] = v.(string)
-		return true
-	})
 	return out
 }

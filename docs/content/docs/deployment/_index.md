@@ -899,7 +899,10 @@ helm install bomhort ./deploy/helm/bomhort \
 
 Every install and upgrade runs a `migrate` Job that applies all files in the
 chart's `migrations/` directory. The migrations are idempotent
-(`IF NOT EXISTS`), so running them again changes nothing.
+(`IF NOT EXISTS`), so running them again changes nothing. One-off data
+backfills (first: `027`, #480) record themselves in `data_migrations` and
+are a no-op afterwards; a backfill that failed half-way simply runs again on
+the next Job.
 
 The Job is named `<release>-migrate-<hash>`. The hash covers the migration
 files, the migration script and the Job spec. A release that adds or edits a

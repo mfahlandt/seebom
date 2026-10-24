@@ -387,7 +387,7 @@ one bucket is nested and another flat.
 > 1. **SPDX Parser** (`internal/spdx/parser.go`): `cleanPackageName()` detects `tmp.<alphanumeric 6+>` patterns via regex and replaces them with the PURL-based name (e.g. `github.com/cncf/xds/go`) or the SPDX ID as a fallback.
 > 2. **License Checker** (`internal/license/checker.go`): As a second safety net, packages with temp names are completely excluded from compliance analysis — they appear in neither `non_compliant_packages` nor `exempted_packages`.
 
-| `vulnerabilities` | MergeTree | (sbom_id, purl, vuln_id) | OSV results |
+| `vulnerabilities` | MergeTree | (sbom_id, purl, vuln_id) | OSV results; `cluster`/`namespace`/`project` are copied from the SBOM by both writers (parsing worker and `cve-refresher`, #480) so scoped views see CVEs disclosed after ingest |
 | `license_compliance` | SummingMergeTree | (sbom_id, license_id) | License compliance per SBOM (+exempted_packages, exemption_reason) |
 | `ingestion_queue` | ReplacingMergeTree | (job_id) | Job queue (job_type: sbom/vex/license_recheck; a recheck's `sha256_hash` is the digest of the exceptions it applies); `retry_after` (migration `026`) parks a job until a time, e.g. a GitHub rate-limit reset |
 | `dashboard_stats_mv` | SummingMergeTree (MV) | (stat_date) | Pre-aggregated daily stats |
@@ -397,6 +397,7 @@ one bucket is nested and another flat.
 | `github_repo_metadata` | ReplacingMergeTree | (repo) | GitHub repo metadata (archived, fork, stars, pushed_at) for dependency health |
 | `registry_license_cache` | ReplacingMergeTree | (registry, package) | Cache for npm/NuGet/deps.dev/Packagist/PyPI resolved licenses; negatives stored as `!<reason>` |
 | `document_store` | ReplacingMergeTree | (sbom_id) | Reference + sha256 of the captured original SBOM bytes (#256); bytes live in the blob store |
+| `data_migrations` | ReplacingMergeTree | (name) | Marker rows of completed one-off data backfills (migration `027`, #480): a backfill's `INSERT … SELECT` is guarded by its own marker, so the migration directory stays re-runnable without re-scanning the big tables |
 
 ### Key Queries for Search Features
 

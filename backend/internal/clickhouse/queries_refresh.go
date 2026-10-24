@@ -25,6 +25,9 @@ type SBOMRef struct {
 	// DependencyDepth is the smallest depth of the queried PURL in this SBOM
 	// (depgraph.Unknown for SBOMs ingested before depths were recorded).
 	DependencyDepth uint16
+	// Ownership of the SBOM; copied onto refresher findings so scoped views
+	// see CVEs disclosed after ingest (#480).
+	Cluster, Namespace, Project string
 }
 
 // QueryDistinctPURLs returns all unique PURLs across all ingested SBOMs.
@@ -84,7 +87,7 @@ func (c *Client) QueryExistingVulnKeys(ctx context.Context) (map[string]struct{}
 // QuerySBOMsByPURL returns all SBOMs that contain a given PURL in their dependency tree.
 func (c *Client) QuerySBOMsByPURL(ctx context.Context, purl string) ([]SBOMRef, error) {
 	rows, err := c.Conn.Query(ctx, `
-		SELECT sbom_id, source_file,
+		SELECT sbom_id, source_file, cluster, namespace, project,
 			arrayMin(arrayFilter((d, p) -> p = ?, arrayResize(package_depths, length(package_purls), 65535), package_purls)) AS dependency_depth
 		FROM sbom_packages FINAL
 		WHERE has(package_purls, ?)
@@ -97,7 +100,7 @@ func (c *Client) QuerySBOMsByPURL(ctx context.Context, purl string) ([]SBOMRef, 
 	var refs []SBOMRef
 	for rows.Next() {
 		var ref SBOMRef
-		if err := rows.Scan(&ref.SBOMID, &ref.SourceFile, &ref.DependencyDepth); err != nil {
+		if err := rows.Scan(&ref.SBOMID, &ref.SourceFile, &ref.Cluster, &ref.Namespace, &ref.Project, &ref.DependencyDepth); err != nil {
 			return nil, fmt.Errorf("failed to scan SBOM ref: %w", err)
 		}
 		refs = append(refs, ref)

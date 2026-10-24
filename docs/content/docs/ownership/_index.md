@@ -449,6 +449,13 @@ with migration `015` (#138, #57). All three are
 `LowCardinality(String) DEFAULT ''` and deliberately **not** part of any
 `ORDER BY`, so adding them required no table rebuild.
 
+Both writers of `vulnerabilities` copy the labels from the SBOM: the parsing
+worker at ingest and the `cve-refresher` when it attaches a newly disclosed CVE
+to an existing SBOM. Before v0.8.1 the refresher left them empty, so exactly
+the newest findings were missing from every scoped view (#480). Migration
+`027` repairs those rows once from `sboms`; it records itself in
+`data_migrations` and is a no-op on every later run.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
@@ -456,6 +463,7 @@ with migration `015` (#138, #57). All three are
 | Everything is `(unassigned)` | No labelling configured, or ingested before it was | Set the layout / static values and re-ingest (`make re-scan`) |
 | One dimension is empty, the others are not | Layout too short, or the path is shallower than the layout | Check the layout against a real object key |
 | Every SBOM has `cluster=<bucket prefix>` | Prefix not stripped — a stale BOMHort version | Upgrade; the prefix is stripped before the layout is applied |
+| A CVE shows in the global list but not on the cluster / namespace / fleet page | Found by `cve-refresher` before v0.8.1, row has no labels | Run migration `027` (part of the normal `helm upgrade`) |
 | Namespace numbers look too high | Aggregated across clusters | Add `?cluster=` or look at `cluster_count` |
 | Labels do not change after editing the config | The labels are written at ingest, not at query time | Re-ingest; `make re-scan` (Compose) or `make kind-reingest` (Kind) |
 | Container startup fails with `invalid INGEST_PATH_LAYOUT` | Duplicate or unknown segment, or `file` not last | Valid tokens are `cluster`, `namespace`, `project`, `parent`, `tag`, `file`, `_` |

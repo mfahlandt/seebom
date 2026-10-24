@@ -283,31 +283,15 @@ func (c *Client) QuerySBOMDetail(ctx context.Context, sbomID string) (*dto.SBOMD
 	}
 	detail.IngestedAt = ingestedAt.Format(time.RFC3339)
 
-	// Severity breakdown for this SBOM.
+	// Severity breakdown for this SBOM, split by dependency scope.
 	sevRows, err := c.Conn.Query(ctx,
-		"SELECT severity, count() AS cnt FROM vulnerabilities FINAL WHERE sbom_id = ? GROUP BY severity", sbomID)
+		"SELECT severity, "+scopeExpr("dependency_depth")+" AS scope, count() FROM vulnerabilities FINAL WHERE sbom_id = ? GROUP BY severity, scope", sbomID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query severity for sbom %s: %w", sbomID, err)
 	}
-	defer sevRows.Close()
-
-	for sevRows.Next() {
-		var sev string
-		var cnt uint64
-		if err := sevRows.Scan(&sev, &cnt); err != nil {
-			return nil, fmt.Errorf("failed to scan severity: %w", err)
-		}
-		detail.VulnCount += cnt
-		switch sev {
-		case "CRITICAL":
-			detail.CriticalVulns = cnt
-		case "HIGH":
-			detail.HighVulns = cnt
-		case "MEDIUM":
-			detail.MediumVulns = cnt
-		case "LOW":
-			detail.LowVulns = cnt
-		}
+	detail.ScopeBreakdown, err = scanSeverityScopes(sevRows, &detail.VulnCount, &detail.CriticalVulns, &detail.HighVulns, &detail.MediumVulns, &detail.LowVulns)
+	if err != nil {
+		return nil, err
 	}
 
 	return &detail, nil

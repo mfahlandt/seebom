@@ -17,6 +17,7 @@ import { DonutChartComponent, DonutSegment } from '../../shared/charts/donut-cha
 import { HorizontalBarChartComponent, BarItem } from '../../shared/charts/horizontal-bar-chart.component';
 import { parentSourceLabel } from '../../shared/parent-source';
 import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.component';
+import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.component';
 import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
 import { primaryVulnId } from '../../shared/vuln-identity';
 
@@ -60,7 +61,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
 @Component({
   selector: 'app-project-detail',
   standalone: true,
-  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent, ScopeBadgeComponent, VulnAliasesComponent],
+  imports: [CommonModule, FormsModule, ScrollingModule, RouterModule, DonutChartComponent, HorizontalBarChartComponent, ScopeBadgeComponent, VulnAliasesComponent, ScopeMatrixComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="project-detail" *ngIf="detail">
@@ -206,6 +207,13 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
                 <p class="empty-vex-hint">No <code>not_affected</code> statement covers a finding of this project.</p>
               </div>
             }
+          </div>
+        </div>
+
+        <div class="charts-row">
+          <div class="chart-card wide">
+            <h3>Vulnerabilities by Dependency Scope</h3>
+            <app-scope-matrix [breakdown]="detail.scope_breakdown" />
           </div>
         </div>
 
@@ -425,6 +433,7 @@ export function splitPurl(purl: string): { pkg_name: string; pkg_version: string
     .kpi-card.ok .kpi-value { color: var(--status-success); }
     .charts-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
     .charts-row.two-col { grid-template-columns: repeat(2, 1fr); }
+    .chart-card.wide { grid-column: 1 / -1; }
     .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 16px 20px; }
     .chart-card h3 { margin: 0 0 12px; font-size: 0.78rem; font-weight: 600; color: var(--dark); text-transform: uppercase; letter-spacing: 0.03em; }
     .empty-vex { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 180px; text-align: center; }

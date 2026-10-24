@@ -3,7 +3,10 @@ package clickhouse
 import (
 	"fmt"
 
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
+
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
+	"github.com/seebom-labs/bomhort/backend/pkg/dto"
 )
 
 // scopeFields turns a stored depth into the (scope, depth) pair the DTOs
@@ -14,6 +17,36 @@ func scopeFields(depth uint16) (string, *uint16) {
 	}
 	d := depth
 	return depgraph.Scope(depth), &d
+}
+
+// scopeExpr is the SQL form of depgraph.Scope for a depth column.
+func scopeExpr(col string) string {
+	return fmt.Sprintf("multiIf(%[1]s = %[2]d, '%[3]s', %[1]s = 0, '%[4]s', %[1]s = 1, '%[5]s', '%[6]s')",
+		col, depgraph.Unknown, depgraph.ScopeUnknown, depgraph.ScopeRoot, depgraph.ScopeDirect, depgraph.ScopeTransitive)
+}
+
+// scanSeverityScopes consumes (severity, scope, count) rows into the flat
+// severity fields of a detail DTO plus its per-scope breakdown.
+func scanSeverityScopes(rows driver.Rows, total, critical, high, medium, low *uint64) (map[string]dto.SeverityCounts, error) {
+	defer rows.Close()
+	all := dto.SeverityCounts{}
+	byScope := map[string]dto.SeverityCounts{}
+	for rows.Next() {
+		var severity, scope string
+		var cnt uint64
+		if err := rows.Scan(&severity, &scope, &cnt); err != nil {
+			return nil, fmt.Errorf("failed to scan severity row: %w", err)
+		}
+		all.Add(severity, cnt)
+		sc := byScope[scope]
+		sc.Add(severity, cnt)
+		byScope[scope] = sc
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+	*total, *critical, *high, *medium, *low = all.Total, all.Critical, all.High, all.Medium, all.Low
+	return byScope, nil
 }
 
 // depthPredicate returns a SQL predicate on column col for a scope filter,

@@ -17,6 +17,7 @@ import { catchError } from 'rxjs/operators';
 import { licenseSourceTooltip } from '../../shared/license-source';
 import { scopeOf } from '../../shared/dependency-scope';
 import { ScopeBadgeComponent } from '../../shared/scope-badge/scope-badge.component';
+import { ScopeMatrixComponent } from '../../shared/scope-matrix/scope-matrix.component';
 import { VulnAliasesComponent } from '../../shared/vuln-aliases/vuln-aliases.component';
 import { primaryVulnId } from '../../shared/vuln-identity';
 
@@ -25,7 +26,7 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
 @Component({
   selector: 'app-sbom-detail',
   standalone: true,
-  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent],
+  imports: [CommonModule, ScrollingModule, RouterModule, ScopeBadgeComponent, VulnAliasesComponent, ScopeMatrixComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="sbom-detail" *ngIf="detail">
@@ -54,6 +55,11 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
         <div class="stat high" *ngIf="detail.high_vulns">{{ detail.high_vulns | number }} high</div>
         <div class="stat medium" *ngIf="detail.medium_vulns">{{ detail.medium_vulns | number }} medium</div>
         <div class="stat low" *ngIf="detail.low_vulns">{{ detail.low_vulns | number }} low</div>
+      </div>
+
+      <div class="scope-section" *ngIf="detail.vuln_count">
+        <h3>Vulnerabilities by Dependency Scope</h3>
+        <app-scope-matrix [breakdown]="detail.scope_breakdown" />
       </div>
 
       <div class="tabs">
@@ -286,6 +292,8 @@ type Tab = 'vulns' | 'licenses' | 'deps' | 'vex';
     .high { color: var(--severity-high); }
     .medium { color: var(--status-warning); }
     .low { color: var(--text-secondary); }
+    .scope-section { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 14px 16px; margin-bottom: 16px; }
+    .scope-section h3 { margin: 0 0 10px; font-size: 0.9rem; font-weight: 600; }
     .tabs { display: flex; gap: 2px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
     .tabs button {
       padding: 8px 18px; border: none; background: transparent; cursor: pointer;

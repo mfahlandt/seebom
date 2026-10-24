@@ -208,6 +208,11 @@ Aggregated platform statistics for the dashboard view.
   "high_vulns": 187,
   "medium_vulns": 412,
   "low_vulns": 270,
+  "scope_breakdown": {
+    "direct":     { "total": 301, "critical": 9,  "high": 70,  "medium": 150, "low": 72 },
+    "transitive": { "total": 480, "critical": 12, "high": 101, "medium": 221, "low": 146 },
+    "unknown":    { "total": 111, "critical": 2,  "high": 16,  "medium": 41,  "low": 52 }
+  },
   "license_breakdown": {
     "permissive": 16755,
     "copyleft": 312,
@@ -221,6 +226,10 @@ Aggregated platform statistics for the dashboard view.
   "archived_repos_count": 7
 }
 ```
+
+`scope_breakdown` splits the severity counts by dependency scope (`root`,
+`direct`, `transitive`, `unknown`); the UI's dashboard renders it as one
+severity chart per scope, each linking to `/vulnerabilities?scope=…`.
 
 ### `GET /api/v1/stats/dependencies`
 
@@ -476,9 +485,15 @@ Detailed SBOM information including vulnerability severity breakdown.
   "critical_vulns": 1,
   "high_vulns": 3,
   "medium_vulns": 6,
-  "low_vulns": 2
+  "low_vulns": 2,
+  "scope_breakdown": {
+    "direct":     { "total": 4, "critical": 1, "high": 1, "medium": 2, "low": 0 },
+    "transitive": { "total": 8, "critical": 0, "high": 2, "medium": 4, "low": 2 }
+  }
 }
 ```
+
+`scope_breakdown` splits the severity counts by dependency scope (`root`, `direct`, `transitive`, `unknown` — same vocabulary as the `scope` filter). Scopes without findings are omitted; the field is absent on an SBOM without vulnerabilities.
 
 **Errors:**
 - `400` — Invalid UUID format
@@ -1015,7 +1030,9 @@ SBOMs** (versions): `package_count` is distinct components, `vuln_count` is
 distinct `(vulnerability, package)` pairs, bucketed under the highest severity
 seen. `license_breakdown` is summed over SBOMs (per-SBOM category counts have
 no component identity) and answers "what does this project ship under" as a
-proportion. `parents` are the entries of `tags` that are themselves project
+proportion. `scope_breakdown` splits the de-duplicated findings by dependency
+scope (a pair seen at several depths counts under its shallowest), so a project
+can see how much of its noise is transitive. `parents` are the entries of `tags` that are themselves project
 names; sub-projects are `GET /api/v1/projects?tag={name}`.
 
 The UI's project page renders this as its **Overview** tab — the dashboard
@@ -1036,6 +1053,7 @@ percent-encoded. `404` when no SBOM resolves to that name.
   "package_count": 12,
   "vuln_count": 0,
   "critical_vulns": 0, "high_vulns": 0, "medium_vulns": 0, "low_vulns": 0,
+  "scope_breakdown": {},
   "latest_ingested": "2026-09-24T20:03:40Z",
   "latest_version": "2.3.0",
   "latest_sbom_id": "8ca2efd4-9b83-5b93-a013-d53b7ddc54a9",

@@ -34,31 +34,13 @@ func (c *Client) QueryDashboardStats(ctx context.Context) (*dto.DashboardStats, 
 	}
 
 	rows, err := c.Conn.Query(ctx,
-		"SELECT severity, count() AS cnt FROM vulnerabilities FINAL GROUP BY severity")
+		"SELECT severity, "+scopeExpr("dependency_depth")+" AS scope, count() FROM vulnerabilities FINAL GROUP BY severity, scope")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query severity breakdown: %w", err)
 	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var severity string
-		var cnt uint64
-		if err := rows.Scan(&severity, &cnt); err != nil {
-			return nil, fmt.Errorf("failed to scan severity row: %w", err)
-		}
-		switch severity {
-		case "CRITICAL":
-			stats.CriticalVulns = cnt
-		case "HIGH":
-			stats.HighVulns = cnt
-		case "MEDIUM":
-			stats.MediumVulns = cnt
-		case "LOW":
-			stats.LowVulns = cnt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("rows error: %w", err)
+	stats.ScopeBreakdown, err = scanSeverityScopes(rows, new(uint64), &stats.CriticalVulns, &stats.HighVulns, &stats.MediumVulns, &stats.LowVulns)
+	if err != nil {
+		return nil, err
 	}
 
 	// License breakdown

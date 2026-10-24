@@ -1,3 +1,14 @@
+/** One severity breakdown; `scope_breakdown` carries one per dependency scope. */
+export interface SeverityCounts {
+  total: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+export type ScopeBreakdown = Partial<Record<DependencyScope, SeverityCounts>>;
+
 export interface DashboardStats {
   total_sboms: number;
   total_packages: number;
@@ -8,6 +19,7 @@ export interface DashboardStats {
   high_vulns: number;
   medium_vulns: number;
   low_vulns: number;
+  scope_breakdown?: ScopeBreakdown;
   license_breakdown: Record<string, number>;
   exempted_packages: number;
   total_vex_statements: number;
@@ -186,6 +198,7 @@ export interface SBOMDetail {
   high_vulns: number;
   medium_vulns: number;
   low_vulns: number;
+  scope_breakdown?: ScopeBreakdown;
 }
 
 export interface SBOMLicenseBreakdownItem {
@@ -419,6 +432,7 @@ export interface ProjectDetail {
   high_vulns: number;
   medium_vulns: number;
   low_vulns: number;
+  scope_breakdown?: ScopeBreakdown;
 
   latest_ingested?: string;
   latest_version?: string;

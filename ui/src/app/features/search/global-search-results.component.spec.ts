@@ -87,4 +87,29 @@ describe('GlobalSearchResultsComponent', () => {
     fixture.detectChanges();
     expect(component.isAllEmpty()).toBe(true);
   });
+
+  it('should cancel the in-flight request when the query changes (#488)', () => {
+    queryParamsSubj.next({ get: (k: string) => k === 'q' ? 'kube' : null });
+    const first = httpMock.expectOne('/api/v1/search?q=kube&limit=50');
+
+    queryParamsSubj.next({ get: (k: string) => k === 'q' ? 'kubernetes' : null });
+    expect(first.cancelled).toBe(true);
+
+    const second = httpMock.expectOne('/api/v1/search?q=kubernetes&limit=50');
+    second.flush({
+      query: 'kubernetes',
+      packages: [],
+      total_packages: 7,
+      projects: [],
+      total_projects: 0,
+      vulnerabilities: [],
+      total_vulnerabilities: 0,
+      licenses: [],
+      total_licenses: 0
+    });
+
+    expect(component.data!.query).toBe('kubernetes');
+    expect(component.data!.total_packages).toBe(7);
+    expect(component.loading).toBe(false);
+  });
 });

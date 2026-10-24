@@ -1,4 +1,7 @@
-import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { EMPTY, of } from 'rxjs';
+import { catchError, switchMap } from 'rxjs/operators';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink, ActivatedRoute, Router } from '@angular/router';
@@ -208,22 +211,34 @@ export class GlobalSearchResultsComponent implements OnInit {
     private readonly route: ActivatedRoute,
     private readonly router: Router,
     private readonly api: ApiService,
-    private readonly cdr: ChangeDetectorRef
+    private readonly cdr: ChangeDetectorRef,
+    private readonly destroyRef: DestroyRef
   ) {}
 
   ngOnInit(): void {
-    this.route.queryParamMap.subscribe(params => {
-      const q = params.get('q');
-      if (q && q.length >= 2) {
+    // switchMap cancels the in-flight request so a slow older query can never
+    // overwrite the results of a newer one (#488).
+    this.route.queryParamMap.pipe(
+      switchMap(params => {
+        const q = params.get('q');
+        if (!q || q.length < 2) {
+          this.query = '';
+          this.searchInput = '';
+          this.data = null;
+          this.cdr.markForCheck();
+          return EMPTY;
+        }
         this.query = q;
         this.searchInput = q;
-        this.doSearch(q);
-      } else {
-        this.query = '';
-        this.searchInput = '';
-        this.data = null;
+        this.loading = true;
         this.cdr.markForCheck();
-      }
+        return this.api.globalSearch(q, 50).pipe(catchError(() => of(null)));
+      }),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(resp => {
+      this.data = resp;
+      this.loading = false;
+      this.cdr.markForCheck();
     });
   }
 
@@ -244,23 +259,5 @@ export class GlobalSearchResultsComponent implements OnInit {
            this.data.total_projects === 0 &&
            this.data.total_vulnerabilities === 0 &&
            this.data.total_licenses === 0;
-  }
-
-  private doSearch(q: string): void {
-    this.loading = true;
-    this.cdr.markForCheck();
-
-    this.api.globalSearch(q, 50).subscribe({
-      next: (resp) => {
-        this.data = resp;
-        this.loading = false;
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        this.data = null;
-        this.loading = false;
-        this.cdr.markForCheck();
-      }
-    });
   }
 }

@@ -1,11 +1,12 @@
-import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectionStrategy, ChangeDetectorRef, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { DependencySearchResponse, DependencySearchResult } from '../../core/api.models';
-import { Subject } from 'rxjs';
-import { debounceTime, distinctUntilChanged } from 'rxjs/operators';
+import { EMPTY, Subject } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, map, switchMap } from 'rxjs/operators';
 
 @Component({
   selector: 'app-package-search',
@@ -224,19 +225,49 @@ export class PackageSearchComponent implements OnInit {
   currentPage = 1;
 
   private searchSubject = new Subject<string>();
+  private pageSubject = new Subject<{ query: string; page: number }>();
 
   constructor(
     private readonly api: ApiService,
-    private readonly cdr: ChangeDetectorRef
+    private readonly cdr: ChangeDetectorRef,
+    private readonly destroyRef: DestroyRef
   ) {}
 
   ngOnInit(): void {
     this.searchSubject.pipe(
       debounceTime(300),
-      distinctUntilChanged()
-    ).subscribe(query => {
-      this.currentPage = 1;
-      this.doSearch(query);
+      distinctUntilChanged(),
+      map(query => ({ query, page: 1 })),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(req => this.pageSubject.next(req));
+
+    // switchMap cancels the in-flight request so a slow older query can never
+    // overwrite the results of a newer one (#488).
+    this.pageSubject.pipe(
+      switchMap(({ query, page }) => {
+        this.currentPage = page;
+        if (!query || query.length < 2) {
+          this.data = null;
+          this.loading = false;
+          this.cdr.markForCheck();
+          return EMPTY;
+        }
+        this.loading = true;
+        this.cdr.markForCheck();
+        return this.api.searchPackages(query, page, 20).pipe(
+          catchError(() => {
+            this.loading = false;
+            this.cdr.markForCheck();
+            return EMPTY;
+          })
+        );
+      }),
+      takeUntilDestroyed(this.destroyRef)
+    ).subscribe(resp => {
+      this.data = resp;
+      this.loading = false;
+      this.expandedPkg = null;
+      this.cdr.markForCheck();
     });
   }
 
@@ -251,8 +282,7 @@ export class PackageSearchComponent implements OnInit {
 
   goToPage(page: number): void {
     if (page < 1 || page > this.totalPages) return;
-    this.currentPage = page;
-    this.doSearch(this.searchQuery);
+    this.pageSubject.next({ query: this.searchQuery, page });
   }
 
   toggleExpand(item: DependencySearchResult): void {
@@ -262,29 +292,4 @@ export class PackageSearchComponent implements OnInit {
   encodePackageName(name: string): string {
     return encodeURIComponent(name);
   }
-
-  private doSearch(query: string): void {
-    if (!query || query.length < 2) {
-      this.data = null;
-      this.loading = false;
-      this.cdr.markForCheck();
-      return;
-    }
-    this.loading = true;
-    this.cdr.markForCheck();
-
-    this.api.searchPackages(query, this.currentPage, 20).subscribe({
-      next: (resp) => {
-        this.data = resp;
-        this.loading = false;
-        this.expandedPkg = null;
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        this.loading = false;
-        this.cdr.markForCheck();
-      }
-    });
-  }
 }
-

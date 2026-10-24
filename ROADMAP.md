@@ -144,6 +144,8 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 | **#419** | Cryptographic **library** inventory from existing SBOMs (`crypto-libraries.json`, PURL match) | `032_create_crypto_libraries` (new table) | New. Works on every SBOM already ingested, no CBOM needed; first defensible answer to "cryptographic inventory" (#420) and the CRA "state-of-the-art encryption" evidence. Small. The CBOM block stays in v1.1.0. |
 | **#512** | **SARIF** export (`?format=sarif`) next to CSV on the same endpoints | Endpoint, no migration | A second serialisation of a frozen shape → decided before the freeze. Same column list as #266; VEX `not_affected` becomes a SARIF suppression. The CI-gating path (#513, #521) consumes it in v1.1.0. |
 | **#531** | Malicious-package findings (`MAL-`) and look-alike names as their own kind | `03x` `ADD COLUMN finding_kind` on `vulnerabilities`, `lookalike_of` on `sbom_packages` | OSV already delivers `MAL-` records; today they sort to the bottom as `UNKNOWN`. Forced `CRITICAL`, never globally VEX-suppressible, dashboard tile. Look-alike via deps.dev `GetSimilarlyNamedPackages`, hint not finding. Small, and the one finding kind that must not wait. |
+| **#537** | SBOM **quality score** per document (NTIA / TR-03183 minimum elements), aggregated by producer tool and origin | `03x` `ADD COLUMN quality_score UInt8, quality_flags Array(LowCardinality(String))` on `sboms` | "Is this SBOM usable at all?" is the first procurement question; #493 observed the problem, this makes it a number. Report-only by default; #517 may gate on it. Parse-time, no new source. |
+| **#536** | Migration **importer** (`cmd/bomhort-import`): CycloneDX `vulnerabilities[].analysis` and existing inventories → SBOM + OpenVEX through the public upload API | none (client of the API) | Lowers switching cost from days to an afternoon; suppression → VEX mapping is the valuable part. No ClickHouse dependency. |
 | **#518** | **Trend over time** — findings, violations, versions as a series per fleet scope and per project | Query-time `GROUP BY toStartOfInterval`; decides the fate of `dashboard_stats_mv` (#344) | "Are we getting better?" is the first question an auditor asks of a register. No new storage; *stretch like #7 — drops to v1.1.0 if the soak needs the time.* Series: count by severity, net-new since previous version, fixed, mean days open; period selector and a second-project comparison line in the UI. |
 | **#519** | SVG status **badges** per project | Endpoint, no migration | Cheap, public, stdlib `text/template`. Reads the project query; cached per TTL. |
 | **#145** | Versioned documentation | Docs infra | Must ship **with** the tag. |
@@ -180,9 +182,9 @@ Every open issue carries a milestone — "no milestone" is not a valid state.
 |-----------|-----|-------|-------------|
 | [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | ✅ 2026-10-17 | Contract | ~~#399~~, ~~#58~~, ~~#355~~, ~~#397~~, ~~#391~~, ~~#392~~, ~~#344~~ (E+I), ~~#412~~, ~~#266~~, ~~#439~~, ~~GHSA-943f-mm2v-j478~~ |
 | [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) | 2026-11-30 | Ingest correctness + vulnerability register | #480, #485, #482, #487, #446, #483, #481, #489, #484, #486, #488, #408, #409, #410, #64, #511, #413, #411, #414 |
-| [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) | 2027-01-31 | Freeze + CRA dashboard | #141, #7, #62, #419, #512, #531, #518, #519, #145 |
-| [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) | 2027-04-30 | Automation, fleet & cryptography | #338, #336, #333, #337, #334 (UI), #138 (API/UI), #267, #176, #140, #57, #136, #60, #143, #420, #415, #416, #417, #418, #490, #513, #521, #520, #509, #514, #515, #524, #525, #527, #528, #529, #530 |
-| [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3) | 2027-07-31 | Analytics | #61, #82, #38, #56, #63, #255, #254, #510, #516, #517 |
+| [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) | 2027-01-31 | Freeze + CRA dashboard | #141, #7, #62, #419, #512, #531, #537, #536, #518, #519, #145 |
+| [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) | 2027-04-30 | Automation, fleet & cryptography | #338, #336, #333, #337, #334 (UI), #138 (API/UI), #267, #176, #140, #57, #136, #60, #143, #420, #415, #416, #417, #418, #490, #513, #521, #520, #509, #514, #515, #524, #525, #527, #528, #529, #530, #533, #535, #538, #539 |
+| [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3) | 2027-07-31 | Analytics | #61, #82, #38, #56, #63, #532, #534, #255, #254, #510, #516, #517 |
 | [v2.0.0](https://github.com/seebom-labs/BOMHort/milestone/4) | — | breaking only | #268 |
 
 `v2.0.0` has no due date on purpose: per the major-version policy in `AGENTS.md` it is driven by accumulated breaking changes (earliest Q1/Q2 2028), not by a calendar.
@@ -206,6 +208,9 @@ Every open issue carries a milestone — "no milestone" is not a valid state.
 | **#333** | Incremental listing (`since`/`cursor`) + `vex_status=missing` filter | Query-only, additive params | Cuts a 15 000-SBOM sweep from >25 min to seconds. |
 | **#334** | VEX provenance UI: automated vs. human badge, `status_notes`, `?vex_source=` | Frontend + query (columns from `017`) | Auditors see *who/what* decided; #413 already shows the action statement. |
 | **#337** | Outbound webhooks (`sbom.ingested`, `findings.updated`, `vex.applied`, `upload.rejected`) | New Helm values + `internal/webhook` (stdlib only) | Replaces polling; HMAC-signed payloads. |
+| **#535** | Reachability **evidence** per finding (`reachability`, `evidence_source/ref/at`), govulncheck JSON ingest | `03x` columns on `vulnerabilities` | The generator's evidence gets a home instead of free text. Evidence never changes status by itself. |
+| **#538** | **Upstream VEX subscriptions** — OpenVEX hubs (git, PURL layout), CSAF providers (ROLIE), OCI referrers; stored with `role = upstream`, local always outranks upstream | none (statements in `vex_statements`, one more precedence rung) | What the producer already said is not re-triaged downstream. Distinct from #524: that is "is it vulnerable", this is "does the producer say it matters". |
+| **#533** | **VEX export** — consolidated OpenVEX / CSAF per project and SBOM, idempotent round trip, optional signing + OCI publish | Endpoint | The *distribute* step. Generate (#338) → manage (core) → distribute (#533, #534). Signing/OCI push share #525's dependency decision; unsigned export ships first. |
 | — | `docs/integrations/vexviper` | Docs | Once the above stabilises. |
 
 ### 3b. Fleet operations
@@ -220,6 +225,7 @@ Every open issue carries a milestone — "no milestone" is not a valid state.
 | **#490** | Bounded response sizes in the license resolvers, deps.dev page cap | Hardening; default registries are trusted, a configurable mirror is not. Lands with #60, which adds more outbound feeds. |
 | **#60** | Local OSV mirror | Offline / air-gapped; no rate limits. KEV/EPSS feeds (#410, #64) get the same mirror treatment here. |
 | **#143** | In-toto Witness integration | New `attestations` table (additive), signature verification, provenance display. Additional #141 score input. Phase 1 no new deps; `sigstore-go` later. |
+| **#539** | **Reference cluster scanner** (own repository) + scanner conformance list in the docs | Out of tree; docs page in BOMHort | The v0.9.0 identity set (#455–#461) needs one thing that sends it. Generator stays syft/trivy; prefers the image's attestation (#525). Kind-tested against the chart. |
 | **#399** (write tools) | MCP write/mutation tools, if ever wanted | The 1.0 server is read-only by design. |
 
 ### 3c. Cryptography — the #420 umbrella (CBOM)
@@ -273,6 +279,8 @@ The register (v0.9.0) answers the auditor; this block answers the developer on a
 | **#38** | SBOM Diff: flat package/finding diff between two SBOMs or two image digests (#457) first — `added/removed/changed`, `fixed` findings — JSON + report export (#62); tree divergence view second | "What changed between v1.7.1 and v1.7.2?" — and "is the new base image actually better?" |
 | **#56** | Dependency Tree View | Hierarchical visualization of transitive chains. |
 | **#63** | Blast Radius Search | Extends Package Search with version constraints, vuln context, direct/transitive. |
+| **#532** | **Base-image attribution** — findings classified `inherited`, aggregated per base image, `?inherited=false` | The noise killer: 34 images on one base show 212 findings once, with the upgrade that closes them. Needs digest/identifier data (#457, #461, #525) in the field first. |
+| **#534** | **Transparency Exchange API** (TEA, Beta 2) read-only server over projects, releases and the document store | CRA Art. 13 "make available" as a standard surface; artefacts served by reference so hashes match the producer's. Spec version pinned; a spec bump is a new issue. |
 | **#61** | OpenSSF Scorecard | Upstream project health; deps.dev `GetProjectBatch` (CC-BY) first, `api.scorecard.dev` fallback — not ecosyste.ms (CC-BY-SA). |
 | **#82** | Lottery Factor | Single-maintainer risk; extends `internal/github`. |
 | **#510** | End-of-life / end-of-support signal (endoflife.date feed, `eol-products.json` mapping) | The most predictable risk in an inventory has no CVE. New `eol_cycles` table; second source is a producer-attached EOL predicate via #525. Input to #517 and the #141 score. |
@@ -328,6 +336,9 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | `03x_add_vulnerability_source` | #515 | `ADD COLUMN source LowCardinality(String) DEFAULT 'osv'` on `vulnerabilities` | post (v1.1.0) | additive |
 | `03x_add_advisory_feed_columns` | #524 | `ADD COLUMN advisory_source, advisory_status LowCardinality(String), component_location String` on `vulnerabilities` | post (v1.1.0) | additive; `advisory_source` may replace #515's `source` if #524 lands first |
 | `03x_add_finding_kind` | #531 | `ADD COLUMN finding_kind LowCardinality(String) DEFAULT 'vulnerability'` on `vulnerabilities`, `lookalike_of Array(String)` on `sbom_packages` | post (v1.0.0) | additive |
+| `03x_add_quality_score` | #537 | `ADD COLUMN quality_score UInt8, quality_flags Array(LowCardinality(String))` on `sboms` | post (v1.0.0) | additive |
+| `03x_add_reachability` | #535 | `ADD COLUMN reachability LowCardinality(String), evidence_source, evidence_ref String, evidence_at DateTime` on `vulnerabilities` | post (v1.1.0) | additive |
+| `03x_add_base_image` | #532 | `ADD COLUMN base_image_ref, base_image_digest` on `sboms`, `inherited_from` on `vulnerabilities` | post (v1.2.0) | additive |
 | `03x_create_cve_records` | #527 | new table `cve_records` (cve_id, cna/adp cvss, ssvc_*, cwe_ids, affected_purls, modified) | post (v1.1.0) | new table |
 | `03x_create_exploit_refs` | #528 | new table `exploit_refs` + `ADD COLUMN exploit_available UInt8, exploit_sources Array(String)` on `vulnerabilities` | post (v1.1.0) | additive |
 | `03x_add_version_status` | #529 | `ADD COLUMN package_published_at Array(DateTime), package_version_status, package_provenance Array(LowCardinality(String))` on `sbom_packages` | post (v1.1.0) | additive, parallel arrays |
@@ -373,6 +384,9 @@ INVENTORY DEPTH (v1.1.0 → v1.2.0):
 #60 (OSV mirror loader) ──┬── #524 feeds ──┬── #527 CVE List (SSVC) ──┐
                           └── #531 MAL-    └── #528 exploit refs ─────┼── #411 due-date chain, #414 register
 #64 EPSS ── #410 KEV ────────────────────────────────────────────────┘
+#338 (generate) ── #535 evidence ── core (manage) ── #533 export ──┬── #534 TEA ── #256 document store
+#538 (upstream VEX) ──┘                                             └── #525 OCI publish (shared dep decision)
+#455–#461 identity ── #539 reference scanner ── #532 base-image attribution ── #518 trend
 #529 (version status) ──┬── #517 cooldown      #530 (ClearlyDefined) ──┬── #62 NOTICE export
                         └── #516 provenance                             └── license decision log
 

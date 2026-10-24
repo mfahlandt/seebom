@@ -125,13 +125,14 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 |---|-------|-----------|-------|
 | **#408** | CVSS score, vector, version (not only the bucket); v4 support | `027` `ADD COLUMN cvss_score, cvss_vector, cvss_version` on `vulnerabilities` | Score is already computed in `osvutil` and discarded. Backfill from `osv_json`. |
 | **#409** | CWE ids from OSV `database_specific.cwe_ids` | `027` `ADD COLUMN cwe_ids Array(String)` (same migration) | Backfill from `osv_json`. Enables CRA/crypto CWE filters (CWE-327/-326/-328/-295/-916). |
-| **#410** | CISA **KEV** catalogue status | `028_create_kev_catalog` (new table, keyed by CVE) | Daily feed in `cve-refresher`; matched via `aliases`. **CRA Art. 14: actively exploited vulnerabilities must be reported within 24 h** — KEV is the public signal for "actively exploited". Brings an externally set `dueDate`. |
+| **#410** | CISA **KEV** catalogue status — plus ENISA's exploited list as a second source and **EUVD** ids in `aliases` | `028_create_kev_catalog` (new table, keyed by CVE, `source` column) + `euvd_aliases` | Daily feed in `cve-refresher`; matched via `aliases`. **CRA Art. 14: actively exploited vulnerabilities must be reported within 24 h** — KEV is the public signal for "actively exploited". Brings an externally set `dueDate`. NIS2 questionnaires ask for the EUVD id next to the CVE; same feed plumbing, one more table. |
+| **#511** | Vulnerability **lifecycle**: the refresher re-hydrates OSV entries modified since the last run; withdrawn entries leave the counts | `0xx` `ADD COLUMN osv_modified, withdrawn_at` on `vulnerabilities` | A register with a fresh `last_refreshed_at` over stale rows is worse than none. After #485 (no stubs) and #486 (bulk refresher query); gives "register freshness" (Success Metrics) its meaning. |
 | **#64** | **EPSS** scores | `029_create_epss_scores` (new table, keyed by CVE) | **Pulled forward from v1.2.0.** Same shape as #410 (daily bulk → side table); the two share refresher plumbing and the triage rule *KEV ∨ EPSS ≥ x ∨ CVSS ≥ 9*. |
 | **#413** | VEX action statement as remediation record; `action_statement_timestamp` | `030` `ADD COLUMN action_statement_timestamp` on `vex_statements` | Surfaces what is stored; the remediation *status* column of the register. |
 | **#411** | Remediation SLA policy → policy-derived `due_date`, `overdue`, `remediation_status` | none (computed at query time from `remediation-policy.json`) | The *estimated resolution date* column. Config-driven like `license-policy.json`; KEV due date overrides. No write API — public frontend. |
 | **#414** | Umbrella: docs page "Using BOMHort as a vulnerability register", `last_refreshed_at` on export and dashboard, #266 column list finalised | — | Closes when the row above is complete. |
 
-**Exit criteria:** `GET /api/v1/projects/{name}/vulnerabilities` and the CSV export carry `cve_id, aliases, cwe_ids, cvss_score, cvss_vector, epss_score, epss_percentile, kev_listed, kev_due_date, vex_status, remediation_status, action_statement, action_statement_timestamp, discovered_at, due_date, last_refreshed_at`; the dashboard shows overdue and KEV counts.
+**Exit criteria:** `GET /api/v1/projects/{name}/vulnerabilities` and the CSV export carry `cve_id, aliases, cwe_ids, cvss_score, cvss_vector, epss_score, epss_percentile, kev_listed, kev_due_date, vex_status, remediation_status, action_statement, action_statement_timestamp, discovered_at, osv_modified, due_date, last_refreshed_at`; withdrawn findings are excluded by default; the dashboard shows overdue and KEV counts.
 
 ### 2c. v1.0.0 — Freeze + CRA dashboard (due 2027-01-31)
 
@@ -141,6 +142,9 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 | **#7** | CVE fix time (MTTR) per project | `031_create_vulnerability_resolutions` (new table) | **Moved from v1.2.0.** CRA "remediate without delay" needs the backwards-looking number next to #411's forward-looking one. Detection in `parsing-worker` (finding disappears between versions) and on VEX `fixed`/`not_affected`. *Stretch: if the December soak needs the time, #7 drops to v1.1.0 — the table is additive.* |
 | **#62** | Auditor report bundle | Endpoint | **Moved from v1.1.0.** 1.0 scope: CSV + JSON bundle per project/fleet with a manifest (`sha256`, `generated_at`, `last_refreshed_at`, policy versions). **PDF only after the `gofpdf` vs `pdfcpu` decision** — not a 1.0 blocker. |
 | **#419** | Cryptographic **library** inventory from existing SBOMs (`crypto-libraries.json`, PURL match) | `032_create_crypto_libraries` (new table) | New. Works on every SBOM already ingested, no CBOM needed; first defensible answer to "cryptographic inventory" (#420) and the CRA "state-of-the-art encryption" evidence. Small. The CBOM block stays in v1.1.0. |
+| **#512** | **SARIF** export (`?format=sarif`) next to CSV on the same endpoints | Endpoint, no migration | A second serialisation of a frozen shape → decided before the freeze. Same column list as #266; VEX `not_affected` becomes a SARIF suppression. The CI-gating path (#513, #521) consumes it in v1.1.0. |
+| **#518** | **Trend over time** — findings, violations, versions as a series per fleet scope and per project | Query-time `GROUP BY toStartOfInterval`; decides the fate of `dashboard_stats_mv` (#344) | "Are we getting better?" is the first question an auditor asks of a register. No new storage; *stretch like #7 — drops to v1.1.0 if the soak needs the time.* |
+| **#519** | SVG status **badges** per project | Endpoint, no migration | Cheap, public, stdlib `text/template`. Reads the project query; cached per TTL. |
 | **#145** | Versioned documentation | Docs infra | Must ship **with** the tag. |
 | — | Migration guide + `values.yaml` stability review | Process | Covers every new key since v0.7: `mcp.*` (#399), `existingConfigMap` (#397), `seedJob` **removed** (#391), `apiGateway.queryLimits.*` (#344-I), image pin (#392), `kev.*`/`epss.*` feed URLs and skips (#410, #64), `remediationPolicy.*` (#411), `cryptoLibraries.*` (#419). |
 | — | `AGENTS.md` dependency list | Docs | 5 → 6 direct dependencies (`modelcontextprotocol/go-sdk >= v1.4.1`). No further dependency for the register: KEV/EPSS are HTTP + JSON/CSV, stdlib. |
@@ -164,8 +168,8 @@ The **#414** umbrella. CRA Annex I Part II (1)–(2) in one sentence: identify a
 - [x] ~~One row per `(vuln_id, purl)` — latest VEX wins (#335)~~ · ~~`cluster` in `SBOMListItem` (#177)~~
 - [x] ~~Project-centric read model + de-duplicated counts (#398)~~
 - [x] **v0.8.0:** ~~MCP server + `mcp.*` (#399)~~ · ~~Aggregated SBOM View (#58)~~ · ~~`source_repo` fallback (#355)~~ · ~~`existingConfigMap` (#397)~~ · ~~seed job (#391)~~ · ~~ClickHouse floor (#392)~~ · ~~perf E + I (#344)~~ · ~~CVE id/aliases (#412)~~ · ~~CSV export (#266)~~ · ~~license provenance (#439)~~ · ~~UI proxy write auth (GHSA-943f-mm2v-j478)~~
-- [ ] **v0.9.0:** ingest correctness (#480, #485, #482, #487, #446, #483, #481, #489, #484, #486, #488) · CVSS (#408) · CWE (#409) · KEV (#410) · EPSS (#64) · remediation record (#413) · SLA due dates (#411) · register docs (#414)
-- [ ] **v1.0.0:** CRA dashboard (#141) · MTTR (#7, stretch) · report bundle (#62) · crypto-library inventory (#419) · versioned docs (#145) · migration guide + values review
+- [ ] **v0.9.0:** ingest correctness (#480, #485, #482, #487, #446, #483, #481, #489, #484, #486, #488) · CVSS (#408) · CWE (#409) · KEV (#410) · EPSS (#64) · remediation record (#413) · SLA due dates (#411) · register docs (#414) · lifecycle (#511)
+- [ ] **v1.0.0:** CRA dashboard (#141) · MTTR (#7, stretch) · report bundle (#62) · crypto-library inventory (#419) · SARIF (#512) · trend (#518, stretch) · badges (#519) · versioned docs (#145) · migration guide + values review
 
 ### Milestone map
 
@@ -174,10 +178,10 @@ Every open issue carries a milestone — "no milestone" is not a valid state.
 | Milestone | Due | Theme | Open issues |
 |-----------|-----|-------|-------------|
 | [v0.8.0](https://github.com/seebom-labs/BOMHort/milestone/5) | ✅ 2026-10-17 | Contract | ~~#399~~, ~~#58~~, ~~#355~~, ~~#397~~, ~~#391~~, ~~#392~~, ~~#344~~ (E+I), ~~#412~~, ~~#266~~, ~~#439~~, ~~GHSA-943f-mm2v-j478~~ |
-| [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) | 2026-11-30 | Ingest correctness + vulnerability register | #480, #485, #482, #487, #446, #483, #481, #489, #484, #486, #488, #408, #409, #410, #64, #413, #411, #414 |
-| [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) | 2027-01-31 | Freeze + CRA dashboard | #141, #7, #62, #419, #145 |
-| [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) | 2027-04-30 | Automation, fleet & cryptography | #338, #336, #333, #337, #334 (UI), #138 (API/UI), #267, #176, #140, #57, #136, #60, #143, #420, #415, #416, #417, #418, #490 |
-| [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3) | 2027-07-31 | Analytics | #61, #82, #38, #56, #63, #255, #254 |
+| [v0.9.0](https://github.com/seebom-labs/BOMHort/milestone/6) | 2026-11-30 | Ingest correctness + vulnerability register | #480, #485, #482, #487, #446, #483, #481, #489, #484, #486, #488, #408, #409, #410, #64, #511, #413, #411, #414 |
+| [v1.0.0](https://github.com/seebom-labs/BOMHort/milestone/1) | 2027-01-31 | Freeze + CRA dashboard | #141, #7, #62, #419, #512, #518, #519, #145 |
+| [v1.1.0](https://github.com/seebom-labs/BOMHort/milestone/2) | 2027-04-30 | Automation, fleet & cryptography | #338, #336, #333, #337, #334 (UI), #138 (API/UI), #267, #176, #140, #57, #136, #60, #143, #420, #415, #416, #417, #418, #490, #513, #521, #520, #509, #514, #515 |
+| [v1.2.0](https://github.com/seebom-labs/BOMHort/milestone/3) | 2027-07-31 | Analytics | #61, #82, #38, #56, #63, #255, #254, #510, #516, #517 |
 | [v2.0.0](https://github.com/seebom-labs/BOMHort/milestone/4) | — | breaking only | #268 |
 
 `v2.0.0` has no due date on purpose: per the major-version policy in `AGENTS.md` it is driven by accumulated breaking changes (earliest Q1/Q2 2028), not by a calendar.
@@ -229,7 +233,20 @@ The second questionnaire: cryptographic inventory, crypto agility, PQC migration
 | **#418** | PQC readiness — `quantum_vulnerable` / `hybrid` / `pqc` classification, readiness % per project, migration list, trend | reuses `crypto_compliance` | Agility is reported as *indicators* only — see #420 for what is and is not claimed. |
 | **#420** | Umbrella: docs page, exports | — | Closes with #418. |
 
-**Exit criteria:** An external tool can discover new findings without polling, push VEX idempotently and see the result; cluster/namespace views exist in the UI; OSV/KEV/EPSS work offline; a CBOM ingested next to an SBOM yields an inventory, policy findings and a PQC readiness figure.
+### 3d. Developer workflow and inventory depth
+
+The register (v0.9.0) answers the auditor; this block answers the developer on a pull request and the operator whose inventory is full of their own code. Everything here is additive; the order is the dependency order of the CI path.
+
+| # | Issue | Migration | Notes |
+|---|-------|-----------|-------|
+| **#513** | Stateless evaluation `POST /api/v1/scan` (`?fail_on=`) — parse, resolve, OSV, licenses; nothing persisted | none | Extracts the worker's evaluate step into `internal/evaluate`; the worker becomes "evaluate, then write". Returns the same finding shape as the stored endpoints, SARIF via #512. |
+| **#521** | First-party composite GitHub Action (`.github/actions/upload-sbom`) + GitLab include | none | Six headers become six inputs with workflow defaults; `wait`/`fail-on`/`sarif` outputs. Shell + `curl`, tested against the Kind deployment. |
+| **#520** | Workload-identity upload auth: OIDC / Kubernetes ServiceAccount tokens exchanged for a short-lived bearer, trust rules reuse #456's scope object | none (`uploaded_by` from #456) | Removes the last static secret from a CI → BOMHort path. Stdlib JWT verification; fails closed. *Upload* identity only — user login stays a Non-Goal. |
+| **#509** | Outdated components: latest upstream version + version distance per package (`?outdated=`) | `0xx` `ADD COLUMN package_latest_versions, package_version_distance` on `sbom_packages` | Reuses the registry resolvers and their cache; `version-skew` compares projects with each other, this compares with upstream. Input to #517. |
+| **#514** | First-party / internal component rules (`internal-components.json`): declared license, no public lookups, source `internal` | none (rules file, live-reloaded via `rulesource`, retroactive via `license_recheck`) | Removes the operator's own code from the `unknown` license number and from registry/GitHub rate limits. |
+| **#515** | Private advisories (`private-vulnerabilities.json`, OSV schema) merged with public findings; `source` column | `0xx` `ADD COLUMN source LowCardinality(String) DEFAULT 'osv'` on `vulnerabilities` | Embargoed CVEs and vendor PSIRT bulletins reach the register before OSV does. Client-side OSV range matcher, same vocabulary as #60's mirror. |
+
+**Exit criteria:** An external tool can discover new findings without polling, push VEX idempotently and see the result; cluster/namespace views exist in the UI; OSV/KEV/EPSS work offline; a CBOM ingested next to an SBOM yields an inventory, policy findings and a PQC readiness figure; **a pull request can be gated on an SBOM without a stored project or a static secret, and first-party packages stop counting as unknown.**
 
 ---
 
@@ -246,9 +263,12 @@ The second questionnaire: cryptographic inventory, crypto agility, PQC migration
 | **#63** | Blast Radius Search | Extends Package Search with version constraints, vuln context, direct/transitive. |
 | **#61** | OpenSSF Scorecard | Upstream project health; extends `internal/github`. |
 | **#82** | Lottery Factor | Single-maintainer risk; extends `internal/github`. |
+| **#510** | End-of-life / end-of-support signal (endoflife.date feed, `eol-products.json` mapping) | The most predictable risk in an inventory has no CVE. New `eol_cycles` table; input to #517 and the #141 score. |
+| **#516** | Component integrity — SBOM checksums verified against registry hashes (`verified` / `mismatch` / `unverifiable` / `unchecked`) | The checksums are already parsed and dropped. Same resolver plumbing as #509; `package_hashes` + `package_integrity` on `sbom_packages`. |
+| **#517** | Component policy (`component-policy.json`): closed-vocabulary rules over packages — forbidden PURLs, version distance (#509), EOL (#510), integrity (#516), finding age without VEX | Exact precedent: license policy + exceptions + recheck job. `policy_violations` table, `GET /api/v1/policy-violations`. Last, because its conditions are the three rows above. |
 | **#268** | Evaluate official ClickHouse operator (vs. Altinity) | Breaking `values.yaml` → **major bump**; candidate for v2.0. |
 
-**Exit criteria:** exploit-probability prioritisation is complemented by dependency-health metrics; SBOM diff and tree view exist; enriched export works.
+**Exit criteria:** exploit-probability prioritisation is complemented by dependency-health metrics; SBOM diff and tree view exist; enriched export works; a fleet-wide rule like "nothing past end-of-life in production" is a config line and a page, not a script.
 
 ---
 
@@ -281,13 +301,22 @@ Everything that touches `db/migrations/` or a frozen response shape, in one plac
 | `027_add_vulnerability_cvss_cwe` | #408, #409 | `ADD COLUMN cvss_score Float32, cvss_vector String, cvss_version LowCardinality(String), cwe_ids Array(String)` on `vulnerabilities` | **pre** (v0.9.0) | market (additive; backfill from `osv_json`) |
 | `028_create_kev_catalog` | #410 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
 | `029_create_epss_scores` | #64 | New table keyed by CVE id | **pre** (v0.9.0) | market (additive) |
+| `0xx_add_vulnerability_lifecycle` | #511 | `ADD COLUMN osv_modified DateTime, withdrawn_at Nullable(DateTime)` on `vulnerabilities` | **pre** (v0.9.0) | correctness (additive; withdrawn rows excluded by default — a read-model change, so before the freeze) |
+| `0xx_create_euvd_aliases` + `kev_catalog.source` | #410 (extension) | New table keyed by CVE; `source` column on `kev_catalog` from the start | **pre** (v0.9.0) | market (additive) |
 | `030_add_vex_action_statement_timestamp` | #413 | `ADD COLUMN action_statement_timestamp` on `vex_statements` | **pre** (v0.9.0) | market — *but* automated VEX producers won't re-send, so capture early |
 | — (query + config) | #411 | `remediation-policy.json`; derived fields, no storage | **pre** (v0.9.0) | market (values: `remediationPolicy.*`) |
 | — (endpoint + UI) | #141 | CRA readiness score | **pre** (v1.0.0) | market |
 | `031_create_vulnerability_resolutions` | #7 | New table | **pre** (v1.0.0, stretch) | market (additive) |
 | — (endpoint) | #62 | Report bundle (CSV + JSON + manifest) | **pre** (v1.0.0) | market |
 | `032_create_crypto_libraries` | #419 | New table (or MV over `sbom_packages`) | **pre** (v1.0.0) | market (additive; values: `cryptoLibraries.*`) |
+| — (endpoint) | #512, #519 | SARIF export, SVG badges | **pre** (v1.0.0) | market (additive; `?format=` on a frozen shape is why SARIF is pre) |
+| — (query only, MV decision) | #518 | Trend series; `dashboard_stats_mv` repointed or dropped | **pre** (v1.0.0, stretch) | market |
 | `03x_create_package_index_mv` | #344-C/D/E | MV + skip indexes | post | additive |
+| `03x_add_package_latest_version` | #509 | `ADD COLUMN package_latest_versions Array(String), package_version_distance Array(UInt8)` on `sbom_packages` | post (v1.1.0) | additive |
+| `03x_add_vulnerability_source` | #515 | `ADD COLUMN source LowCardinality(String) DEFAULT 'osv'` on `vulnerabilities` | post (v1.1.0) | additive |
+| `03x_create_eol_cycles` | #510 | New table keyed by product + cycle | post (v1.2.0) | additive |
+| `03x_add_package_integrity` | #516 | `ADD COLUMN package_hashes Map(String,String), package_integrity Array(LowCardinality(String))` on `sbom_packages` | post (v1.2.0) | additive |
+| `03x_create_policy_violations` | #517 | New table, same shape as `license_compliance` | post (v1.2.0) | additive |
 | `03x_create_upload_jobs` | #336 | New table | post | additive |
 | `03x_create_attestations` | #143 | New table | post | additive |
 | `03x_create_crypto_assets`, `03x_create_crypto_compliance` | #415, #417 | New tables | post (v1.1.0) | additive |
@@ -310,6 +339,15 @@ REGISTER (#414):
 #64  (EPSS) ─────────────────────────────────────────────┤                                                  ├── #62  (report bundle)
 #413 (VEX action statement) ─────────────────────────────┘                                                  └── #7   (MTTR)
 #266 ✅ (CSV) ── grows with every row above ── #62
+#485 ── #511 (lifecycle: modified/withdrawn) ── #414 freshness        #410 ── EUVD/ENISA extension
+#266 ✅ ── #512 (SARIF, same columns) ── #513 (stateless scan) ── #521 (GitHub Action)   v1.0.0 → v1.1.0
+#518 (trend) ── decides #344 MV                                      #519 (badges) ── standalone
+
+INVENTORY DEPTH (v1.1.0 → v1.2.0):
+#489 (shared resolver cache) ──┬── #509 (latest version / distance) ──┐
+                               └── #516 (integrity)  ─────────────────┼── #517 (component policy)   v1.2.0
+#510 (EOL) ───────────────────────────────────────────────────────────┘
+#514 (internal components) ── license_recheck        #515 (private advisories) ── #414, #60 vocabulary
 
 CRYPTO (#420):
 #419 (library inventory, SBOM-only)                         v1.0.0
@@ -324,7 +362,7 @@ INGEST CORRECTNESS (v0.9.0, before the register):
 #489 (shared resolver cache) ── #481 (cache definite answers only)
 
 RUNTIME-SCANNER IDENTITY (v0.9.0, after ingest correctness):
-#455 (origin) ── #456 (scoped API keys)
+#455 (origin) ── #456 (scoped API keys) ── #520 (workload identity, v1.1.0)
 #457 (image digest) ──┬── #461 (identifiers from the document)
 #458 (workload) ──────┘
 #460 (Prometheus) ── dependency decision first
@@ -435,7 +473,7 @@ All three are `LowCardinality(String) DEFAULT ''` columns; none is in `ORDER BY`
 - **Multi-repo split**: Monorepo is a hard constraint for AI-assisted development.
 - **Real-time streaming**: Batch ingestion (CronJob + queue) plus outbound webhooks (#337) is sufficient.
 - **RBAC/multi-tenancy**: Auth is binary. Fine-grained RBAC is beyond this roadmap.
-- **Full OIDC in BOMHort**: User authentication is the upstream proxy's responsibility.
+- **Full OIDC in BOMHort**: User authentication is the upstream proxy's responsibility. Verifying a *workload's* OIDC token for upload (#520) is not user login — it replaces a static key, not a session.
 - **Relational rewrite of the dependency model** (#254): protobom/storage's schema is evaluated for the *overlay* only.
 - **A second project hierarchy** (#398): projects are grouped by `tags`, not by a new org/sub-project table.
 

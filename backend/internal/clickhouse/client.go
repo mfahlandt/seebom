@@ -79,7 +79,7 @@ func (c *Client) Close() error {
 func (c *Client) HashExists(ctx context.Context, hash string) (bool, error) {
 	var count uint64
 	err := c.Conn.QueryRow(ctx,
-		"SELECT count() FROM ("+fmt.Sprintf(latestJobsFmt, "WHERE job_id IN (SELECT job_id FROM ingestion_queue WHERE sha256_hash = ?)")+") WHERE latest_status != 'failed'", hash).Scan(&count)
+		"SELECT count() FROM ("+latestJobs("WHERE job_id IN (SELECT job_id FROM ingestion_queue WHERE sha256_hash = ?)")+") WHERE latest_status != 'failed'", hash).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("failed to check hash existence: %w", err)
 	}

@@ -163,6 +163,7 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 	// Stream-process files in batches for efficient enqueuing.
 	var batch []models.IngestionJob
 	enqueued := 0
+	seen := map[string]struct{}{} // hashes enqueued by this scan, for the duplicate log line
 
 	for _, f := range files {
 		// Apply SBOM_LIMIT (VEX files are never limited).
@@ -174,9 +175,12 @@ func ingestLocalFiles(ctx context.Context, cfg *config.Config, chClient *clickho
 		}
 
 		if _, exists := known[f.SHA256Hash]; exists {
+			if _, thisScan := seen[f.SHA256Hash]; thisScan {
+				log.Printf("Local: skipping %s, same content as an earlier file in this scan (first path's ownership wins)", f.RelPath)
+			}
 			continue
 		}
-		known[f.SHA256Hash] = struct{}{}
+		known[f.SHA256Hash], seen[f.SHA256Hash] = struct{}{}, struct{}{}
 
 		jobType := models.JobTypeSBOM
 		if f.FileType == "vex" {
@@ -282,6 +286,7 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 
 	var batch []models.IngestionJob
 	enqueued := 0
+	seen := map[string]struct{}{}
 	skipped := 0
 	errors := 0
 
@@ -306,9 +311,12 @@ func ingestS3Buckets(ctx context.Context, cfg *config.Config, chClient *clickhou
 
 		// Dedup on the S3 ETag (changes when content changes).
 		if _, exists := known[obj.ETag]; exists {
+			if _, thisScan := seen[obj.ETag]; thisScan {
+				log.Printf("S3: skipping %s, same content as an earlier object in this scan (first object's ownership wins)", obj.URI())
+			}
 			continue
 		}
-		known[obj.ETag] = struct{}{}
+		known[obj.ETag], seen[obj.ETag] = struct{}{}, struct{}{}
 
 		jobType := models.JobTypeSBOM
 		if obj.FileType == "vex" {

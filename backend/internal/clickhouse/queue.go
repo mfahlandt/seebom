@@ -68,9 +68,9 @@ func (c *Client) EnqueueJobs(ctx context.Context, jobs []models.IngestionJob) er
 // job in" must go through it: the table is ORDER BY (status, created_at,
 // job_id), so FINAL never collapses a job's older status rows and a plain
 // WHERE status = … matches history, not state.
-// latestJobsFmt takes an optional WHERE clause that prefilters the rows
-// before aggregation; latestJobs is the unfiltered form.
-const latestJobsFmt = `
+// where optionally prefilters the rows before aggregation.
+func latestJobs(where string) string {
+	return `
 		    SELECT
 		        job_id,
 		        argMax(source_file, created_at)  AS source_file,
@@ -88,16 +88,15 @@ const latestJobsFmt = `
 		        argMax(tags, created_at)          AS tags,
 		        argMax(parent, created_at)        AS parent,
 		        argMax(retry_after, created_at)   AS retry_after
-		    FROM ingestion_queue %s
+		    FROM ingestion_queue ` + where + `
 		    GROUP BY job_id`
-
-var latestJobs = fmt.Sprintf(latestJobsFmt, "")
+}
 
 // selectJobs returns the jobs whose latest state matches where, oldest first.
 func (c *Client) selectJobs(ctx context.Context, where string, limit int) ([]models.IngestionJob, error) {
 	rows, err := c.Conn.Query(ctx, `
 		SELECT job_id, source_file, sha256_hash, min_created, job_type, cluster, namespace, project, source_repo, source_ref, target_sbom_id, tags, parent
-		FROM (`+latestJobs+`) sub
+		FROM (`+latestJobs("")+`) sub
 		WHERE `+where+`
 		ORDER BY min_created ASC
 		LIMIT ?`, limit)
@@ -230,7 +229,7 @@ func (c *Client) RequeueStaleJobs(ctx context.Context, olderThan time.Duration) 
 func (c *Client) KnownHashes(ctx context.Context) (map[string]struct{}, error) {
 	// toString strips the NUL padding of FixedString(64): S3 ETags are 32
 	// chars and would otherwise never match a Go string.
-	rows, err := c.Conn.Query(ctx, "SELECT DISTINCT toString(sha256_hash) FROM ("+latestJobs+") WHERE latest_status != 'failed'")
+	rows, err := c.Conn.Query(ctx, "SELECT DISTINCT toString(sha256_hash) FROM ("+latestJobs("")+") WHERE latest_status != 'failed'")
 	if err != nil {
 		return nil, fmt.Errorf("failed to load known hashes: %w", err)
 	}

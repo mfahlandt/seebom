@@ -14,7 +14,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
@@ -43,8 +42,8 @@ const (
 type Resolver struct {
 	baseURL    string
 	httpClient *http.Client
-	cache      sync.Map // map[string]string (cache key → SPDX expression or "")
-	limiter    *ratelimit.TokenBucket
+	license.ResolverCache
+	limiter *ratelimit.TokenBucket
 }
 
 // PackageVersion is the normalized deps.dev lookup key extracted from a purl.
@@ -88,8 +87,7 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 		return r.resolveOne(ctx, pv)
 	}
 	key := CacheKey(PackageVersion{System: pv.System, Name: pv.Name, Version: anyVersion})
-	if cached, found := r.cache.Load(key); found {
-		lic, _ := license.SplitCacheValue(cached.(string))
+	if lic, _, found := r.Load(key); found {
 		return lic
 	}
 	v, reason := r.defaultVersion(ctx, pv)
@@ -97,7 +95,7 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 	if v != "" {
 		value = r.resolveOneValue(ctx, PackageVersion{System: pv.System, Name: pv.Name, Version: v})
 	}
-	r.cache.Store(key, value)
+	r.StoreValue(key, value)
 	lic, _ := license.SplitCacheValue(value)
 	return lic
 }
@@ -112,8 +110,8 @@ func (r *Resolver) resolveOne(ctx context.Context, pv PackageVersion) string {
 // negative marker with reason).
 func (r *Resolver) resolveOneValue(ctx context.Context, pv PackageVersion) string {
 	key := CacheKey(pv)
-	if cached, found := r.cache.Load(key); found {
-		return cached.(string)
+	if cached, found := r.LoadValue(key); found {
+		return cached
 	}
 
 	if err := r.limiter.Wait(ctx); err != nil {
@@ -121,7 +119,7 @@ func (r *Resolver) resolveOneValue(ctx context.Context, pv PackageVersion) strin
 	}
 
 	value := r.fetchLicense(ctx, pv)
-	r.cache.Store(key, value)
+	r.StoreValue(key, value)
 	if lic, _ := license.SplitCacheValue(value); lic != "" {
 		log.Printf("  deps.dev license resolved: %s → %s", key, lic)
 	}
@@ -141,10 +139,7 @@ func (r *Resolver) Explain(purl string) (handled bool, reason string, latest boo
 	if latest {
 		pv.Version = anyVersion
 	}
-	if cached, found := r.cache.Load(CacheKey(pv)); found {
-		_, reason = license.SplitCacheValue(cached.(string))
-	}
-	return true, reason, latest
+	return true, r.Reason(CacheKey(pv)), latest
 }
 
 // ResolveBatch returns SPDX license expressions for the provided purls. It uses
@@ -164,8 +159,8 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 			pv.Version = anyVersion
 		}
 		key := CacheKey(pv)
-		if cached, found := r.cache.Load(key); found {
-			out[purl], _ = license.SplitCacheValue(cached.(string))
+		if lic, _, found := r.Load(key); found {
+			out[purl] = lic
 			continue
 		}
 		if _, seen := pending[key]; !seen {
@@ -201,8 +196,8 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 		concrete := PackageVersion{System: pv.System, Name: pv.Name, Version: version}
 		ck := CacheKey(concrete)
 		defaultOf[key] = ck
-		if cached, found := r.cache.Load(ck); found {
-			resolved[ck] = cached.(string)
+		if cached, found := r.LoadValue(ck); found {
+			resolved[ck] = cached
 			continue
 		}
 		if !queued[ck] {
@@ -235,7 +230,7 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 	for _, pv := range items {
 		ck := CacheKey(pv)
 		if _, isPending := pending[ck]; !isPending {
-			r.cache.Store(ck, resolved[ck])
+			r.StoreValue(ck, resolved[ck])
 		}
 	}
 	for key := range pending {
@@ -245,7 +240,7 @@ func (r *Resolver) ResolveBatch(ctx context.Context, purls []string) map[string]
 			value = resolved[ck]
 			via = " (default version " + strings.TrimPrefix(ck, strings.TrimSuffix(key, anyVersion)) + ")"
 		}
-		r.cache.Store(key, value)
+		r.StoreValue(key, value)
 		lic, _ := license.SplitCacheValue(value)
 		if lic != "" {
 			log.Printf("  deps.dev license resolved: %s%s → %s", key, via, lic)
@@ -301,23 +296,6 @@ func (r *Resolver) defaultVersion(ctx context.Context, pv PackageVersion) (versi
 		}
 	}
 	return "", ""
-}
-
-// PreloadCache seeds the in-memory cache (e.g. from ClickHouse).
-func (r *Resolver) PreloadCache(entries map[string]string) {
-	for k, v := range entries {
-		r.cache.Store(k, v)
-	}
-}
-
-// CacheEntries exports the in-memory cache for persistence.
-func (r *Resolver) CacheEntries() map[string]string {
-	out := make(map[string]string)
-	r.cache.Range(func(k, v any) bool {
-		out[k.(string)] = v.(string)
-		return true
-	})
-	return out
 }
 
 type versionResponse struct {

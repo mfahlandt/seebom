@@ -17,7 +17,6 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	json "github.com/goccy/go-json"
@@ -43,7 +42,7 @@ type Resolver struct {
 	baseURL    string
 	httpClient *http.Client
 	limiter    *ratelimit.TokenBucket
-	cache      sync.Map // "name@version" / "name@*" → license or negative marker
+	license.ResolverCache
 }
 
 // NewResolver creates a resolver against pypi.org.
@@ -114,15 +113,14 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 		return ""
 	}
 	key := cacheKey(name, version)
-	if cached, found := r.cache.Load(key); found {
-		lic, _ := license.SplitCacheValue(cached.(string))
+	if lic, _, found := r.Load(key); found {
 		return lic
 	}
 	if err := r.limiter.Wait(ctx); err != nil {
 		return ""
 	}
 	value := r.fetch(ctx, name, version)
-	r.cache.Store(key, value)
+	r.StoreValue(key, value)
 	lic, _ := license.SplitCacheValue(value)
 	if lic != "" {
 		log.Printf("  PyPI license resolved: %s → %s", key, lic)
@@ -137,10 +135,7 @@ func (r *Resolver) Explain(purl string) (handled bool, reason string, latest boo
 	if !ok {
 		return false, "", false
 	}
-	if cached, found := r.cache.Load(cacheKey(name, version)); found {
-		_, reason = license.SplitCacheValue(cached.(string))
-	}
-	return true, reason, version == ""
+	return true, r.Reason(cacheKey(name, version)), version == ""
 }
 
 type projectInfo struct {
@@ -286,21 +281,4 @@ func classifierLicense(c string) (string, bool) {
 	default:
 		return last, true
 	}
-}
-
-// PreloadCache seeds the in-memory cache (e.g. from ClickHouse).
-func (r *Resolver) PreloadCache(entries map[string]string) {
-	for k, v := range entries {
-		r.cache.Store(k, v)
-	}
-}
-
-// CacheEntries exports the in-memory cache for persistence.
-func (r *Resolver) CacheEntries() map[string]string {
-	out := make(map[string]string)
-	r.cache.Range(func(k, v any) bool {
-		out[k.(string)] = v.(string)
-		return true
-	})
-	return out
 }

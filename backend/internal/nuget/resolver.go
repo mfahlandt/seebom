@@ -15,17 +15,18 @@ package nuget
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	json "github.com/goccy/go-json"
 
+	"github.com/seebom-labs/bomhort/backend/internal/license"
 	"github.com/seebom-labs/bomhort/backend/internal/ratelimit"
 )
 
@@ -82,9 +83,9 @@ var githubURLRe = regexp.MustCompile(`(?i)^(?:https?://)?(?:www\.)?(?:raw\.)?git
 type Resolver struct {
 	registrationBase string
 	httpClient       *http.Client
-	cache            sync.Map // map[string]string
-	limiter          *ratelimit.TokenBucket
-	repoResolver     RepoResolver // optional
+	license.ResolverCache
+	limiter      *ratelimit.TokenBucket
+	repoResolver RepoResolver // optional
 }
 
 // NewResolver creates a resolver against nuget.org. repoResolver may be nil.
@@ -120,38 +121,21 @@ func (r *Resolver) Resolve(ctx context.Context, purl string) string {
 	}
 
 	key := CacheKey(id, version)
-	if cached, found := r.cache.Load(key); found {
-		return cached.(string)
+	if lic, _, found := r.Load(key); found {
+		return lic
 	}
 
 	if err := r.limiter.Wait(ctx); err != nil {
 		return ""
 	}
 
-	lic := r.fetchLicense(ctx, id, version)
-	r.cache.Store(key, lic)
+	lic, reason := r.fetchLicense(ctx, id, version)
+	r.StoreResult(key, lic, reason)
 
 	if lic != "" {
 		log.Printf("  NuGet license resolved: %s → %s", key, lic)
 	}
 	return lic
-}
-
-// PreloadCache seeds the in-memory cache (e.g. from ClickHouse).
-func (r *Resolver) PreloadCache(entries map[string]string) {
-	for k, v := range entries {
-		r.cache.Store(k, v)
-	}
-}
-
-// CacheEntries exports the in-memory cache for persistence.
-func (r *Resolver) CacheEntries() map[string]string {
-	out := make(map[string]string)
-	r.cache.Range(func(k, v any) bool {
-		out[k.(string)] = v.(string)
-		return true
-	})
-	return out
 }
 
 type registrationLeaf struct {
@@ -167,13 +151,20 @@ type CatalogEntry struct {
 	ProjectURL        string `json:"projectUrl"`
 }
 
-func (r *Resolver) fetchLicense(ctx context.Context, id, version string) string {
+// fetchLicense returns the license and, when there is none, the reason if
+// nuget.org gave a definite answer: 404 (not published) or a catalog entry
+// that declares no license at all. Transport errors, unmapped license URLs and
+// an unanswered repository lookup leave the reason empty so they are retried.
+func (r *Resolver) fetchLicense(ctx context.Context, id, version string) (string, string) {
 	leafURL := fmt.Sprintf("%s/%s/%s.json", r.registrationBase,
 		url.PathEscape(strings.ToLower(id)), url.PathEscape(strings.ToLower(version)))
 
 	var leaf registrationLeaf
-	if !r.getJSON(ctx, leafURL, &leaf) {
-		return ""
+	switch err := r.getJSON(ctx, leafURL, &leaf); {
+	case errors.Is(err, errNotFound):
+		return "", license.ReasonNotPublished
+	case err != nil:
+		return "", ""
 	}
 
 	// catalogEntry is normally a URL string; some hives inline the object.
@@ -183,26 +174,32 @@ func (r *Resolver) fetchLicense(ctx context.Context, id, version string) string 
 	case strings.HasPrefix(raw, `"`):
 		var catalogURL string
 		if err := json.Unmarshal(leaf.CatalogEntry, &catalogURL); err != nil || catalogURL == "" {
-			return ""
+			return "", ""
 		}
 		if !strings.HasPrefix(catalogURL, "https://") && !strings.HasPrefix(catalogURL, "http://") {
-			return ""
+			return "", ""
 		}
 		if err := r.limiter.Wait(ctx); err != nil {
-			return ""
+			return "", ""
 		}
-		if !r.getJSON(ctx, catalogURL, &entry) {
-			return ""
+		if err := r.getJSON(ctx, catalogURL, &entry); err != nil {
+			return "", ""
 		}
 	case strings.HasPrefix(raw, `{`):
 		if err := json.Unmarshal(leaf.CatalogEntry, &entry); err != nil {
-			return ""
+			return "", ""
 		}
 	default:
-		return ""
+		return "", ""
 	}
 
-	return r.licenseFromEntry(ctx, &entry)
+	if lic := r.licenseFromEntry(ctx, &entry); lic != "" {
+		return lic, ""
+	}
+	if strings.TrimSpace(entry.LicenseURL) == "" && strings.TrimSpace(entry.ProjectURL) == "" {
+		return "", license.ReasonNoLicenseUpstream
+	}
+	return "", ""
 }
 
 // licenseFromEntry applies the resolution strategy documented at the top of the file.
@@ -225,10 +222,12 @@ func (r *Resolver) licenseFromEntry(ctx context.Context, e *CatalogEntry) string
 	return ""
 }
 
-func (r *Resolver) getJSON(ctx context.Context, u string, out any) bool {
+var errNotFound = errors.New("not found")
+
+func (r *Resolver) getJSON(ctx context.Context, u string, out any) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return false
+		return err
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "bomhort-license-resolver")
@@ -236,13 +235,16 @@ func (r *Resolver) getJSON(ctx context.Context, u string, out any) bool {
 	resp, err := r.httpClient.Do(req)
 	if err != nil {
 		log.Printf("  NuGet request failed for %s: %v", u, err)
-		return false
+		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return false
+	if resp.StatusCode == http.StatusNotFound {
+		return errNotFound
 	}
-	return json.NewDecoder(resp.Body).Decode(out) == nil
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
 }
 
 // LicenseFromURL maps a well-known license URL to an SPDX ID, or "".

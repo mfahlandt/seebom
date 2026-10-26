@@ -84,26 +84,30 @@ func (c *Client) QueryExistingVulnKeys(ctx context.Context) (map[string]struct{}
 	return keys, nil
 }
 
-// QuerySBOMsByPURL returns all SBOMs that contain a given PURL in their dependency tree.
-func (c *Client) QuerySBOMsByPURL(ctx context.Context, purl string) ([]SBOMRef, error) {
+// QuerySBOMsByPURLs maps each given PURL to the SBOMs containing it, with
+// the shortest dependency depth per SBOM. One scan for the whole batch
+// instead of one per PURL (#486); callers chunk purls to a few thousand.
+func (c *Client) QuerySBOMsByPURLs(ctx context.Context, purls []string) (map[string][]SBOMRef, error) {
 	rows, err := c.Conn.Query(ctx, `
-		SELECT sbom_id, source_file, cluster, namespace, project,
-			arrayMin(arrayFilter((d, p) -> p = ?, arrayResize(package_depths, length(package_purls), 65535), package_purls)) AS dependency_depth
+		SELECT sbom_id, source_file, cluster, namespace, project, purl, min(depth) AS dependency_depth
 		FROM sbom_packages FINAL
-		WHERE has(package_purls, ?)
-	`, purl, purl)
+		ARRAY JOIN package_purls AS purl, arrayResize(package_depths, length(package_purls), 65535) AS depth
+		WHERE purl IN (?)
+		GROUP BY sbom_id, source_file, cluster, namespace, project, purl
+	`, purls)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query SBOMs by PURL %s: %w", purl, err)
+		return nil, fmt.Errorf("failed to query SBOMs by PURLs: %w", err)
 	}
 	defer rows.Close()
 
-	var refs []SBOMRef
+	refs := make(map[string][]SBOMRef, len(purls))
 	for rows.Next() {
 		var ref SBOMRef
-		if err := rows.Scan(&ref.SBOMID, &ref.SourceFile, &ref.Cluster, &ref.Namespace, &ref.Project, &ref.DependencyDepth); err != nil {
+		var purl string
+		if err := rows.Scan(&ref.SBOMID, &ref.SourceFile, &ref.Cluster, &ref.Namespace, &ref.Project, &purl, &ref.DependencyDepth); err != nil {
 			return nil, fmt.Errorf("failed to scan SBOM ref: %w", err)
 		}
-		refs = append(refs, ref)
+		refs[purl] = append(refs[purl], ref)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows error: %w", err)

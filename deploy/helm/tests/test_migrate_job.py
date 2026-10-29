@@ -1,4 +1,4 @@
-"""The schema-migration hook Job is named after what it runs, not the Helm revision.
+"""The schema-migration Job is named after what it runs, not the Helm revision.
 
 Argo CD renders the chart with `helm template`, where .Release.Revision is
 always 1. The Job was therefore always `<release>-migrate-1`: created once,
@@ -9,8 +9,9 @@ failed the Argo sync. These tests pin the replacement:
 - the name is stable for identical input,
 - it changes when a migration file or the Job spec changes (new Job runs),
 - the password comes from userPasswordSecret when that is enabled,
-- the Job fails instead of hanging, and hook policies replace failed Jobs
-  and delete successful ones.
+- the Job fails instead of hanging,
+- it is an ordinary resource, not a Helm hook: a pre-install hook runs before
+  its ConfigMap, Secret and ClickHouse exist.
 
 Run with python3 -m unittest discover -s deploy/helm/tests -v (requires helm).
 """
@@ -84,10 +85,8 @@ class MigrateJobNameTest(unittest.TestCase):
     def test_name_fits_a_kubernetes_name(self):
         self.assertLessEqual(len(job_name(render(release="bomhort"))), 63)
 
-    def test_job_runs_before_install_and_upgrade_and_is_cleaned_up(self):
-        output = render()
-        self.assertIn("helm.sh/hook: pre-install,pre-upgrade", output)
-        self.assertIn("helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded", output)
+    def test_job_is_not_a_hook(self):
+        self.assertNotIn("helm.sh/hook", render())
 
 
 class MigrateJobPasswordTest(unittest.TestCase):

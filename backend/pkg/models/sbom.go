@@ -166,6 +166,10 @@ type IngestionJob struct {
 	// RetryAfter keeps a newly enqueued job unclaimable until then. Zero
 	// means immediately.
 	RetryAfter time.Time `json:"retry_after,omitempty"`
+	// Version is the created_at of the job's latest queue row. Every new
+	// status row is written strictly after it, so ReplacingMergeTree and
+	// argMax never see a tie or an older transition as the latest state.
+	Version time.Time `json:"-"`
 }
 
 // StoredDocument is a row in document_store (#256): the reference to the

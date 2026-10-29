@@ -238,12 +238,7 @@ dev-status: ## Show status of all containers + ingestion progress
 ch-shell: ## Open a ClickHouse client shell
 	docker compose exec clickhouse clickhouse-client --database=bomhort
 
-ch-migrate: ## Manually run all migrations against running ClickHouse
-	@for f in db/migrations/*.sql; do \
-		echo "⏳ Running $$f ..."; \
-		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f"; \
-	done
-	@echo "✅ All migrations applied."
+ch-migrate: migrate ## Run all migrations against running ClickHouse (alias for migrate)
 
 # ─── Local dev (without Docker for backend) ──────────────────────────────────
 # Start only ClickHouse, then run Go services locally.

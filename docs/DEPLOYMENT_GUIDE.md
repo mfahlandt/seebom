@@ -677,7 +677,7 @@ cp .env.example .env
 | `SBOM_SOURCE_DIR` | `./sboms` | Path to local SBOM files (used alongside or instead of S3). |
 | `SBOM_LIMIT` | `0` | Max SBOMs to enqueue per watcher run. `0` = unlimited. VEX files are never limited. |
 | `SBOM_IGNORE_PREFIX` | `_` | Local files starting with this prefix are skipped during scanning. Empty = no skip. |
-| `WORKER_REPLICAS` | `1` | Number of parallel parsing worker containers |
+| `WORKER_REPLICAS` | `1` | Number of parallel parsing worker containers. Keep `1`: only Kubernetes serialises claims across workers |
 | `WORKER_BATCH_SIZE` | `50` | Jobs claimed per polling cycle per worker |
 | `SKIP_OSV` | `false` | Skip OSV vulnerability API calls. Set `true` for fast initial bulk load. |
 | `SKIP_GITHUB_RESOLVE` | `false` | Skip GitHub license resolution for packages with unknown licenses. |

@@ -47,8 +47,8 @@ var insertSourceFiles = []string{
 
 // resolveStringExpr flattens a Go string expression into its literal value.
 //
-// It handles the one indirection this package uses for SQL: concatenation with
-// the shared queueColumns const, as in
+// It handles the indirection this package uses for SQL: concatenation with
+// the shared queueColumns and nextVersion consts, as in
 //
 //	"INSERT INTO ingestion_queue (" + queueColumns + ")"
 //
@@ -66,9 +66,12 @@ func resolveStringExpr(e ast.Expr) (string, bool) {
 		}
 		return s, true
 	case *ast.Ident:
-		// The only const we resolve; its value is compiled into this test.
-		if v.Name == "queueColumns" {
+		// The only consts we resolve; their values are compiled into this test.
+		switch v.Name {
+		case "queueColumns":
 			return queueColumns, true
+		case "nextVersion":
+			return nextVersion, true
 		}
 		return "", false
 	case *ast.BinaryExpr:

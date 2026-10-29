@@ -897,16 +897,18 @@ helm install bomhort ./deploy/helm/bomhort \
 
 ### Schema migrations {#schema-migrations}
 
-Every install and upgrade runs a `migrate` Job before applying the new
-workloads. It applies all files in the chart's `migrations/` directory.
+Every install and upgrade creates a `migrate` Job alongside the workloads.
+It applies all files in the chart's `migrations/` directory.
 One-off data backfills record themselves in `data_migrations` and are skipped
 afterwards. Migration `028` also uses this marker because it rebuilds
 `ingestion_queue`; it must not run again after the first successful rebuild.
 
 The Job is named `<release>-migrate-<hash>`. The hash covers the migration
-files, the migration script and the Job spec. Its Helm hook is deleted after
-success and runs again on the next upgrade, so the migration script skips
-already-applied one-off migrations by their markers.
+files, the migration script and the Job spec, so a new Job runs exactly when
+one of them changes. The Job is not a Helm hook: a pre-install hook would run
+before its ConfigMap, the credentials Secret and ClickHouse exist. Because it
+starts together with the new workloads, migration `028` needs the writer pause
+below.
 
 **Upgrading an existing installation with migration `028` requires a short
 queue-writer pause.** The migration rebuilds and exchanges `ingestion_queue`;
@@ -925,20 +927,31 @@ kubectl -n bomhort get pods --field-selector=status.phase=Running \
 kubectl -n bomhort get jobs -l app.kubernetes.io/component=ingestion-watcher
 ```
 
-Confirm no matching writer pods or active watcher Jobs remain, then run the
-Helm upgrade or Argo CD sync. The pre-upgrade migration Job rebuilds the
-queue before the new workloads start. The upgrade restores Deployment
-replicas from chart values; resume the watcher after the migration succeeds:
+Confirm no matching writer pods or active watcher Jobs remain. Upgrade with
+the writers kept at zero, so the new Deployments do not start during the
+rebuild, and wait for the migration Job:
 
 ```bash
+helm upgrade bomhort <chart> -n bomhort --reuse-values \
+  --set apiGateway.replicas=0 --set parsingWorker.replicas=0
+kubectl -n bomhort wait --for=condition=complete --timeout=1h \
+  job -l app.kubernetes.io/component=migrate
+```
+
+Then upgrade again with your normal replica counts (the migration Job is
+unchanged, so nothing reruns) and resume the watcher:
+
+```bash
+helm upgrade bomhort <chart> -n bomhort --reuse-values \
+  --set apiGateway.replicas=<n> --set parsingWorker.replicas=<n>
 kubectl -n bomhort patch cronjob bomhort-ingestion-watcher \
   --type merge -p '{"spec":{"suspend":false}}'
 ```
 
-If the migration fails, keep the writers stopped, fix the cause, and retry
-the Helm upgrade or Argo sync. If Argo CD auto-sync/self-heal is enabled,
-pause it for this maintenance window so it does not restore scaled workloads
-before the migration finishes. A fresh install does not need this pause.
+With Argo CD, sync once with both replica values set to `0` and wait for the
+`migrate` Job, then restore the values and sync again. If the migration fails,
+keep the writers stopped, fix the cause, and sync again. A fresh install does
+not need this pause.
 
 {{% alert title="Up to 0.8.0-rc.1: the Job was named after the Helm revision" color="warning" %}}
 These charts named the Job `<release>-migrate-<revision>`. Argo CD renders
@@ -960,9 +973,9 @@ kubectl -n bomhort logs -l app.kubernetes.io/component=migrate --tail=40
 ```
 {{% /alert %}}
 
-After restoring ClickHouse from an older backup, run a Helm upgrade or Argo
-sync to execute the migration hook again. Migration `028` runs only if its
-`data_migrations` marker is absent.
+After restoring ClickHouse from an older backup, delete the `migrate` Job and
+run a Helm upgrade or Argo sync to run it again. Migration `028` runs only if
+its `data_migrations` marker is absent.
 
 **A failed `migrate` Job is not retried automatically by another upgrade.**
 The migration script exits with an error instead of waiting forever;
@@ -977,9 +990,8 @@ Job `Failed`:
   `migrations.activeDeadlineSeconds` (default `3600`).
 
 Fix the cause (for example the password in `clickhouse.password` or in the
-`clickhouse.userPasswordSecret` secret), then retry the upgrade or sync. The
-`before-hook-creation` policy removes the failed hook Job before creating its
-replacement:
+`clickhouse.userPasswordSecret` secret), delete the failed Job, then retry the
+upgrade or sync:
 
 ```bash
 kubectl -n bomhort get jobs -l app.kubernetes.io/component=migrate

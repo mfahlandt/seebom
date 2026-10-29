@@ -21,6 +21,18 @@ const (
 	retryPeriod   = 2 * time.Second
 )
 
+var (
+	// maxHold bounds one critical section. client-go releases a Lease whose
+	// renewal failed no earlier than renewDeadline after it started, and
+	// other holders wait leaseDuration, so a result that is ready before
+	// maxHold (measured from before acquisition) was written while we held it.
+	maxHold = renewDeadline - 5*time.Second
+)
+
+// ErrLeaseLost reports a critical section that may have overlapped another
+// holder; its result must be discarded.
+var ErrLeaseLost = errors.New("claim lock lost or held too long; result discarded")
+
 type Locker interface {
 	WithLock(context.Context, func(context.Context) error) error
 }
@@ -29,6 +41,8 @@ type localLocker struct {
 	gate chan struct{}
 }
 
+// Local serialises callers inside one process only. Separate worker
+// processes (Docker Compose replicas) are not serialised by it.
 func Local() Locker {
 	return &localLocker{gate: make(chan struct{}, 1)}
 }
@@ -82,6 +96,9 @@ func (l *kubernetesLocker) WithLock(ctx context.Context, fn func(context.Context
 	return l.local.WithLock(ctx, func(ctx context.Context) error {
 		runCtx, cancel := context.WithCancel(context.Background())
 		defer cancel()
+		// shortcut: monotonic time stops during host suspend, so a suspended
+		// (not merely paused) node can overrun maxHold unnoticed; acceptable for pods.
+		start := time.Now()
 		started := make(chan struct{})
 		result := make(chan error, 1)
 		runDone := make(chan struct{})
@@ -95,9 +112,13 @@ func (l *kubernetesLocker) WithLock(ctx context.Context, fn func(context.Context
 			Callbacks: leaderelection.LeaderCallbacks{
 				OnStartedLeading: func(leaderCtx context.Context) {
 					close(started)
-					fnCtx, cancelFn := context.WithCancel(leaderCtx)
+					fnCtx, cancelFn := context.WithDeadline(leaderCtx, start.Add(maxHold))
 					stopCancel := context.AfterFunc(ctx, cancelFn)
-					result <- fn(fnCtx)
+					err := fn(fnCtx)
+					if leaderCtx.Err() != nil || time.Since(start) >= maxHold {
+						err = ErrLeaseLost
+					}
+					result <- err
 					stopCancel()
 					cancelFn()
 					cancel()

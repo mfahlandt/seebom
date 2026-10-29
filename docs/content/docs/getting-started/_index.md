@@ -95,7 +95,7 @@ cp .env.example .env
 | `SBOM_SOURCE_DIR` | `./sboms` | Path to local SBOM files |
 | `SBOM_LIMIT` | `0` | Max SBOMs to enqueue (`0` = unlimited) |
 | `SBOM_IGNORE_PREFIX` | `_` | Skip local files starting with this prefix |
-| `WORKER_REPLICAS` | `1` | Number of parallel workers |
+| `WORKER_REPLICAS` | `1` | Number of parallel workers. Keep `1`: only Kubernetes serialises claims across workers |
 | `WORKER_BATCH_SIZE` | `50` | Jobs per polling cycle |
 | `SKIP_OSV` | `false` | Skip vulnerability lookups for fast ingestion |
 | `SKIP_GITHUB_RESOLVE` | `false` | Skip GitHub license resolution |

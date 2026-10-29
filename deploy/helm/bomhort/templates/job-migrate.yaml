@@ -1,8 +1,12 @@
 {{- /*
-  The content-derived name changes when the migration ConfigMap or Job spec
-  changes. As a Helm hook, the Job runs before installs/upgrades and is
-  deleted after success; migration markers keep one-off data changes from
-  running again.
+  Schema migrations. The Job name is derived from what it would run — the
+  rendered migrations ConfigMap and the Job spec — not from
+  .Release.Revision. Argo CD renders the chart with `helm template`, where
+  the revision is always 1: the Job kept its name, was never re-run for new
+  migrations, and any change to its (immutable) pod template failed the
+  sync. A content-derived name gives a new Job exactly when a migration, the
+  script or the spec changes, and the same Job — nothing to do — otherwise.
+  The migrations are idempotent (IF NOT EXISTS), so a re-run is harmless.
 */}}
 {{- $configMap := include (print $.Template.BasePath "/configmap-migrations.yaml") . }}
 {{- $spec := include "bomhort.migrateJob.spec" . }}
@@ -10,9 +14,6 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: {{ .Release.Name }}-migrate-{{ printf "%s\n---\n%s" $configMap $spec | sha256sum | trunc 10 }}
-  annotations:
-    helm.sh/hook: pre-install,pre-upgrade
-    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
   labels:
     app.kubernetes.io/name: bomhort
     app.kubernetes.io/component: migrate

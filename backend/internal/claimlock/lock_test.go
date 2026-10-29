@@ -2,6 +2,7 @@ package claimlock
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -77,22 +78,40 @@ func TestLocalSerializesCallbacks(t *testing.T) {
 	}
 }
 
+func newTestLocker(t *testing.T, client *fake.Clientset, identity string) Locker {
+	t.Helper()
+	lock, err := resourcelock.New(
+		resourcelock.LeasesResourceLock,
+		"test",
+		leaseName,
+		client.CoreV1(),
+		client.CoordinationV1(),
+		resourcelock.ResourceLockConfig{Identity: identity},
+	)
+	if err != nil {
+		t.Fatalf("create lease lock: %v", err)
+	}
+	return &kubernetesLocker{local: Local(), lock: lock}
+}
+
+// A critical section that outlives maxHold may have overlapped the next
+// holder, so its result must not be used.
+func TestKubernetesDiscardsResultAfterMaxHold(t *testing.T) {
+	previous := maxHold
+	maxHold = 50 * time.Millisecond
+	t.Cleanup(func() { maxHold = previous })
+	locker := newTestLocker(t, fake.NewSimpleClientset(), "slow")
+	err := locker.WithLock(context.Background(), func(context.Context) error {
+		time.Sleep(100 * time.Millisecond)
+		return nil
+	})
+	if !errors.Is(err, ErrLeaseLost) {
+		t.Fatalf("WithLock error = %v, want ErrLeaseLost", err)
+	}
+}
+
 func TestKubernetesSerializesCallbacksAcrossLockers(t *testing.T) {
 	client := fake.NewSimpleClientset()
-	newLocker := func(identity string) Locker {
-		lock, err := resourcelock.New(
-			resourcelock.LeasesResourceLock,
-			"test",
-			leaseName,
-			client.CoreV1(),
-			client.CoordinationV1(),
-			resourcelock.ResourceLockConfig{Identity: identity},
-		)
-		if err != nil {
-			t.Fatalf("create lease lock: %v", err)
-		}
-		return &kubernetesLocker{local: Local(), lock: lock}
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -101,7 +120,7 @@ func TestKubernetesSerializesCallbacksAcrossLockers(t *testing.T) {
 	releaseFirst := make(chan struct{})
 	firstDone := make(chan error, 1)
 	secondDone := make(chan error, 1)
-	first, second := newLocker("first"), newLocker("second")
+	first, second := newTestLocker(t, client, "first"), newTestLocker(t, client, "second")
 
 	go func() {
 		firstDone <- first.WithLock(ctx, func(context.Context) error {

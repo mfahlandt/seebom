@@ -100,3 +100,47 @@ func TestOwnClaimedJobIDsIgnoresSupersededClaim(t *testing.T) {
 		}
 	}
 }
+
+// TestTransitionsOutrankPreviousRow proves claim and completion stay ordered
+// when the enqueuing host's clock is ahead and transitions land in the same
+// millisecond. Skipped unless CLICKHOUSE_HOST is set.
+func TestTransitionsOutrankPreviousRow(t *testing.T) {
+	c := testClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	job := models.IngestionJob{
+		CreatedAt:  time.Now().Add(5 * time.Second),
+		JobID:      uuid.New(),
+		SourceFile: "integration-test/skew-" + uuid.NewString() + ".spdx.json",
+		SHA256Hash: uuid.NewString(),
+		JobType:    "sbom",
+	}
+	if err := c.EnqueueJobs(ctx, []models.IngestionJob{job}); err != nil {
+		t.Fatalf("EnqueueJobs: %v", err)
+	}
+	claimed, err := c.ClaimJobs(ctx, "skew-worker", 10000, claimlock.Local())
+	if err != nil {
+		t.Fatalf("ClaimJobs: %v", err)
+	}
+	var mine *models.IngestionJob
+	for i := range claimed {
+		if claimed[i].JobID == job.JobID {
+			mine = &claimed[i]
+		}
+	}
+	if mine == nil {
+		t.Fatal("claim of a future-dated pending row did not become the latest state")
+	}
+	if err := c.CompleteJob(ctx, *mine); err != nil {
+		t.Fatalf("CompleteJob: %v", err)
+	}
+	var status string
+	if err := c.Conn.QueryRow(ctx,
+		"SELECT argMax(status, created_at) FROM ingestion_queue WHERE job_id = ?", job.JobID).Scan(&status); err != nil {
+		t.Fatalf("read status: %v", err)
+	}
+	if status != models.JobStatusDone {
+		t.Fatalf("latest status = %q, want %q", status, models.JobStatusDone)
+	}
+}

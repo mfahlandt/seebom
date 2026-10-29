@@ -64,7 +64,7 @@ Copy `.env.example` to `.env` and adjust as needed. Key variables for developmen
 | `SBOM_LIMIT` | `50`–`200` | Faster ingestion cycles during development |
 | `SKIP_OSV` | `true` (initial load) | Skip OSV API calls for fast bulk loading, re-enable after |
 | `GITHUB_TOKEN` | Set it | Avoids 60 req/h rate limit; see [FAQ: Should I use a GitHub token?](/docs/faq/#should-i-use-a-github-token) |
-| `WORKER_REPLICAS` | `1` | Sufficient for local development |
+| `WORKER_REPLICAS` | `1` | Keep `1`: only Kubernetes serialises claims across workers |
 
 ## Code Style
 

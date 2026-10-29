@@ -124,7 +124,7 @@ In-repo: [DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md) · [RELEASE.md](docs/RE
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Go 1.26, `net/http` (stdlib), six direct dependencies |
+| Backend | Go 1.26, `net/http` (stdlib), seven direct dependencies |
 | Database | ClickHouse (MergeTree family), managed by the ClickHouse Operator in Kubernetes |
 | Frontend | Angular, standalone components, CDK virtual scrolling |
 | Vulnerabilities | OSV.dev API |

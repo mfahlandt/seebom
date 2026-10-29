@@ -374,6 +374,34 @@ asks "what state is this job in" goes through one subquery (`latestJobs` in
 
 Tests: `internal/clickhouse/queue_retry_integration_test.go` (live).
 
+### Claim ordering and exclusive claims (#446, #483)
+
+`created_at` is the ReplacingMergeTree version and the `argMax` key, so it
+decides which row is a job's current state. Two rules keep it honest:
+
+- **One clock, strictly increasing.** `created_at` is `DateTime64(3)`
+  (migration `028`, a table rebuild: the version column of a
+  ReplacingMergeTree cannot be re-typed with `ALTER`). Every transition is
+  written on the ClickHouse clock and at least 1 ms after the job's previous
+  row (`nextVersion` in `queue.go`; `IngestionJob.Version` carries the
+  previous row's time). A worker with a fast clock can therefore not write a
+  claim that outranks its own completion, and two transitions never tie.
+- **Claims are serialised.** `ClaimJobs` runs under `claimlock.Locker`. On
+  Kubernetes that is a Lease (`bomhort-ingestion-queue-claims`, client-go
+  leader election, 15 s/10 s/2 s, RBAC in `claim-lock-rbac.yaml`,
+  `POD_NAMESPACE` from the downward API); outside Kubernetes an in-process
+  mutex, which is why Compose runs one worker (`WORKER_REPLICAS=1`). A claim
+  whose critical section outlived `maxHold` (5 s) or lost the Lease is
+  discarded (`ErrLeaseLost`); the rows it already wrote are `processing`
+  under this worker's id, and the worker's next `ClaimJobs` requeues its own
+  leftover claims before claiming again, so they do not wait for the hourly
+  sweep. After the insert, `ownClaimedJobIDs` re-reads the latest state and
+  returns only jobs this worker still owns.
+
+Tests: `internal/claimlock/lock_test.go` (fake clientset),
+`internal/clickhouse/queue_claim_integration_test.go` (live: concurrent
+claims, superseded claim, clock skew, abandoned claims).
+
 ### Ingestion Path Layout (`internal/ingestpath`)
 
 Teams already organise buckets hierarchically. Rather than guessing that

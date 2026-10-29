@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -117,8 +119,8 @@ func (c *Client) selectJobs(ctx context.Context, where string, limit int) ([]mod
 }
 
 // ClaimJobs selects up to `limit` pending jobs and marks them as processing.
-// Uses argMax aggregation to reliably determine the latest status per job,
-// regardless of merge timing. This avoids phantom re-claims entirely.
+// It verifies the latest state after writing and drops claims already superseded.
+// shortcut: a claim written after this re-read can still overlap; upgrade to atomic claiming if that race becomes material.
 func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]models.IngestionJob, error) {
 	jobs, err := c.selectJobs(ctx, "latest_status = 'pending' AND retry_after <= now()", limit)
 	if err != nil {
@@ -171,7 +173,60 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 		return nil, fmt.Errorf("failed to send claim batch: %w", err)
 	}
 
-	return jobs, nil
+	jobIDs := make([]uuid.UUID, len(jobs))
+	for i := range jobs {
+		jobIDs[i] = jobs[i].JobID
+	}
+	owned, err := c.ownClaimedJobIDs(ctx, jobIDs, workerID)
+	if err != nil {
+		return nil, err
+	}
+	claimed := jobs[:0]
+	for _, job := range jobs {
+		if _, ok := owned[job.JobID]; ok {
+			claimed = append(claimed, job)
+		}
+	}
+	return claimed, nil
+}
+
+// ownClaimedJobIDs keeps only claims that still belong to this worker after
+// concurrent workers may have written a newer processing row.
+func (c *Client) ownClaimedJobIDs(ctx context.Context, jobIDs []uuid.UUID, workerID string) (map[uuid.UUID]struct{}, error) {
+	jobIDStrings := make([]string, len(jobIDs))
+	for i := range jobIDs {
+		jobIDStrings[i] = jobIDs[i].String()
+	}
+	rows, err := c.Conn.Query(ctx, `
+		SELECT toString(job_id), argMax(status, created_at), argMax(claimed_by, created_at)
+		FROM ingestion_queue
+		WHERE toString(job_id) IN (?)
+		GROUP BY job_id
+	`, jobIDStrings)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify claimed jobs: %w", err)
+	}
+	defer rows.Close()
+
+	owned := make(map[uuid.UUID]struct{}, len(jobIDs))
+	for rows.Next() {
+		var jobID string
+		var status, claimedBy string
+		if err := rows.Scan(&jobID, &status, &claimedBy); err != nil {
+			return nil, fmt.Errorf("failed to scan claimed job: %w", err)
+		}
+		if status == models.JobStatusProcessing && claimedBy == workerID {
+			parsedID, err := uuid.Parse(jobID)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse claimed job ID: %w", err)
+			}
+			owned[parsedID] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read claimed jobs: %w", err)
+	}
+	return owned, nil
 }
 
 // CompleteJob marks a job as done.

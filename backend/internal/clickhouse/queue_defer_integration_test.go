@@ -51,10 +51,8 @@ func TestDeferJobRespectsRetryAfter(t *testing.T) {
 		t.Fatal("freshly enqueued job (retry_after = epoch) was not claimable")
 	}
 
-	// created_at is a DateTime with second resolution, so two queue rows written
-	// within the same second tie in argMax. Production never writes two deferral
-	// rows that close together (the retry is an hour away); the test has to wait.
-	tick := func() { time.Sleep(1100 * time.Millisecond) }
+	// Keep queue transitions in distinct DateTime64(3) ticks.
+	tick := func() { time.Sleep(2 * time.Millisecond) }
 
 	tick()
 	if err := c.DeferJob(ctx, job, time.Now().Add(time.Hour), "github rate limit"); err != nil {

@@ -115,12 +115,55 @@ func valuesPlaceholderCount(sql string) int {
 	return strings.Count(sql[idx:], "?")
 }
 
+func insertValueCount(sql string) int {
+	upper := strings.ToUpper(stripSQLComments(sql))
+	idx := strings.Index(upper, "VALUES")
+	if idx < 0 {
+		return -1
+	}
+
+	values := strings.TrimSpace(sql[idx+len("VALUES"):])
+	if !strings.HasPrefix(values, "(") {
+		return -1
+	}
+	values = values[1:]
+	count, depth, inString := 1, 0, false
+	for _, r := range values {
+		switch r {
+		case '\'':
+			inString = !inString
+		case '(':
+			if !inString {
+				depth++
+			}
+		case ')':
+			if inString {
+				continue
+			}
+			if depth == 0 {
+				return count
+			}
+			depth--
+		case ',':
+			if !inString && depth == 0 {
+				count++
+			}
+		case ';':
+			if !inString && depth == 0 {
+				return count
+			}
+		}
+	}
+	return count
+}
+
 // insertCall is one checkable INSERT ↔ values correspondence.
 type insertCall struct {
 	fn     string // file:function, for the failure message
 	sql    string
-	values int    // batch.Append args, or Exec args after (ctx, sql)
-	shape  string // "batch" or "exec"
+	values int // SQL expressions, or batch.Append args
+	args   int // Exec args after (ctx, sql)
+	shape  string
 }
 
 // collectInsertCalls pairs every INSERT statement with the values written
@@ -186,7 +229,8 @@ func collectInsertCalls(t *testing.T) []insertCall {
 					calls = append(calls, insertCall{
 						fn:     fnName,
 						sql:    sql,
-						values: len(call.Args) - 2, // minus ctx and the SQL itself
+						values: insertValueCount(sql),
+						args:   len(call.Args) - 2, // minus ctx and the SQL itself
 						shape:  "exec",
 					})
 				}
@@ -257,11 +301,9 @@ func TestInsertColumnsMatchAppendedValues(t *testing.T) {
 	}
 }
 
-// TestInsertPlaceholdersMatchColumns covers the Exec shape, where the `?` list
-// is a third copy of the column count. queueColumns is shared by all writers,
-// so growing it without growing CompleteJob/FailJob's VALUES list would drop
-// the new dimension on every status transition.
-func TestInsertPlaceholdersMatchColumns(t *testing.T) {
+// TestExecPlaceholdersMatchArguments ensures every Exec placeholder has an
+// argument, including when a VALUES expression such as now64(3) is server-side.
+func TestExecPlaceholdersMatchArguments(t *testing.T) {
 	calls := collectInsertCalls(t)
 
 	checked := 0
@@ -273,11 +315,10 @@ func TestInsertPlaceholdersMatchColumns(t *testing.T) {
 		if placeholders < 0 {
 			continue
 		}
-		cols := insertColumnCount(c.sql)
 		checked++
-		if cols != placeholders {
-			t.Errorf("%s: INSERT names %d column(s) but VALUES has %d placeholder(s)\n--- statement ---\n%s",
-				c.fn, cols, placeholders, strings.TrimSpace(c.sql))
+		if c.args != placeholders {
+			t.Errorf("%s: VALUES has %d placeholder(s) but Exec supplies %d argument(s)\n--- statement ---\n%s",
+				c.fn, placeholders, c.args, strings.TrimSpace(c.sql))
 		}
 	}
 

@@ -6,7 +6,61 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
+	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
+
+// TestConcurrentClaimJobs returns each pending job to only one caller.
+// Skipped unless CLICKHOUSE_HOST is set.
+func TestConcurrentClaimJobs(t *testing.T) {
+	c := testClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	job := models.IngestionJob{
+		CreatedAt:  time.Now(),
+		JobID:      uuid.New(),
+		SourceFile: "integration-test/concurrent-claim-" + uuid.NewString() + ".spdx.json",
+		SHA256Hash: uuid.NewString(),
+		JobType:    "sbom",
+	}
+	if err := c.EnqueueJobs(ctx, []models.IngestionJob{job}); err != nil {
+		t.Fatalf("EnqueueJobs: %v", err)
+	}
+
+	locker := claimlock.Local()
+	start := make(chan struct{})
+	type result struct {
+		jobs []models.IngestionJob
+		err  error
+	}
+	results := make(chan result, 2)
+	for _, worker := range []string{"claim-a", "claim-b"} {
+		go func(worker string) {
+			<-start
+			jobs, err := c.ClaimJobs(ctx, worker, 10000, locker)
+			results <- result{jobs: jobs, err: err}
+		}(worker)
+	}
+	close(start)
+
+	claims := 0
+	for range 2 {
+		got := <-results
+		if got.err != nil {
+			t.Fatalf("ClaimJobs: %v", got.err)
+		}
+		for _, claimed := range got.jobs {
+			if claimed.JobID == job.JobID {
+				claims++
+			}
+		}
+	}
+	if claims != 1 {
+		t.Fatalf("concurrent ClaimJobs returned target job %d times, want once", claims)
+	}
+}
 
 // TestOwnClaimedJobIDsIgnoresSupersededClaim proves a worker does not process a
 // job when another worker's newer claim row is the latest queue state.

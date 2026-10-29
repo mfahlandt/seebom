@@ -1,4 +1,4 @@
-"""The schema-migration Job is named after what it runs, not the Helm revision.
+"""The schema-migration hook Job is named after what it runs, not the Helm revision.
 
 Argo CD renders the chart with `helm template`, where .Release.Revision is
 always 1. The Job was therefore always `<release>-migrate-1`: created once,
@@ -6,11 +6,11 @@ never re-run when a release added migrations (production ran 0.8.0 code
 against a 0.7 schema), and every later change to its immutable pod template
 failed the Argo sync. These tests pin the replacement:
 
-- the name is stable for identical input (no Argo diff, no re-run),
+- the name is stable for identical input,
 - it changes when a migration file or the Job spec changes (new Job runs),
 - the password comes from userPasswordSecret when that is enabled,
-- the Job fails instead of hanging: an upgrade with the same migrations
-  renders the same name and never replaces a stuck Job.
+- the Job fails instead of hanging, and hook policies replace failed Jobs
+  and delete successful ones.
 
 Run with python3 -m unittest discover -s deploy/helm/tests -v (requires helm).
 """
@@ -84,6 +84,11 @@ class MigrateJobNameTest(unittest.TestCase):
     def test_name_fits_a_kubernetes_name(self):
         self.assertLessEqual(len(job_name(render(release="bomhort"))), 63)
 
+    def test_job_runs_before_install_and_upgrade_and_is_cleaned_up(self):
+        output = render()
+        self.assertIn("helm.sh/hook: pre-install,pre-upgrade", output)
+        self.assertIn("helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded", output)
+
 
 class MigrateJobPasswordTest(unittest.TestCase):
     def test_chart_secret_by_default(self):
@@ -120,6 +125,7 @@ class MigrateJobFailsVisiblyTest(unittest.TestCase):
         self.assertIn('if [ "$tries" -ge 100 ]; then', script)
         # The client's error is kept, not discarded, so the log says why.
         self.assertNotIn('--query="SELECT 1" >/dev/null', script)
+        self.assertIn("ingestion_queue_created_at_datetime64", script)
 
     def test_rejected_credentials_fail_at_once(self):
         script = self.script()

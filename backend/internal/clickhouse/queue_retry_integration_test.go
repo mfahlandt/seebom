@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -102,7 +103,7 @@ func TestRequeueStaleJobs(t *testing.T) {
 		t.Fatalf("requeued %d jobs, want at least the stale one", n)
 	}
 
-	jobs, err := c.ClaimJobs(ctx, "stale-test", 10000)
+	jobs, err := c.ClaimJobs(ctx, "stale-test", 10000, claimlock.Local())
 	if err != nil {
 		t.Fatalf("ClaimJobs: %v", err)
 	}

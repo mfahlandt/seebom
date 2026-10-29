@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
 	"github.com/seebom-labs/bomhort/backend/internal/clickhouse"
 	"github.com/seebom-labs/bomhort/backend/internal/config"
 	"github.com/seebom-labs/bomhort/backend/internal/depgraph"
@@ -42,6 +43,11 @@ func main() {
 		log.Fatalf("Failed to connect to ClickHouse: %v", err)
 	}
 	defer chClient.Close()
+
+	claimLocker, err := claimlock.New(cfg.WorkerID)
+	if err != nil {
+		log.Fatalf("Failed to initialize queue claim lock: %v", err)
+	}
 
 	osvClient := osv.NewClient()
 
@@ -226,7 +232,7 @@ func main() {
 		default:
 		}
 
-		jobs, err := chClient.ClaimJobs(ctx, cfg.WorkerID, cfg.WorkerBatchSize)
+		jobs, err := chClient.ClaimJobs(ctx, cfg.WorkerID, cfg.WorkerBatchSize, claimLocker)
 		if err != nil {
 			log.Printf("ERROR: Failed to claim jobs: %v", err)
 			time.Sleep(5 * time.Second)

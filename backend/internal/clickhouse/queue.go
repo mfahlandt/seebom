@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/seebom-labs/bomhort/backend/internal/claimlock"
 	"github.com/seebom-labs/bomhort/backend/pkg/models"
 )
 
@@ -118,10 +119,22 @@ func (c *Client) selectJobs(ctx context.Context, where string, limit int) ([]mod
 	return jobs, rows.Err()
 }
 
-// ClaimJobs selects up to `limit` pending jobs and marks them as processing.
-// It verifies the latest state after writing and drops claims already superseded.
-// shortcut: a claim written after this re-read can still overlap; upgrade to atomic claiming if that race becomes material.
-func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]models.IngestionJob, error) {
+// ClaimJobs selects up to `limit` pending jobs and marks them as processing
+// while holding the shared claim lock.
+func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int, locker claimlock.Locker) ([]models.IngestionJob, error) {
+	if locker == nil {
+		return nil, fmt.Errorf("claim lock is required")
+	}
+	var claimed []models.IngestionJob
+	err := locker.WithLock(ctx, func(ctx context.Context) error {
+		var err error
+		claimed, err = c.claimJobs(ctx, workerID, limit)
+		return err
+	})
+	return claimed, err
+}
+
+func (c *Client) claimJobs(ctx context.Context, workerID string, limit int) ([]models.IngestionJob, error) {
 	jobs, err := c.selectJobs(ctx, "latest_status = 'pending' AND retry_after <= now()", limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query pending jobs: %w", err)
@@ -190,8 +203,8 @@ func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int) ([]m
 	return claimed, nil
 }
 
-// ownClaimedJobIDs keeps only claims that still belong to this worker after
-// concurrent workers may have written a newer processing row.
+// ownClaimedJobIDs confirms that each persisted claim still belongs to this
+// worker before returning it for processing.
 func (c *Client) ownClaimedJobIDs(ctx context.Context, jobIDs []uuid.UUID, workerID string) (map[uuid.UUID]struct{}, error) {
 	jobIDStrings := make([]string, len(jobIDs))
 	for i := range jobIDs {
@@ -234,8 +247,8 @@ func (c *Client) CompleteJob(ctx context.Context, job models.IngestionJob) error
 	now := time.Now()
 	return c.Conn.Exec(ctx,
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusDone, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, "", job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, time.Time{})
+		 VALUES (now64(3), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusDone, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, "", job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, time.Time{})
 }
 
 // FailJob marks a job as failed with an error message.
@@ -243,8 +256,8 @@ func (c *Client) FailJob(ctx context.Context, job models.IngestionJob, errMsg st
 	now := time.Now()
 	return c.Conn.Exec(ctx,
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		now, job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusFailed, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, errMsg, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, time.Time{})
+		 VALUES (now64(3), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusFailed, job.JobType, job.ClaimedBy, job.ClaimedAt, &now, errMsg, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, time.Time{})
 }
 
 // DeferJob puts a claimed job back to 'pending' so that ClaimJobs picks it up
@@ -256,8 +269,8 @@ func (c *Client) FailJob(ctx context.Context, job models.IngestionJob, errMsg st
 func (c *Client) DeferJob(ctx context.Context, job models.IngestionJob, retryAfter time.Time, reason string) error {
 	return c.Conn.Exec(ctx,
 		`INSERT INTO ingestion_queue (`+queueColumns+`)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		time.Now(), job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusPending, job.JobType, "", (*time.Time)(nil), (*time.Time)(nil), reason, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, retryAfter)
+		 VALUES (now64(3), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		job.JobID, job.SourceFile, job.SHA256Hash, models.JobStatusPending, job.JobType, "", (*time.Time)(nil), (*time.Time)(nil), reason, job.Cluster, job.Namespace, job.Project, job.SourceRepo, job.SourceRef, job.TargetSBOMID, job.Tags, job.Parent, retryAfter)
 }
 
 // RequeueStaleJobs puts jobs back to 'pending' that have been 'processing'

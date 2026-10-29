@@ -60,12 +60,28 @@ check-demo-sboms: ## Fail if a demo SBOM under examples/ is on disk but not trac
 	@.github/scripts/check-demo-sboms.sh
 
 migrate: ## Run all pending database migrations
-	@echo "⏳ Running migrations..."
-	@for f in db/migrations/*.sql; do \
+	@set -eu; \
+	restore_services=""; \
+	paused=0; \
+	restore() { \
+		if [ "$$paused" = 1 ] && [ -n "$$restore_services" ]; then \
+			docker compose start $$restore_services; \
+		fi; \
+	}; \
+	trap restore EXIT; \
+	echo "⏳ Running migrations..."; \
+	for f in db/migrations/*.sql; do \
 		echo "  → $$f"; \
-		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f" 2>/dev/null || true; \
-	done
-	@echo "✅ Migrations complete."
+		if [ "$$(basename "$$f")" = "028_ingestion_queue_created_at_datetime64.up.sql" ]; then \
+			applied=$$(docker compose exec -T clickhouse clickhouse-client --database=bomhort --query "SELECT count() FROM data_migrations FINAL WHERE name = 'ingestion_queue_created_at_datetime64'") || exit $$?; \
+			if [ "$$applied" != "0" ]; then echo "  ↪ already applied"; continue; fi; \
+			restore_services=$$(docker compose ps --status running --services | grep -E '^(api-gateway|parsing-worker|ingestion-watcher)$$' || true); \
+			paused=1; \
+			docker compose stop api-gateway parsing-worker ingestion-watcher; \
+		fi; \
+		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f" || exit $$?; \
+	done; \
+	echo "✅ Migrations complete."
 
 cve-refresh: migrate ## Run a CVE refresh (check all PURLs for new vulnerabilities)
 	@echo "🔍 Starting CVE refresh..."
@@ -75,12 +91,7 @@ cve-refresh: migrate ## Run a CVE refresh (check all PURLs for new vulnerabiliti
 re-ingest: ## Re-trigger the Ingestion Watcher (scans for new files)
 	docker compose up --force-recreate ingestion-watcher
 
-re-scan: ## Reset all data + queue, then re-ingest (e.g. after enabling OSV)
-	@echo "⏳ Running pending migrations..."
-	@for f in db/migrations/*.sql; do \
-		echo "  → $$f"; \
-		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f" 2>/dev/null || true; \
-	done
+re-scan: migrate ## Reset all data + queue, then re-ingest (e.g. after enabling OSV)
 	@echo "🗑️  Clearing all data tables and queue..."
 	@# Stop the workers first: a worker still busy with a job would otherwise
 	@# write that SBOM after the truncate and mark its job done, so the
@@ -118,11 +129,7 @@ DEMO_FLEET_ENV = SBOM_SOURCE_DIR=./examples/fleet \
 	S3_BUCKETS= S3_BUCKET= S3_ENDPOINT= S3_ACCESS_KEY= S3_SECRET_KEY= \
 	SBOM_LIMIT=0
 
-demo-fleet: ## Wipe all data and ingest the bundled multi-cluster demo fleet (examples/fleet)
-	@echo "Running pending migrations..."
-	@for f in db/migrations/*.sql; do \
-		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f" 2>/dev/null || true; \
-	done
+demo-fleet: migrate ## Wipe all data and ingest the bundled multi-cluster demo fleet (examples/fleet)
 	@echo "Clearing all data tables and queue..."
 	@docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery --query \
 		"TRUNCATE TABLE ingestion_queue; TRUNCATE TABLE vulnerabilities; TRUNCATE TABLE license_compliance; TRUNCATE TABLE sbom_packages; TRUNCATE TABLE sboms; TRUNCATE TABLE vex_statements; TRUNCATE TABLE document_store;"
@@ -164,11 +171,7 @@ DEMO_CATALOGUE_ENV = INGEST_PATH_LAYOUT=project \
 	S3_BUCKETS= S3_BUCKET= S3_ENDPOINT= S3_ACCESS_KEY= S3_SECRET_KEY= \
 	SBOM_LIMIT=0
 
-demo-catalogue: ## Wipe all data and ingest the bundled project catalogue (examples/catalogue)
-	@echo "Running pending migrations..."
-	@for f in db/migrations/*.sql; do \
-		docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery < "$$f" 2>/dev/null || true; \
-	done
+demo-catalogue: migrate ## Wipe all data and ingest the bundled project catalogue (examples/catalogue)
 	@echo "Clearing all data tables and queue..."
 	@docker compose exec -T clickhouse clickhouse-client --database=bomhort --multiquery --query \
 		"TRUNCATE TABLE ingestion_queue; TRUNCATE TABLE vulnerabilities; TRUNCATE TABLE license_compliance; TRUNCATE TABLE sbom_packages; TRUNCATE TABLE sboms; TRUNCATE TABLE vex_statements; TRUNCATE TABLE document_store;"

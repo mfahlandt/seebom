@@ -92,6 +92,15 @@ jobs:
         run: |
           for f in db/migrations/*.up.sql; do
             echo "── $f"
+            if [[ "$(basename "$f")" == "028_ingestion_queue_created_at_datetime64.up.sql" ]]; then
+              applied="$(docker run --rm --network host "$CLICKHOUSE_IMAGE" clickhouse-client \
+                --host 127.0.0.1 --database bomhort \
+                --query "SELECT count() FROM data_migrations FINAL WHERE name = 'ingestion_queue_created_at_datetime64'")"
+              if [[ "$applied" != "0" ]]; then
+                echo "   ↪ already applied"
+                continue
+              fi
+            fi
             docker run --rm --network host \
               -v "$PWD/$f:/m.sql:ro" \
               "$CLICKHOUSE_IMAGE" \
@@ -106,7 +115,7 @@ jobs:
           CLICKHOUSE_HOST: 127.0.0.1
           CLICKHOUSE_PORT: "9000"
           CLICKHOUSE_DATABASE: bomhort
-        run: go test ./internal/clickhouse/ -count=1 -run 'TestQueriesExecute|TestSBOMDetailProjectionMatchesScan|TestSBOMVulnerabilitiesVEXJoin|TestClusterSBOMsQuery|TestProjectRowsUsePrimaryKey|TestQueryLimitsReachTheServer|TestFindingsCarryCVEAndAliases|TestAffectedProjectsByAnyAlias|TestVEXStatementsAndSearchCarryAliases|TestStreamVulnerabilitiesMatchesPagedListing|TestLicenseRecheckQueries|Seeded' -v
+        run: go test ./internal/clickhouse/ -count=1 -run 'TestQueriesExecute|TestSBOMDetailProjectionMatchesScan|TestSBOMVulnerabilitiesVEXJoin|TestClusterSBOMsQuery|TestProjectRowsUsePrimaryKey|TestQueryLimitsReachTheServer|TestFindingsCarryCVEAndAliases|TestAffectedProjectsByAnyAlias|TestVEXStatementsAndSearchCarryAliases|TestStreamVulnerabilitiesMatchesPagedListing|TestLicenseRecheckQueries|TestConcurrentClaimJobs|Seeded' -v
 
   frontend:
     name: Frontend (Angular)
@@ -225,4 +234,3 @@ jobs:
       # backports. Nothing touches GitHub.
       - name: Test release scripts
         run: python3 -B -m unittest discover -s hack/tests -v
-

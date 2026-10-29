@@ -13,10 +13,8 @@ data:
   run-migrations.sh: |
     #!/bin/sh
     set -e
-    # Bounded wait, and credentials errors fail at once: the Job name only
-    # changes with the migrations or the spec, so a Job stuck here would
-    # never be replaced by an upgrade. Failing makes the problem visible
-    # (kubectl get jobs, Argo health); see the deployment guide.
+    # Bounded wait, and credentials errors fail at once so migration failures
+    # are visible in kubectl and Argo health.
     echo "⏳ Waiting for ClickHouse to be ready..."
     tries=0
     until out=$(clickhouse-client --host="$CH_HOST" --port="$CH_PORT" \
@@ -47,9 +45,18 @@ data:
     echo "⏳ Running migrations..."
     for f in /migrations/*.sql; do
       echo "  → $(basename $f)"
+      if [ "$(basename "$f")" = "028_ingestion_queue_created_at_datetime64.up.sql" ]; then
+        applied="$(clickhouse-client --host="$CH_HOST" --port="$CH_PORT" \
+          --user="$CH_USER" --password="$CH_PASSWORD" \
+          --database="$CH_DATABASE" \
+          --query="SELECT count() FROM data_migrations FINAL WHERE name = 'ingestion_queue_created_at_datetime64'")"
+        if [ "$applied" != "0" ]; then
+          echo "  ↪ already applied"
+          continue
+        fi
+      fi
       clickhouse-client --host="$CH_HOST" --port="$CH_PORT" \
         --user="$CH_USER" --password="$CH_PASSWORD" \
         --database="$CH_DATABASE" --multiquery < "$f"
     done
     echo "✅ Database initialized."
-

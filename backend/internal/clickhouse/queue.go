@@ -83,6 +83,7 @@ func latestJobs(where string) string {
 		        argMax(job_type, created_at)      AS job_type,
 		        argMax(status, created_at)        AS latest_status,
 		        argMax(claimed_at, created_at)    AS claimed_at,
+		        argMax(claimed_by, created_at)    AS claimed_by,
 		        argMax(cluster, created_at)       AS cluster,
 		        argMax(namespace, created_at)     AS namespace,
 		        argMax(project, created_at)       AS project,
@@ -97,13 +98,13 @@ func latestJobs(where string) string {
 }
 
 // selectJobs returns the jobs whose latest state matches where, oldest first.
-func (c *Client) selectJobs(ctx context.Context, where string, limit int) ([]models.IngestionJob, error) {
+func (c *Client) selectJobs(ctx context.Context, where string, limit int, args ...any) ([]models.IngestionJob, error) {
 	rows, err := c.Conn.Query(ctx, `
 		SELECT job_id, source_file, sha256_hash, min_created, version, job_type, cluster, namespace, project, source_repo, source_ref, target_sbom_id, tags, parent
 		FROM (`+latestJobs("")+`) sub
 		WHERE `+where+`
 		ORDER BY min_created ASC
-		LIMIT ?`, limit)
+		LIMIT ?`, append(args, limit)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query jobs: %w", err)
 	}
@@ -121,18 +122,37 @@ func (c *Client) selectJobs(ctx context.Context, where string, limit int) ([]mod
 }
 
 // ClaimJobs selects up to `limit` pending jobs and marks them as processing
-// while holding the shared claim lock.
+// while holding the shared claim lock. It first releases this worker's own
+// jobs still marked processing: the worker holds no job between two calls, so
+// such rows come from a claim whose result was discarded (claimlock.ErrLeaseLost)
+// or from a crash, and must not wait for RequeueStaleJobs.
 func (c *Client) ClaimJobs(ctx context.Context, workerID string, limit int, locker claimlock.Locker) ([]models.IngestionJob, error) {
 	if locker == nil {
 		return nil, fmt.Errorf("claim lock is required")
 	}
 	var claimed []models.IngestionJob
 	err := locker.WithLock(ctx, func(ctx context.Context) error {
+		if err := c.releaseOwnClaims(ctx, workerID); err != nil {
+			return err
+		}
 		var err error
 		claimed, err = c.claimJobs(ctx, workerID, limit)
 		return err
 	})
 	return claimed, err
+}
+
+func (c *Client) releaseOwnClaims(ctx context.Context, workerID string) error {
+	orphaned, err := c.selectJobs(ctx, "latest_status = 'processing' AND claimed_by = ?", 10000, workerID)
+	if err != nil {
+		return fmt.Errorf("failed to query own claims: %w", err)
+	}
+	for _, job := range orphaned {
+		if err := c.DeferJob(ctx, job, time.Now(), "requeued: claim abandoned by "+workerID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Client) claimJobs(ctx context.Context, workerID string, limit int) ([]models.IngestionJob, error) {

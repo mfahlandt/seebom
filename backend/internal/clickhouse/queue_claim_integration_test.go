@@ -144,3 +144,39 @@ func TestTransitionsOutrankPreviousRow(t *testing.T) {
 		t.Fatalf("latest status = %q, want %q", status, models.JobStatusDone)
 	}
 }
+
+// TestClaimJobsReleasesOwnAbandonedClaims proves a worker's leftover
+// 'processing' rows (discarded lock result, crash) are requeued on its next
+// claim instead of waiting for RequeueStaleJobs. Skipped unless CLICKHOUSE_HOST is set.
+func TestClaimJobsReleasesOwnAbandonedClaims(t *testing.T) {
+	c := testClient(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	worker := "abandon-" + uuid.NewString()
+	job := models.IngestionJob{
+		CreatedAt:  time.Now(),
+		JobID:      uuid.New(),
+		SourceFile: "integration-test/abandoned-" + uuid.NewString() + ".spdx.json",
+		SHA256Hash: uuid.NewString(),
+		JobType:    "sbom",
+	}
+	if err := c.EnqueueJobs(ctx, []models.IngestionJob{job}); err != nil {
+		t.Fatalf("EnqueueJobs: %v", err)
+	}
+	if _, err := c.claimJobs(ctx, worker, 10000); err != nil {
+		t.Fatalf("claimJobs: %v", err)
+	}
+
+	// The worker's next claim (holding nothing) gets its own abandoned job back.
+	claimed, err := c.ClaimJobs(ctx, worker, 10000, claimlock.Local())
+	if err != nil {
+		t.Fatalf("ClaimJobs: %v", err)
+	}
+	for _, got := range claimed {
+		if got.JobID == job.JobID {
+			return
+		}
+	}
+	t.Fatal("abandoned processing job was not released and reclaimed")
+}

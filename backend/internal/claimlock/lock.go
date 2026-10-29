@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	leaseName     = "bomhort-ingestion-queue-claims"
-	leaseDuration = 30 * time.Second
-	renewDeadline = 20 * time.Second
+	leaseName = "bomhort-ingestion-queue-claims"
+	// Kubernetes' defaults: a dead holder blocks claims for at most 15s.
+	leaseDuration = 15 * time.Second
+	renewDeadline = 10 * time.Second
 	retryPeriod   = 2 * time.Second
 )
 
@@ -26,7 +27,7 @@ var (
 	// renewal failed no earlier than renewDeadline after it started, and
 	// other holders wait leaseDuration, so a result that is ready before
 	// maxHold (measured from before acquisition) was written while we held it.
-	maxHold = renewDeadline - 5*time.Second
+	maxHold = renewDeadline / 2
 )
 
 // ErrLeaseLost reports a critical section that may have overlapped another
